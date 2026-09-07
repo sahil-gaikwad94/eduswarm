@@ -20,12 +20,13 @@ EMBEDDING_SIZE = 768
 class Settings:
     api_key: str
     qdrant_url: str
+    qdrant_api_key: str
     collection: str
     model: str
     embedding_model: str
     @classmethod
     def from_env(cls) -> "Settings":
-        return cls(os.getenv("GEMINI_API_KEY", ""), os.getenv("QDRANT_URL", "http://localhost:6333"), os.getenv("QDRANT_COLLECTION", "eduswarm_knowledge"), os.getenv("GEMINI_MODEL", "gemini-2.0-flash"), os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001"))
+        return cls(os.getenv("GEMINI_API_KEY", ""), os.getenv("QDRANT_URL", "http://localhost:6333"), os.getenv("QDRANT_API_KEY", ""), os.getenv("QDRANT_COLLECTION", "eduswarm_knowledge"), os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001"))
 
 @dataclass(frozen=True)
 class EvidenceChunk:
@@ -43,7 +44,7 @@ class GeminiRag:
         self.settings = settings or Settings.from_env()
         if not self.settings.api_key: raise RuntimeError("GEMINI_API_KEY is required for the intelligent agent runtime")
         self.gemini = genai.Client(api_key=self.settings.api_key)
-        self.qdrant = QdrantClient(url=self.settings.qdrant_url)
+        self.qdrant = QdrantClient(url=self.settings.qdrant_url, api_key=self.settings.qdrant_api_key or None)
 
     def _embed(self, text: str) -> list[float]:
         response = self.gemini.models.embed_content(model=self.settings.embedding_model, contents=text)

@@ -3,6 +3,8 @@ WORKDIR /app
 COPY package.json tsconfig.json vite.config.ts index.html ./
 RUN npm install
 COPY src ./src
+ARG VITE_API_URL=http://localhost:4000
+ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 RUN npm install -g serve
 CMD ["serve","-s","dist","-l","5173"]

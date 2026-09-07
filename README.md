@@ -1,46 +1,36 @@
 # EduSwarm
 
-EduSwarm is a multi-agent AI learning platform for GATE CS, Web Development, and AI/ML. The repository now contains a real inspectable agentic vertical slice rather than a simulated list of stages: a Dean plans the work, a Researcher searches trusted sources, specialist agents compose and derive study artifacts, and a Fact-Checker can block publication.
-
-## What is genuinely agentic here
-
-The Python runtime uses a LangGraph state machine with Gemini and Qdrant. Knowledge must first be ingested into Qdrant through `POST /v1/knowledge/documents`; the Researcher semantically retrieves source chunks, Gemini generates structured artifacts from those chunks only, and the Fact-Checker rejects any claim without two retrieved chunk citations. Jobs can be inspected at `/v1/topic-jobs/:id/trace` and resumed from their last checkpoint at `/v1/topic-jobs/:id/resume`.
-
-The live runtime requires `GEMINI_API_KEY` and a reachable Qdrant instance. Tests replace the Gemini/Qdrant adapter with a deterministic fake; production never falls back to fabricated source material.
+EduSwarm is a multi-agent AI learning platform for GATE CS, Web Development, and AI/ML. This repository contains the first production-minded vertical slice: onboarding, independent goals, a GATE Algorithms curriculum, asynchronous topic jobs, live progress, verified notes, flashcards, quizzes, and PYQ metadata.
 
 ## Architecture
 
 - `apps/web`: React + Vite + TypeScript frontend.
-- `apps/api`: Express API for onboarding, goals, curriculum, job submission, SSE progress, content access, and trace proxying.
-- `services/agent-runtime`: FastAPI stateful agent graph with checkpoints, tools, provenance, verification, and resume endpoint.
-- `packages/contracts`: shared domain contracts.
+- `apps/api`: Express API with Google OAuth, signed HttpOnly sessions, MongoDB persistence, Redis pub/sub for SSE, profile/goals, curriculum, job submission, and owner-scoped content endpoints.
+- `services/agent-runtime`: FastAPI LangGraph runtime with checkpointed agent state, Qdrant/Gemini RAG, structured package validation, and evidence-gated publishing.
 - `infra`: Docker Compose and Render Blueprint configuration.
+
+The runtime uses Gemini and Qdrant in production, validates generated artifacts against retrieved evidence, and fails jobs that cannot produce an approved package. The API stores users, sessions, and API jobs in MongoDB; Redis provides cross-instance job event delivery. Runtime graph checkpoints use `EDUSWARM_STATE_DIR`, backed by the Render persistent disk and the Compose `runtime-state` volume.
 
 ## Local run
 
 1. `cp .env.example .env`
 2. `npm install`
-3. Start infrastructure if needed: `docker compose -f infra/docker-compose.yml up -d mongo redis qdrant`
-4. Start the agent runtime: `cd services/agent-runtime && pip install -r requirements.txt && uvicorn app.main:app --reload --port 8000`
-5. Start the API in another terminal: `npm run dev:api`
-6. Start the web app in another terminal: `npm run dev:web`
-7. Open `http://localhost:5173`.
+3. `npm run dev:api`
+4. In another terminal: `npm run dev:web`
+5. Open `http://localhost:5173`.
 
-Before creating a topic job, ingest approved source text with `POST /v1/knowledge/documents`. The runtime fails closed when its Qdrant collection has fewer than two independent sources for a topic.
-
-The UI has a demo identity header only in local development and test mode. In production, the API uses the Google OAuth authorization-code flow and signed, HTTP-only sessions. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `PUBLIC_API_URL` (the public API callback origin), and `WEB_APP_URL` (the frontend redirect origin) before deployment. Persistent Mongo/Redis repositories are still required before horizontal scaling.
-
-## Testing
-
-- `npm test`: API unit and fail-closed runtime-unavailable tests.
-- `npm run build`: API and frontend production builds.
-- `pytest -q services/agent-runtime/test_main.py`: graph execution, verification, trace, and checkpoint tests.
-- Live integration: run both services, submit `POST /api/jobs`, poll the job, fetch `/api/content/:jobId`, and inspect `/api/jobs/:id/trace`.
+Local development defaults to `AUTH_MODE=demo`. Production requires `AUTH_MODE=google`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `OAUTH_REDIRECT_URI`, and `SESSION_SECRET`. Register the callback URL exactly in Google Cloud Console.
 
 ## Render deployment
 
-The repository includes `render.yaml` for the API, agent runtime, and static frontend. Configure `MONGODB_URI`, `REDIS_URL`, `QDRANT_URL`, OAuth credentials, and provider keys in Render. The current file-backed checkpoint store is suitable for local development; production should set `EDUSWARM_STATE_DIR` only on a persistent volume or replace it with the planned Mongo checkpoint repository before horizontal scaling.
+The repository includes `render.yaml`. Create a new Render Blueprint from this repository, provision the managed Redis and Mongo-compatible database offered by your Render account, and set the secret environment variables in the Render dashboard. The API and agent runtime are separate web services; the frontend is a static site. For a managed vector store, set `QDRANT_URL` to the hosted endpoint.
 
-## Security and production boundaries
+The blueprint uses the default Render URLs `https://eduswarm-web.onrender.com`, `https://eduswarm-api.onrender.com`, and `https://eduswarm-agent-runtime.onrender.com`. Change `CORS_ORIGINS`, `VITE_API_URL`, `AGENT_RUNTIME_URL`, `PUBLIC_API_URL`, `WEB_URL`, and `OAUTH_REDIRECT_URI` together if you use custom domains. Production fallback is disabled so runtime outages fail visibly instead of silently switching execution modes. Set the `sync: false` MongoDB, Redis, Google, Gemini, and Qdrant values in Render before the first deploy.
 
-Generated code is never executed by the API or worker. External content and model output must be treated as untrusted. Any future code runner needs an isolated sandbox with strict CPU, memory, time, and network limits. Never commit `.env` files or provider credentials. Publication is fail-closed: no verified state means no user-visible content.
+## Quality gates
+
+`npm test` runs API unit tests. `npm run build` builds both applications. Run the agent runtime tests from its package directory with `cd services/agent-runtime && python -m pytest test_main.py`. The deterministic evaluation fixture lives under `tests/evaluation`.
+
+## Security notes
+
+Generated code is not executed by the API or worker. Any future code runner must be isolated with strict CPU, memory, time, and network limits. Never commit `.env` files or provider credentials.

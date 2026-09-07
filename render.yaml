@@ -5,51 +5,62 @@ services:
     rootDir: apps/api
     buildCommand: npm install
     startCommand: npm start
-    healthCheckPath: /health
+    healthCheckPath: /ready
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
       - key: AGENT_RUNTIME_URL
-        fromService:
-          type: pserv
-          name: eduswarm-agent-runtime
-          property: host
-      - key: SESSION_SECRET
-        generateValue: true
+        value: https://eduswarm-agent-runtime.onrender.com
+      - key: CORS_ORIGINS
+        value: https://eduswarm-web.onrender.com
+      - key: ALLOW_LOCAL_FALLBACK
+        value: 'false'
+      - key: AUTH_MODE
+        value: google
       - key: PUBLIC_API_URL
-        sync: false
-      - key: WEB_APP_URL
-        sync: false
+        value: https://eduswarm-api.onrender.com
+      - key: OAUTH_REDIRECT_URI
+        value: https://eduswarm-api.onrender.com/auth/google/callback
+      - key: WEB_URL
+        value: https://eduswarm-web.onrender.com
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      - key: SESSION_SECRET
+        generateValue: true
       - key: MONGODB_URI
         sync: false
       - key: REDIS_URL
         sync: false
-  - type: pserv
+  - type: web
     name: eduswarm-agent-runtime
     runtime: python
     rootDir: services/agent-runtime
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
-    healthCheckPath: /health
+    healthCheckPath: /ready
+    disk:
+      name: agent-runtime-state
+      mountPath: /tmp/eduswarm-state
+      sizeGB: 1
     envVars:
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: EDUSWARM_STATE_DIR
+        value: /tmp/eduswarm-state
+      - key: GEMINI_API_KEY
+        sync: false
       - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
         sync: false
       - key: QDRANT_COLLECTION
         value: eduswarm_knowledge
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: GEMINI_MODEL
-        value: gemini-2.0-flash
       - key: GEMINI_EMBEDDING_MODEL
         value: gemini-embedding-001
-      - key: EDUSWARM_STATE_DIR
-        value: /tmp/eduswarm-state
   - type: web
     name: eduswarm-web
     runtime: static
@@ -62,4 +73,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        sync: false
+        value: https://eduswarm-api.onrender.com

@@ -143,7 +143,7 @@ class AgentGraph:
         started = now(); self.event(agent, action)
         try: output = fn(); status = "completed"
         except Exception as exc: output = {"error": str(exc)}; status = "failed"
-        self.state.trace.append({"agent": agent, "action": action, "rationale": rationale, "tool": tool, "input": {}, "output": output, "started_at": started, "finished_at": now(), "status": status}); self.save()
+        self.state.trace.append({"agent": agent, "action": action, "rationale": rationale, "tool": tool, "input": {}, "output": output, "started_at": started, "finished_at": now(), "status": status}); self.state.iteration += 1; self.save()
         if status == "failed": raise RuntimeError(f"{agent}: {output['error']}")
         return output
     def dean(self):
@@ -188,6 +188,14 @@ class AgentGraph:
 
 @app.get("/health")
 def health(): return {"ok": True, "service": "agent-runtime", "mode": "langgraph-gemini-qdrant", "geminiConfigured": bool(os.getenv("GEMINI_API_KEY"))}
+@app.get("/ready")
+def ready():
+    if not os.getenv("GEMINI_API_KEY"): raise HTTPException(503, "GEMINI_API_KEY is not configured")
+    try:
+        GeminiRag().qdrant.get_collections()
+    except Exception as exc:
+        raise HTTPException(503, f"Qdrant is not ready: {exc}")
+    return {"ok": True, "service": "agent-runtime", "mode": "langgraph-gemini-qdrant"}
 @app.post("/v1/knowledge/documents", status_code=202)
 def ingest_document(document: KnowledgeDocument):
     try: chunks = GeminiRag().ingest(**document.model_dump())

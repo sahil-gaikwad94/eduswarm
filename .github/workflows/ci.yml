@@ -10,7 +10,9 @@ jobs:
       - run: npm install
       - run: npm test
       - run: npm run build
+      - run: npm run lint
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
       - run: pip install -r services/agent-runtime/requirements.txt
-      - run: pytest services/agent-runtime/test_main.py
+      - run: python -m pytest services/agent-runtime/test_main.py
+      - run: docker compose -f infra/docker-compose.yml config

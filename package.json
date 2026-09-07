@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "workspaces": ["apps/api", "apps/web"],
+  "overrides": {
+    "qs": "^6.16.0"
+  },
   "scripts": {
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web run dev",
