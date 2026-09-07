@@ -22,7 +22,7 @@ from typing_extensions import TypedDict
 from app.rag import GeminiRag
 
 class GraphState(TypedDict):
-    pass
+    node: str
 
 app = FastAPI(title="EduSwarm Agent Runtime", version="1.1.0")
 STATE_DIR = Path(os.getenv("EDUSWARM_STATE_DIR", "/tmp/eduswarm-state"))
@@ -174,13 +174,13 @@ class AgentGraph:
     def build_graph(self):
         graph = StateGraph(GraphState)
         for name in ("dean", "research", "compose", "practice", "verify", "publish"):
-            graph.add_node(name, lambda _state, node=name: (getattr(self, node)() or {}))
+            graph.add_node(name, lambda _state, node=name: (getattr(self, node)() or {"node": node}))
         graph.set_entry_point("dean"); graph.add_edge("dean", "research"); graph.add_conditional_edges("research", lambda _state: "compose" if self.state.current_node == "compose" else END, {"compose": "compose", END: END}); graph.add_edge("compose", "practice"); graph.add_edge("practice", "verify")
         graph.add_conditional_edges("verify", lambda _state: "publish" if self.state.current_node == "publish" else END, {"publish": "publish", END: END}); graph.add_edge("publish", END)
         return graph.compile()
     async def execute(self):
         try:
-            self.build_graph().invoke({})
+            self.build_graph().invoke({"node": "start"})
             self.state.status = "completed" if self.state.current_node == "complete" else "failed"; self.state.lease_until = None; self.event("Dean", "Agent graph completed" if self.state.status == "completed" else "Agent graph blocked", self.state.status)
         except Exception as exc:
             self.state.status = "failed"; self.state.error = str(exc); self.state.lease_until = None; self.event("Runtime", str(exc), "failed")
