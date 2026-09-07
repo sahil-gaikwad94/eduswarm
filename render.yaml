@@ -3,7 +3,7 @@ services:
     name: eduswarm-api
     runtime: node
     rootDir: apps/api
-    buildCommand: npm install
+    buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /ready
     envVars:
