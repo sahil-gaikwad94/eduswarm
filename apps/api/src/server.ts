@@ -56,6 +56,7 @@ app.post('/api/jobs', async (req, res) => {
   try {
     const response = await fetch(`${runtime}/v1/topic-jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ job_id: id, topic_id: topicId }) });
     if (!response.ok) throw new Error(`runtime ${response.status}`);
+    void syncRuntimeJob(id);
   } catch {
     await runLocalFallback(id, topicId);
   }
@@ -63,6 +64,21 @@ app.post('/api/jobs', async (req, res) => {
 app.get('/api/content/:jobId', (req, res) => {
   const job = jobs.get(req.params.jobId); if (!job?.package) return res.status(404).json({ error: 'Verified package is not ready' }); res.json(job.package);
 });
+
+async function syncRuntimeJob(id: string) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    try {
+      const response = await fetch(`${runtime}/v1/topic-jobs/${id}`);
+      const remote = await response.json() as any;
+      const job = jobs.get(id); if (!job) return;
+      const latest = remote.events?.at(-1);
+      if (latest) { job.stage = latest.agent; job.message = latest.message; emit(id, { ...job, timestamp: latest.timestamp }); }
+      if (remote.status === 'completed') { job.status = 'completed'; job.package = remote.package; emit(id, { ...job, timestamp: new Date().toISOString() }); return; }
+    } catch { /* transient worker/network failure; continue until the retry budget expires */ }
+  }
+  const job = jobs.get(id); if (job && job.status !== 'completed') { job.status = 'failed'; job.message = 'The agent team timed out; please retry.'; emit(id, { ...job, timestamp: new Date().toISOString() }); }
+}
 
 async function runLocalFallback(id: string, topicId: string) {
   const stages = [['Dean','Selecting prerequisite-ready topic'],['Notes Author','Grounding explanations in trusted sources'],['Card Maker','Distilling atomic flashcards'],['Quiz Setter','Calibrating practice questions'],['Fact-Checker','Checking claims against two sources'],['Publisher','Publishing verified topic package']];
