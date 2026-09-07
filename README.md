@@ -1,34 +1,44 @@
 # EduSwarm
 
-EduSwarm is a multi-agent AI learning platform for GATE CS, Web Development, and AI/ML. This repository contains the first production-minded vertical slice: onboarding, independent goals, a GATE Algorithms curriculum, asynchronous topic jobs, live progress, verified notes, flashcards, quizzes, and PYQ metadata.
+EduSwarm is a multi-agent AI learning platform for GATE CS, Web Development, and AI/ML. The repository now contains a real inspectable agentic vertical slice rather than a simulated list of stages: a Dean plans the work, a Researcher searches trusted sources, specialist agents compose and derive study artifacts, and a Fact-Checker can block publication.
+
+## What is genuinely agentic here
+
+The Python runtime uses a typed shared `JobState` and an explicit resumable graph. Each node reads context, chooses a named action, calls a tool through `ToolRegistry`, writes structured artifacts, records rationale/input/output in an `AgentTrace`, and checkpoints state to durable JSON. The graph routes to `failed` instead of publishing when evidence or citation requirements are not met. Jobs can be inspected at `/v1/topic-jobs/:id/trace` and resumed from their last checkpoint at `/v1/topic-jobs/:id/resume`.
+
+The current tools are trusted-source search, evidence retrieval, and package validation. They are deliberately isolated behind interfaces so live LLM, embeddings, Qdrant, YouTube Data API, and licensed PYQ adapters can be added without rewriting graph logic. The default source/model behavior is deterministic for reproducible local development and CI; it is not presented as live web research.
 
 ## Architecture
 
 - `apps/web`: React + Vite + TypeScript frontend.
-- `apps/api`: Express API with demo auth mode, profile/goals, curriculum, job submission, SSE progress, and content endpoints.
-- `services/agent-runtime`: FastAPI runtime with a LangGraph-compatible explicit pipeline and deterministic demo provider.
+- `apps/api`: Express API for onboarding, goals, curriculum, job submission, SSE progress, content access, and trace proxying.
+- `services/agent-runtime`: FastAPI stateful agent graph with checkpoints, tools, provenance, verification, and resume endpoint.
+- `packages/contracts`: shared domain contracts.
 - `infra`: Docker Compose and Render Blueprint configuration.
-
-The runtime deliberately uses deterministic providers by default so the app is runnable without paid credentials. Replace the provider adapter with an LLM/retrieval implementation when `LLM_API_KEY`, source credentials, and the approved PYQ corpus are available. Unverified content is never published.
 
 ## Local run
 
 1. `cp .env.example .env`
 2. `npm install`
-3. `npm run dev:api`
-4. In another terminal: `npm run dev:web`
-5. Open `http://localhost:5173`.
+3. Start infrastructure if needed: `docker compose -f infra/docker-compose.yml up -d mongo redis qdrant`
+4. Start the agent runtime: `cd services/agent-runtime && pip install -r requirements.txt && uvicorn app.main:app --reload --port 8000`
+5. Start the API in another terminal: `npm run dev:api`
+6. Start the web app in another terminal: `npm run dev:web`
+7. Open `http://localhost:5173`.
 
-The default demo sign-in creates a local learner. For production, configure Google OAuth and replace demo auth with the OAuth callback adapter.
+The UI has a demo identity header for local development. Production deployment must replace this with the configured Google OAuth adapter and persistent Mongo/Redis repositories.
+
+## Testing
+
+- `npm test`: API unit and fail-closed runtime-unavailable tests.
+- `npm run build`: API and frontend production builds.
+- `pytest -q services/agent-runtime/test_main.py`: graph execution, verification, trace, and checkpoint tests.
+- Live integration: run both services, submit `POST /api/jobs`, poll the job, fetch `/api/content/:jobId`, and inspect `/api/jobs/:id/trace`.
 
 ## Render deployment
 
-The repository includes `render.yaml`. Create a new Render Blueprint from this repository, provision the managed Redis and Mongo-compatible database offered by your Render account, and set the secret environment variables in the Render dashboard. The API and agent runtime are separate web services; the frontend is a static site. For a managed vector store, set `QDRANT_URL` to the hosted endpoint.
+The repository includes `render.yaml` for the API, agent runtime, and static frontend. Configure `MONGODB_URI`, `REDIS_URL`, `QDRANT_URL`, OAuth credentials, and provider keys in Render. The current file-backed checkpoint store is suitable for local development; production should set `EDUSWARM_STATE_DIR` only on a persistent volume or replace it with the planned Mongo checkpoint repository before horizontal scaling.
 
-## Quality gates
+## Security and production boundaries
 
-`npm test` runs API unit tests. `npm run build` builds both applications. The agent runtime has Python unit tests under `services/agent-runtime/tests` and a deterministic evaluation fixture under `tests/evaluation`.
-
-## Security notes
-
-Generated code is not executed by the API or worker. Any future code runner must be isolated with strict CPU, memory, time, and network limits. Never commit `.env` files or provider credentials.
+Generated code is never executed by the API or worker. External content and model output must be treated as untrusted. Any future code runner needs an isolated sandbox with strict CPU, memory, time, and network limits. Never commit `.env` files or provider credentials. Publication is fail-closed: no verified state means no user-visible content.

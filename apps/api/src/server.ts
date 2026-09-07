@@ -58,11 +58,22 @@ app.post('/api/jobs', async (req, res) => {
     if (!response.ok) throw new Error(`runtime ${response.status}`);
     void syncRuntimeJob(id);
   } catch {
-    await runLocalFallback(id, topicId);
+    job.status = 'failed';
+    job.message = 'Agent runtime is unavailable; no content was generated.';
+    emit(id, { ...job, timestamp: new Date().toISOString() });
   }
 });
 app.get('/api/content/:jobId', (req, res) => {
   const job = jobs.get(req.params.jobId); if (!job?.package) return res.status(404).json({ error: 'Verified package is not ready' }); res.json(job.package);
+});
+app.get('/api/jobs/:id/trace', async (req, res) => {
+  try {
+    const response = await fetch(`${runtime}/v1/topic-jobs/${req.params.id}/trace`);
+    if (!response.ok) return res.status(response.status).json({ error: 'Trace unavailable' });
+    res.json(await response.json());
+  } catch {
+    res.status(503).json({ error: 'Agent runtime is unavailable' });
+  }
 });
 
 async function syncRuntimeJob(id: string) {
@@ -78,13 +89,6 @@ async function syncRuntimeJob(id: string) {
     } catch { /* transient worker/network failure; continue until the retry budget expires */ }
   }
   const job = jobs.get(id); if (job && job.status !== 'completed') { job.status = 'failed'; job.message = 'The agent team timed out; please retry.'; emit(id, { ...job, timestamp: new Date().toISOString() }); }
-}
-
-async function runLocalFallback(id: string, topicId: string) {
-  const stages = [['Dean','Selecting prerequisite-ready topic'],['Notes Author','Grounding explanations in trusted sources'],['Card Maker','Distilling atomic flashcards'],['Quiz Setter','Calibrating practice questions'],['Fact-Checker','Checking claims against two sources'],['Publisher','Publishing verified topic package']];
-  const job = jobs.get(id); if (!job) return; job.status = 'running';
-  for (const [agent, message] of stages) { job.stage = agent; job.message = message; emit(id, { ...job, timestamp: new Date().toISOString() }); await new Promise(r => setTimeout(r, 180)); }
-  job.status = 'completed'; job.package = { topicId, title: 'Time & Space Complexity', verification: { status: 'approved', sources: ['MIT OpenCourseWare · Algorithms', 'NPTEL · Design and Analysis of Algorithms'], claimsChecked: 8 }, notes: { sections: [{ heading: 'Big-O notation', body: 'Big-O describes an asymptotic upper bound on growth. Ignore constants and lower-order terms when comparing algorithms.' }, { heading: 'Worked example', body: 'A loop that halves n on every iteration runs in O(log n); nested independent loops over n each run in O(n²).' }] }, videos: [{ title: 'Asymptotic Analysis — NPTEL', url: 'https://www.youtube.com/results?search_query=asymptotic+analysis+nptel', timestamp: '12:40' }], flashcards: [{ question: 'What does O(log n) usually indicate?', answer: 'The input is reduced by a constant factor per step, such as binary search.' }, { question: 'Why drop constants in Big-O?', answer: 'Asymptotic analysis focuses on growth as input size becomes large.' }], quiz: [{ question: 'Binary search on a sorted array has which complexity?', options: ['O(1)', 'O(log n)', 'O(n)', 'O(n²)'], answer: 1 }], pyqs: [{ year: 2023, question: 'Compare the worst-case complexity of binary and linear search.', difficulty: 'easy' }] }; emit(id, { ...job, timestamp: new Date().toISOString() });
 }
 
 export { app, users, jobs };
