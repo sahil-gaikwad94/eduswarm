@@ -24,6 +24,8 @@ services:
     environment:
       PORT: 8000
       QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: eduswarm_knowledge
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports: ["8000:8000"]
     depends_on: [qdrant]
   web:
