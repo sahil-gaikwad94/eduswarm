@@ -48,7 +48,7 @@ services:
       sizeGB: 1
     envVars:
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.6-flash
       - key: EDUSWARM_STATE_DIR
         value: /tmp/eduswarm-state
       - key: GEMINI_API_KEY
