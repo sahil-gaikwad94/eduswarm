@@ -14,7 +14,7 @@ from typing import Any
 from google import genai
 from qdrant_client import QdrantClient, models
 
-EMBEDDING_SIZE = 768
+EMBEDDING_SIZE = 3072
 
 @dataclass(frozen=True)
 class Settings:
