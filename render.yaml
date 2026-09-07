@@ -18,6 +18,14 @@ services:
           property: host
       - key: SESSION_SECRET
         generateValue: true
+      - key: PUBLIC_API_URL
+        sync: false
+      - key: WEB_APP_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
       - key: MONGODB_URI
         sync: false
       - key: REDIS_URL
@@ -32,6 +40,14 @@ services:
     envVars:
       - key: QDRANT_URL
         sync: false
+      - key: QDRANT_COLLECTION
+        value: eduswarm_knowledge
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
+      - key: GEMINI_EMBEDDING_MODEL
+        value: gemini-embedding-001
       - key: EDUSWARM_STATE_DIR
         value: /tmp/eduswarm-state
   - type: web

@@ -4,9 +4,9 @@ EduSwarm is a multi-agent AI learning platform for GATE CS, Web Development, and
 
 ## What is genuinely agentic here
 
-The Python runtime uses a typed shared `JobState` and an explicit resumable graph. Each node reads context, chooses a named action, calls a tool through `ToolRegistry`, writes structured artifacts, records rationale/input/output in an `AgentTrace`, and checkpoints state to durable JSON. The graph routes to `failed` instead of publishing when evidence or citation requirements are not met. Jobs can be inspected at `/v1/topic-jobs/:id/trace` and resumed from their last checkpoint at `/v1/topic-jobs/:id/resume`.
+The Python runtime uses a LangGraph state machine with Gemini and Qdrant. Knowledge must first be ingested into Qdrant through `POST /v1/knowledge/documents`; the Researcher semantically retrieves source chunks, Gemini generates structured artifacts from those chunks only, and the Fact-Checker rejects any claim without two retrieved chunk citations. Jobs can be inspected at `/v1/topic-jobs/:id/trace` and resumed from their last checkpoint at `/v1/topic-jobs/:id/resume`.
 
-The current tools are trusted-source search, evidence retrieval, and package validation. They are deliberately isolated behind interfaces so live LLM, embeddings, Qdrant, YouTube Data API, and licensed PYQ adapters can be added without rewriting graph logic. The default source/model behavior is deterministic for reproducible local development and CI; it is not presented as live web research.
+The live runtime requires `GEMINI_API_KEY` and a reachable Qdrant instance. Tests replace the Gemini/Qdrant adapter with a deterministic fake; production never falls back to fabricated source material.
 
 ## Architecture
 
@@ -26,7 +26,9 @@ The current tools are trusted-source search, evidence retrieval, and package val
 6. Start the web app in another terminal: `npm run dev:web`
 7. Open `http://localhost:5173`.
 
-The UI has a demo identity header for local development. Production deployment must replace this with the configured Google OAuth adapter and persistent Mongo/Redis repositories.
+Before creating a topic job, ingest approved source text with `POST /v1/knowledge/documents`. The runtime fails closed when its Qdrant collection has fewer than two independent sources for a topic.
+
+The UI has a demo identity header only in local development and test mode. In production, the API uses the Google OAuth authorization-code flow and signed, HTTP-only sessions. Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SESSION_SECRET`, `PUBLIC_API_URL` (the public API callback origin), and `WEB_APP_URL` (the frontend redirect origin) before deployment. Persistent Mongo/Redis repositories are still required before horizontal scaling.
 
 ## Testing
 
