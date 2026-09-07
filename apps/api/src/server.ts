@@ -23,7 +23,16 @@ function param(value: string | string[] | undefined): string {
   return value ?? "";
 }
 
-function cookieOptions(maxAge: number) { return [`Max-Age=${Math.floor(maxAge / 1000)}`, 'Path=/', 'HttpOnly', 'SameSite=Lax', ...(process.env.NODE_ENV === 'production' ? ['Secure'] : [])].join('; '); }
+function cookieOptions(maxAge: number) {
+  const isProd = process.env.NODE_ENV === 'production';
+  return [
+    `Max-Age=${Math.floor(maxAge / 1000)}`,
+    'Path=/',
+    'HttpOnly',
+    isProd ? 'SameSite=None' : 'SameSite=Lax',
+    ...(isProd ? ['Secure'] : [])
+  ].join('; ');
+}
 function setCookie(res: Response, name: string, value: string, maxAge: number) { res.setHeader('Set-Cookie', `${name}=${encodeURIComponent(value)}; ${cookieOptions(maxAge)}`); }
 function clearCookie(res: Response, name: string) { setCookie(res, name, '', 0); }
 function cookies(req: Request) { return Object.fromEntries((req.headers.cookie || '').split(';').filter(Boolean).map((part) => { const index = part.indexOf('='); return [part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1))]; })); }
