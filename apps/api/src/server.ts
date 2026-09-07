@@ -18,7 +18,7 @@ const topics = [
 ];
 
 function emit(jobId: string, event: any) {
-  const payload = `data: ${JSON.stringify(event)}\\n\\n`;
+  const payload = `data: ${JSON.stringify(event)}\n\n`;
   subscribers.get(jobId)?.forEach((res) => res.write(payload));
 }
 
@@ -46,7 +46,7 @@ app.get('/api/jobs/:id/events', (req, res) => {
   const id = req.params.id;
   res.setHeader('Content-Type', 'text/event-stream'); res.setHeader('Cache-Control', 'no-cache'); res.setHeader('Connection', 'keep-alive'); res.flushHeaders?.();
   if (!subscribers.has(id)) subscribers.set(id, new Set()); subscribers.get(id)!.add(res);
-  if (jobs.has(id)) res.write(`data: ${JSON.stringify(jobs.get(id))}\\n\\n`);
+  if (jobs.has(id)) res.write(`data: ${JSON.stringify(jobs.get(id))}\n\n`);
   req.on('close', () => subscribers.get(id)?.delete(res));
 });
 app.post('/api/jobs', async (req, res) => {

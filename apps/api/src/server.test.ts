@@ -8,3 +8,17 @@ function request(path: string, options: any = {}) { return new Promise<{status:n
 test('health endpoint is available', async () => { const result = await request('/health'); assert.equal(result.status, 200); assert.equal(result.body.ok, true); });
 test('onboarding creates an independent goal', async () => { const result = await request('/api/onboarding', { method: 'POST', body: { name: 'Ada', goal: 'gate-cs', dailyMinutes: 30 } }); assert.equal(result.status, 201); assert.equal(result.body.goals.length, 1); assert.equal(result.body.dailyMinutes, 30); });
 test('curriculum exposes prerequisite-aware topics', async () => { const result = await request('/api/curriculum/gate-cs'); assert.equal(result.status, 200); assert.equal(result.body.topics[1].prerequisites[0], 'algo-complexity'); });
+test('topic job publishes only a verified package', async () => {
+  const created = await request('/api/jobs', { method: 'POST', body: { topicId: 'algo-complexity' } });
+  assert.equal(created.status, 202);
+  let result: any;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    result = await request(`/api/jobs/${created.body.id}`);
+    if (result.body.status === 'completed') break;
+  }
+  assert.equal(result.body.status, 'completed');
+  const content = await request(`/api/content/${created.body.id}`);
+  assert.equal(content.body.verification.status, 'approved');
+  assert.equal(content.body.verification.sources.length >= 2, true);
+});
