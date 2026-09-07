@@ -13,7 +13,7 @@ services:
         value: 10000
       - key: AGENT_RUNTIME_URL
         fromService:
-          type: web
+          type: pserv
           name: eduswarm-agent-runtime
           property: host
       - key: SESSION_SECRET
@@ -22,13 +22,18 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
-  - type: web
+  - type: pserv
     name: eduswarm-agent-runtime
     runtime: python
     rootDir: services/agent-runtime
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
     healthCheckPath: /health
+    envVars:
+      - key: QDRANT_URL
+        sync: false
+      - key: EDUSWARM_STATE_DIR
+        value: /tmp/eduswarm-state
   - type: web
     name: eduswarm-web
     runtime: static
@@ -41,7 +46,4 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        fromService:
-          type: web
-          name: eduswarm-api
-          property: host
+        sync: false

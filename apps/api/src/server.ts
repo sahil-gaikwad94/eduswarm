@@ -9,7 +9,10 @@ app.use(express.json({ limit: '1mb' }));
 const users = new Map<string, any>();
 const jobs = new Map<string, any>();
 const subscribers = new Map<string, Set<Response>>();
-const runtime = process.env.AGENT_RUNTIME_URL || 'http://localhost:8000';
+const runtime = (() => {
+  const configured = process.env.AGENT_RUNTIME_URL || 'http://localhost:8000';
+  return configured.startsWith('http://') || configured.startsWith('https://') ? configured : `http://${configured}`;
+})();
 
 const topics = [
   { id: 'algo-complexity', title: 'Time & Space Complexity', description: 'Analyze algorithm efficiency using asymptotic notation.', prerequisites: [], status: 'available' },
