@@ -1,0 +1,37 @@
+services:
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]
+    volumes: ["mongo-data:/data/db"]
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    ports: ["6333:6333"]
+    volumes: ["qdrant-data:/qdrant/storage"]
+  api:
+    build: ../apps/api
+    environment:
+      PORT: 4000
+      AGENT_RUNTIME_URL: http://agent-runtime:8000
+      MONGODB_URI: mongodb://mongo:27017/eduswarm
+      REDIS_URL: redis://redis:6379
+    ports: ["4000:4000"]
+    depends_on: [mongo, redis, agent-runtime]
+  agent-runtime:
+    build: ../services/agent-runtime
+    environment:
+      PORT: 8000
+      QDRANT_URL: http://qdrant:6333
+    ports: ["8000:8000"]
+    depends_on: [qdrant]
+  web:
+    build: ../apps/web
+    environment:
+      VITE_API_URL: http://localhost:4000
+    ports: ["5173:5173"]
+    depends_on: [api]
+volumes:
+  mongo-data:
+  qdrant-data:

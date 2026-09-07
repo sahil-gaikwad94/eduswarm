@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: eduswarm-api
+    runtime: node
+    rootDir: apps/api
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: AGENT_RUNTIME_URL
+        fromService:
+          type: web
+          name: eduswarm-agent-runtime
+          property: host
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+  - type: web
+    name: eduswarm-agent-runtime
+    runtime: python
+    rootDir: services/agent-runtime
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
+    healthCheckPath: /health
+  - type: web
+    name: eduswarm-web
+    runtime: static
+    rootDir: apps/web
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: eduswarm-api
+          property: host
