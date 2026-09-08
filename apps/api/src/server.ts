@@ -44,9 +44,18 @@ function now() { return new Date().toISOString(); }
 function defaultUser(id: string, overrides: Partial<StoredUser> = {}): StoredUser { return { id, name: 'Demo Learner', skillLevel: 'beginner', dailyMinutes: 60, avatar: { base: 'owl', color: 'yellow', accessory: 'glasses' }, goals: [], createdAt: now(), updatedAt: now(), ...overrides }; }
 
 const topics = [
-  { id: 'algo-complexity', title: 'Time & Space Complexity', description: 'Analyze algorithm efficiency using asymptotic notation.', prerequisites: [], status: 'available' },
-  { id: 'algo-arrays', title: 'Arrays and Searching', description: 'Solve array problems with invariants and binary search.', prerequisites: ['algo-complexity'], status: 'locked' },
-  { id: 'algo-graphs', title: 'Graph Traversals', description: 'Apply BFS and DFS to connected structures.', prerequisites: ['algo-arrays'], status: 'locked' }
+  { id: 'algo-complexity', module: 'Foundations', title: 'Time & Space Complexity', description: 'Learn how to measure runtime, memory, and trade-offs with Big-O, Θ, and Ω.', prerequisites: [], status: 'available', minutes: 35 },
+  { id: 'algo-arrays', module: 'Core data structures', title: 'Arrays and Searching', description: 'Use invariants, prefix sums, two pointers, and binary search to solve array problems.', prerequisites: ['algo-complexity'], status: 'locked', minutes: 40 },
+  { id: 'algo-linked-lists', module: 'Core data structures', title: 'Linked Lists', description: 'Master pointers, reversal, fast and slow runners, and list merging.', prerequisites: ['algo-arrays'], status: 'locked', minutes: 35 },
+  { id: 'algo-stacks-queues', module: 'Core data structures', title: 'Stacks and Queues', description: 'Model LIFO/FIFO systems and solve monotonic stack and sliding-window problems.', prerequisites: ['algo-linked-lists'], status: 'locked', minutes: 35 },
+  { id: 'algo-hashing', module: 'Core data structures', title: 'Hashing', description: 'Trade memory for expected O(1) lookup with maps, sets, and frequency tables.', prerequisites: ['algo-arrays'], status: 'locked', minutes: 30 },
+  { id: 'algo-recursion', module: 'Problem solving', title: 'Recursion and Backtracking', description: 'Build recursion trees, define base cases, and search constrained solution spaces.', prerequisites: ['algo-complexity'], status: 'locked', minutes: 45 },
+  { id: 'algo-sorting', module: 'Problem solving', title: 'Sorting Algorithms', description: 'Compare insertion, merge, quick, heap, and counting sort by stability and complexity.', prerequisites: ['algo-arrays'], status: 'locked', minutes: 45 },
+  { id: 'algo-trees', module: 'Non-linear structures', title: 'Trees and Binary Search Trees', description: 'Traverse trees, reason about height, and maintain ordered search properties.', prerequisites: ['algo-recursion'], status: 'locked', minutes: 45 },
+  { id: 'algo-heaps', module: 'Non-linear structures', title: 'Heaps and Priority Queues', description: 'Use complete trees to schedule work and select smallest or largest elements efficiently.', prerequisites: ['algo-trees'], status: 'locked', minutes: 35 },
+  { id: 'algo-graphs', module: 'Non-linear structures', title: 'Graph Traversals', description: 'Apply BFS and DFS, detect cycles, and reason about connected components.', prerequisites: ['algo-trees'], status: 'locked', minutes: 45 },
+  { id: 'algo-greedy', module: 'Advanced strategies', title: 'Greedy Algorithms', description: 'Prove local choices, exchange arguments, and solve interval and scheduling problems.', prerequisites: ['algo-sorting'], status: 'locked', minutes: 40 },
+  { id: 'algo-dp', module: 'Advanced strategies', title: 'Dynamic Programming', description: 'Turn overlapping subproblems into memoized and tabulated solutions.', prerequisites: ['algo-recursion', 'algo-complexity'], status: 'locked', minutes: 55 }
 ];
 
 async function ready() { await store.connect(); }

@@ -29,7 +29,16 @@ LEASE_SECONDS = 120
 TOPICS = {
     "algo-complexity": {"title": "Time & Space Complexity", "description": "Analyze algorithm efficiency using asymptotic notation.", "prerequisites": []},
     "algo-arrays": {"title": "Arrays and Searching", "description": "Solve array problems with invariants and binary search.", "prerequisites": ["algo-complexity"]},
-    "algo-graphs": {"title": "Graph Traversals", "description": "Apply BFS and DFS to connected structures.", "prerequisites": ["algo-arrays"]},
+    "algo-linked-lists": {"title": "Linked Lists", "description": "Master pointers, reversal, fast and slow runners, and list merging.", "prerequisites": ["algo-arrays"]},
+    "algo-stacks-queues": {"title": "Stacks and Queues", "description": "Model LIFO/FIFO systems and solve monotonic stack and sliding-window problems.", "prerequisites": ["algo-linked-lists"]},
+    "algo-hashing": {"title": "Hashing", "description": "Trade memory for expected O(1) lookup with maps, sets, and frequency tables.", "prerequisites": ["algo-arrays"]},
+    "algo-recursion": {"title": "Recursion and Backtracking", "description": "Build recursion trees, define base cases, and search constrained solution spaces.", "prerequisites": ["algo-complexity"]},
+    "algo-sorting": {"title": "Sorting Algorithms", "description": "Compare insertion, merge, quick, heap, and counting sort by stability and complexity.", "prerequisites": ["algo-arrays"]},
+    "algo-trees": {"title": "Trees and Binary Search Trees", "description": "Traverse trees, reason about height, and maintain ordered search properties.", "prerequisites": ["algo-recursion"]},
+    "algo-heaps": {"title": "Heaps and Priority Queues", "description": "Use complete trees to schedule work and select smallest or largest elements efficiently.", "prerequisites": ["algo-trees"]},
+    "algo-graphs": {"title": "Graph Traversals", "description": "Apply BFS and DFS, detect cycles, and reason about connected components.", "prerequisites": ["algo-trees"]},
+    "algo-greedy": {"title": "Greedy Algorithms", "description": "Prove local choices, exchange arguments, and solve interval and scheduling problems.", "prerequisites": ["algo-sorting"]},
+    "algo-dp": {"title": "Dynamic Programming", "description": "Turn overlapping subproblems into memoized and tabulated solutions.", "prerequisites": ["algo-recursion", "algo-complexity"]},
 }
 TRUSTED_SOURCES = {
     "mit-algorithms": {"title": "MIT OpenCourseWare: Introduction to Algorithms", "url": "https://ocw.mit.edu/courses/6-006-introduction-to-algorithms-fall-2011/", "topics": ["algo-complexity", "algo-arrays", "algo-graphs"]},
@@ -155,7 +164,7 @@ class AgentGraph:
         self.state.current_node = "compose"
     def compose(self):
         evidence = self.state.context["evidence"]
-        prompt = f'''You are the EduSwarm lesson author. Return JSON only with {{"notes":{{"sections":[{{"heading":str,"body":str,"claimIds":[int]}}]}},"claims":[{{"text":str,"evidenceIds":[str,str]}}]}}. Write a concise {self.state.learner_level} lesson for {self.state.context['topic']['title']}. Every factual claim must cite exactly two distinct chunk IDs from this evidence. Do not use facts outside it.\n\nEVIDENCE:\n''' + "\n\n".join(f"[chunk_id={item['chunk_id']}; source={item['title']}]\n{item['text']}" for item in evidence)
+        prompt = f'''You are the EduSwarm lesson author. Return JSON only with {{"notes":{{"sections":[{{"heading":str,"body":str,"claimIds":[int]}}]}},"claims":[{{"text":str,"evidenceIds":[str,str]}}]}}. Write a detailed {self.state.learner_level} tutorial for {self.state.context['topic']['title']}, not a short summary. Produce 5-7 substantial sections: intuition, formal definition, a worked example, common mistakes, complexity or trade-offs, and an exam/application connection. Use concrete examples, small code or pseudocode snippets, and explain each step in prose. Each section body should be 2-4 paragraphs separated by newlines. Every factual claim must cite exactly two distinct chunk IDs from this evidence. Do not use facts outside it.\n\nEVIDENCE:\n''' + "\n\n".join(f"[chunk_id={item['chunk_id']}; source={item['title']}]\n{item['text']}" for item in evidence)
         generated = self.run_agent("Notes Author", "Generate grounded notes with the language model", "Generate only from retrieved chunks and require claim-level citations.", lambda: self.rag.structured_generate(prompt), "structured_generate")
         if not generated.get("notes", {}).get("sections") or not generated.get("claims"): raise RuntimeError("The language model returned an invalid lesson schema")
         self.state.artifacts.update({"notes": generated["notes"], "claims": generated["claims"]}); self.state.current_node = "practice"
