@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createStore, StoredUser } from './store.js';
+import { getCatalog, getTopic, catalogCounts } from './curriculum.js';
 
 const app = express();
 const store = createStore();
@@ -43,21 +44,6 @@ function publicWebUrl() { return process.env.WEB_URL || [...allowedOrigins][0] |
 function now() { return new Date().toISOString(); }
 function defaultUser(id: string, overrides: Partial<StoredUser> = {}): StoredUser { return { id, name: 'Demo Learner', skillLevel: 'beginner', dailyMinutes: 60, avatar: { base: 'owl', color: 'yellow', accessory: 'glasses' }, goals: [], createdAt: now(), updatedAt: now(), ...overrides }; }
 
-const topics = [
-  { id: 'algo-complexity', module: 'Foundations', title: 'Time & Space Complexity', description: 'Learn how to measure runtime, memory, and trade-offs with Big-O, Θ, and Ω.', prerequisites: [], status: 'available', minutes: 35 },
-  { id: 'algo-arrays', module: 'Core data structures', title: 'Arrays and Searching', description: 'Use invariants, prefix sums, two pointers, and binary search to solve array problems.', prerequisites: ['algo-complexity'], status: 'locked', minutes: 40 },
-  { id: 'algo-linked-lists', module: 'Core data structures', title: 'Linked Lists', description: 'Master pointers, reversal, fast and slow runners, and list merging.', prerequisites: ['algo-arrays'], status: 'locked', minutes: 35 },
-  { id: 'algo-stacks-queues', module: 'Core data structures', title: 'Stacks and Queues', description: 'Model LIFO/FIFO systems and solve monotonic stack and sliding-window problems.', prerequisites: ['algo-linked-lists'], status: 'locked', minutes: 35 },
-  { id: 'algo-hashing', module: 'Core data structures', title: 'Hashing', description: 'Trade memory for expected O(1) lookup with maps, sets, and frequency tables.', prerequisites: ['algo-arrays'], status: 'locked', minutes: 30 },
-  { id: 'algo-recursion', module: 'Problem solving', title: 'Recursion and Backtracking', description: 'Build recursion trees, define base cases, and search constrained solution spaces.', prerequisites: ['algo-complexity'], status: 'locked', minutes: 45 },
-  { id: 'algo-sorting', module: 'Problem solving', title: 'Sorting Algorithms', description: 'Compare insertion, merge, quick, heap, and counting sort by stability and complexity.', prerequisites: ['algo-arrays'], status: 'locked', minutes: 45 },
-  { id: 'algo-trees', module: 'Non-linear structures', title: 'Trees and Binary Search Trees', description: 'Traverse trees, reason about height, and maintain ordered search properties.', prerequisites: ['algo-recursion'], status: 'locked', minutes: 45 },
-  { id: 'algo-heaps', module: 'Non-linear structures', title: 'Heaps and Priority Queues', description: 'Use complete trees to schedule work and select smallest or largest elements efficiently.', prerequisites: ['algo-trees'], status: 'locked', minutes: 35 },
-  { id: 'algo-graphs', module: 'Non-linear structures', title: 'Graph Traversals', description: 'Apply BFS and DFS, detect cycles, and reason about connected components.', prerequisites: ['algo-trees'], status: 'locked', minutes: 45 },
-  { id: 'algo-greedy', module: 'Advanced strategies', title: 'Greedy Algorithms', description: 'Prove local choices, exchange arguments, and solve interval and scheduling problems.', prerequisites: ['algo-sorting'], status: 'locked', minutes: 40 },
-  { id: 'algo-dp', module: 'Advanced strategies', title: 'Dynamic Programming', description: 'Turn overlapping subproblems into memoized and tabulated solutions.', prerequisites: ['algo-recursion', 'algo-complexity'], status: 'locked', minutes: 55 }
-];
-
 async function ready() { await store.connect(); }
 async function userFor(req: Request) {
   if (authMode === 'demo') {
@@ -83,10 +69,10 @@ app.post('/auth/logout', async (req: Request, res: Response) => { const id = coo
 app.get('/api/me', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (user) res.json(user); });
 app.post('/api/onboarding', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const body = req.body || {}; const updated = await store.upsertUser({ ...user, name: body.name || user.name, skillLevel: body.skillLevel || user.skillLevel, dailyMinutes: Number(body.dailyMinutes || user.dailyMinutes), targetDate: body.targetDate || null, avatar: body.avatar || user.avatar, goals: [{ id: randomUUID(), type: body.goal || 'gate-cs', title: body.goalTitle || 'Clear GATE CS', progress: 0, paused: false }], updatedAt: now() }); res.status(201).json(updated); });
 app.get('/api/goals', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (user) res.json(user.goals); });
-app.get('/api/curriculum/:goal', (_req: Request, res: Response) => res.json({ template: 'GATE CS Algorithms v1', topics }));
+app.get('/api/curriculum/:goal', (req: Request, res: Response) => { const goal = String(req.params.goal); const topics = getCatalog(goal); if (!topics.length) return res.status(404).json({ error: 'Unknown curriculum' }); const labels: Record<string, string> = { 'gate-cs': 'GATE CSE Complete Preparation', 'web-dev': 'Full-stack Engineering Universe', 'ai-ml': 'AI / ML Engineering Universe' }; res.json({ template: labels[goal] || goal, goal, counts: catalogCounts, topics }); });
 app.get('/api/jobs/:id', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const job = await store.getJob(param(req.params.id)); if (!job || job.ownerId !== user.id) return res.status(404).json({ error: 'Job not found' }); res.json(job); });
 app.get('/api/jobs/:id/events', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const job = await store.getJob(param(req.params.id)); if (!job || job.ownerId !== user.id) return res.status(404).end(); res.setHeader('Content-Type', 'text/event-stream'); res.setHeader('Cache-Control', 'no-cache'); res.setHeader('Connection', 'keep-alive'); res.flushHeaders?.(); res.write(`data: ${JSON.stringify(job)}\n\n`); const unsubscribe = await store.subscribe(param(req.params.id), (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)); req.on('close', () => void unsubscribe()); });
-app.post('/api/jobs', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const topicId = req.body?.topicId || 'algo-complexity'; if (!topics.some((topic) => topic.id === topicId)) return res.status(400).json({ error: 'Unknown topic' }); const id = randomUUID(); const job = { id, ownerId: user.id, topicId, status: 'queued', stage: 'Dean', message: 'Queued for the learning team', package: null, createdAt: now(), updatedAt: now() }; await store.saveJob(job); res.status(202).json(job); void dispatchJob(id, topicId); });
+app.post('/api/jobs', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const topicId = req.body?.topicId || 'gate-cs-algorithms-time-and-space-complexity'; if (!getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' }); const id = randomUUID(); const job = { id, ownerId: user.id, topicId, status: 'queued', stage: 'Dean', message: 'Queued for the learning team', package: null, createdAt: now(), updatedAt: now() }; await store.saveJob(job); res.status(202).json(job); void dispatchJob(id, topicId); });
 app.get('/api/content/:jobId', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const job = await store.getJob(param(req.params.jobId)); if (!job || job.ownerId !== user.id || !job.package) return res.status(404).json({ error: 'Verified package is not ready' }); res.json(job.package); });
 
 async function updateJob(id: string, patch: Record<string, unknown>) { const job = await store.updateJob(id, { ...patch, updatedAt: now() }); if (job) emit(id, job); return job; }

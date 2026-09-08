@@ -153,7 +153,9 @@ class AgentGraph:
         return output
     def dean(self):
         topic = TOPICS.get(self.state.topic_id)
-        if not topic: raise ValueError("Unknown topic")
+        if not topic:
+            readable = re.sub(r"^(gate-cs|web-dev|ai-ml)-", "", self.state.topic_id).replace("-", " ").title()
+            topic = {"title": readable, "description": f"A detailed tutorial on {readable} with concepts, examples, code, and practice.", "prerequisites": []}
         depth = "foundational examples" if self.state.learner_level == "beginner" else "exam-style tradeoffs"
         self.state.context = {"topic": topic, "plan": ["ground evidence", "compose", "practice", "verify", "publish"], "depth": depth, "daily_minutes": self.state.daily_minutes}; self.run_agent("Dean", "Plan the topic package", "Adapt scope to learner profile and time budget.", lambda: {"depth": depth, "minutes": self.state.daily_minutes}); self.state.current_node = "research"
     def research(self):
