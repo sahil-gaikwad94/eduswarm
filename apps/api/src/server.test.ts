@@ -43,3 +43,22 @@ test('jobs cannot be read by another learner', async () => {
   const result = await request(`/api/jobs/${created.body.id}`, { headers: { 'x-demo-user': 'other-user' } });
   assert.equal(result.status, 404);
 });
+
+test('completed topic packages are saved to the learner and progress is readable', async () => {
+  const headers = { 'x-demo-user': 'saved-learner' };
+  const created = await request('/api/jobs', { method: 'POST', headers, body: { topicId: 'algo-complexity' } });
+  let result: any;
+  for (let attempt = 0; attempt < 20; attempt += 1) { await new Promise((resolve) => setTimeout(resolve, 100)); result = await request(`/api/jobs/${created.body.id}`, { headers }); if (result.body.status === 'completed') break; }
+  assert.equal(result.body.status, 'completed');
+  const saved = await request('/api/learning/content', { headers });
+  assert.equal(saved.body.content.some((item: any) => item.topicId === 'algo-complexity'), true);
+  assert.equal(saved.body.progress.some((item: any) => item.topicId === 'algo-complexity' && item.completed), true);
+});
+test('specialist agents create sessions and answer messages', async () => {
+  const headers = { 'x-demo-user': 'agent-learner' };
+  const created = await request('/api/agents/socratic-tutor/sessions', { method: 'POST', headers, body: { topicId: 'algo-complexity' } });
+  assert.equal(created.status, 201);
+  const reply = await request(`/api/agents/sessions/${created.body.id}/messages`, { method: 'POST', headers, body: { text: 'binary search invariant' } });
+  assert.equal(reply.status, 200);
+  assert.equal(reply.body.messages.length, 3);
+});

@@ -11,7 +11,7 @@ function build(goal: CurriculumGoal, modules: ModuleSeed[]): CurriculumTopic[] {
     let previous: string | null = null;
     for (const [title, description, kind, minutes = 35] of seeds) {
       const id = goal === 'gate-cs' && legacyGateIds[title] ? legacyGateIds[title] : `${goal}-${slug(module)}-${slug(title)}`;
-      output.push({ id, module, title, description, prerequisites: previous ? [previous] : [], status: output.length === 0 ? 'available' : 'locked', minutes });
+      output.push({ id, module, title, description, prerequisites: previous ? [previous] : [], status: 'available', minutes });
       previous = id;
     }
   }
