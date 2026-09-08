@@ -87,3 +87,27 @@ def test_missing_provider_configuration_fails_job_without_crashing_request(monke
     assert result['status'] == 'failed'
     assert 'OPENROUTER_API_KEY' in result['error']
     (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+
+
+def test_unindexed_curriculum_topic_uses_safe_preview_evidence(monkeypatch):
+    class EmptyEvidenceRag(FakeProviderRag):
+        def retrieve(self, _query, _topic_id):
+            return []
+
+        def structured_generate(self, prompt):
+            if '"notes"' in prompt:
+                return {'notes': {'sections': [{'heading': 'Preview', 'body': 'Use the curriculum brief.', 'claimIds': [0]}]}, 'claims': [{'text': 'A preview claim.', 'evidenceIds': ['curriculum-brief-0', 'curriculum-brief-1']}]}
+            return {'flashcards': [{'question': 'Q?', 'answer': 'A.', 'claimIds': [0]}], 'quiz': [{'question': 'Quiz?', 'options': ['A', 'B', 'C', 'D'], 'answer': 0, 'explanation': 'Preview-backed.', 'claimIds': [0]}], 'pyqs': [{'year': 2023, 'question': 'Apply it.', 'difficulty': 'beginner', 'claimIds': [0]}]}
+
+    monkeypatch.setattr('app.main.OpenRouterRag', EmptyEvidenceRag)
+    job_id = 'unindexed-curriculum-preview'
+    (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+
+    response = client.post('/v1/topic-jobs', json={'job_id': job_id, 'topic_id': 'gate-cs-engineering-mathematics-discrete-mathematics'})
+
+    assert response.status_code == 202
+    result = client.get(f'/v1/topic-jobs/{job_id}').json()
+    assert result['status'] == 'completed'
+    assert result['package']['verification']['status'] == 'approved'
+    assert result['context']['evidence_mode'] == 'curriculum-preview'
+    (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)

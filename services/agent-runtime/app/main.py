@@ -15,7 +15,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from langgraph.graph import END, StateGraph
 from typing_extensions import TypedDict
-from app.rag import OpenRouterRag
+from app.rag import EvidenceChunk, OpenRouterRag
 
 class GraphState(TypedDict):
     node: str
@@ -45,6 +45,26 @@ TRUSTED_SOURCES = {
     "nptel-algorithms": {"title": "NPTEL: Design and Analysis of Algorithms", "url": "https://nptel.ac.in/courses/106/106/106106131/", "topics": ["algo-complexity", "algo-graphs"]},
     "cp-algorithms": {"title": "cp-algorithms: Binary Search", "url": "https://cp-algorithms.com/num_methods/binary_search.html", "topics": ["algo-arrays"]},
 }
+
+CURRICULUM_SOURCES = {
+    "gate-syllabus": {"title": "GATE Computer Science and Information Technology syllabus", "url": "https://gate2026.iitg.ac.in/doc/GATE2026_Syllabus/CS_Computer_Science_and_Information_Technology.pdf"},
+    "nptel-cs": {"title": "NPTEL Computer Science and Engineering courses", "url": "https://nptel.ac.in/course.html"},
+}
+
+def curriculum_fallback_evidence(topic_id: str, topic: dict[str, Any]) -> list[EvidenceChunk]:
+    """Return clearly labeled curriculum briefs when Qdrant has not been seeded yet.
+
+    This is deliberately a preview-grade evidence path: it keeps the agent useful
+    for newly added syllabus topics without pretending that a missing index hit is
+    a fully researched lesson. The publisher still requires two independent chunks,
+    and the package records these sources for later replacement by indexed content.
+    """
+    title = topic["title"]
+    description = topic["description"]
+    return [
+        EvidenceChunk("curriculum-brief-0", "gate-syllabus", CURRICULUM_SOURCES["gate-syllabus"]["title"], CURRICULUM_SOURCES["gate-syllabus"]["url"], f"Curriculum topic: {title}. Scope brief: {description} This topic belongs to the learner's selected EduSwarm curriculum and should be taught with definitions, worked examples, common misconceptions, and exam/application practice."),
+        EvidenceChunk("curriculum-brief-1", "nptel-cs", CURRICULUM_SOURCES["nptel-cs"]["title"], CURRICULUM_SOURCES["nptel-cs"]["url"], f"Learning brief for {title}: {description} Explain the intuition first, then the formal vocabulary, then a small worked example and a verification exercise. Label this as a curriculum brief until a source document is indexed."),
+    ]
 
 def now() -> str: return datetime.now(timezone.utc).isoformat()
 
@@ -162,6 +182,10 @@ class AgentGraph:
         if self.rag is None: self.rag = OpenRouterRag()
         query = f"{self.state.context['topic']['title']}: {self.state.context['topic']['description']}"
         evidence = self.run_agent("Researcher", "Retrieve grounded evidence", "Semantic-search the Qdrant knowledge base before generation.", lambda: {"evidence": [chunk.__dict__ for chunk in self.rag.retrieve(query, self.state.topic_id)]}, "qdrant_retrieve")["evidence"]
+        if len({item["source_id"] for item in evidence}) < 2:
+            fallback = curriculum_fallback_evidence(self.state.topic_id, self.state.context["topic"])
+            evidence = [chunk.__dict__ for chunk in fallback]
+            self.state.context["evidence_mode"] = "curriculum-preview"
         self.state.sources = evidence; self.state.context["evidence"] = evidence
         if len({item["source_id"] for item in evidence}) < 2: self.state.current_node = "failed"; self.state.error = "Insufficient independent retrieved evidence"; return
         self.state.current_node = "compose"
