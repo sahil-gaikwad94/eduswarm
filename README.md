@@ -27,7 +27,7 @@ The repository includes `render.yaml`. Create a new Render Blueprint from this r
 
 The blueprint uses the default Render URLs `https://eduswarm-web.onrender.com`, `https://eduswarm-api.onrender.com`, and `https://eduswarm-agent.onrender.com`. Change `CORS_ORIGINS`, `VITE_API_URL`, `AGENT_RUNTIME_URL`, `PUBLIC_API_URL`, `WEB_URL`, and `OAUTH_REDIRECT_URI` together if you use custom domains. Production fallback is disabled so runtime outages fail visibly instead of silently switching execution modes. Set the `sync: false` MongoDB, Redis, Google, OpenRouter, and Qdrant values in Render before the first deploy.
 
-The agent runtime uses `OPENROUTER_API_KEY` and OpenRouter's `openrouter/free` dynamic free-model router by default. Create an OpenRouter account and add your own API key in Render; the repository does not include or provide API keys. You can change `OPENROUTER_MODEL` to any model currently available to your provider. `OPENAI_BASE_URL` remains configurable for another OpenAI-compatible provider.
+The agent runtime uses `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1`, and OpenRouter's `openrouter/free` dynamic free-model router by default. Create an OpenRouter account and add your own API key in Render; the repository does not include or provide API keys. You can change `OPENROUTER_MODEL` to any model currently available to your provider.
 
 ## Quality gates
 

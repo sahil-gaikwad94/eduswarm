@@ -51,7 +51,7 @@ services:
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: eduswarm_knowledge
       OPENROUTER_MODEL: openrouter/free
-      OPENAI_BASE_URL: https://openrouter.ai/api/v1
+      OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
       EDUSWARM_STATE_DIR: /tmp/eduswarm-state
     volumes: ["runtime-state:/tmp/eduswarm-state"]
     ports: ["8000:8000"]

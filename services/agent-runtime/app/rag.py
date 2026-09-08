@@ -41,7 +41,7 @@ class Settings:
             os.getenv("QDRANT_API_KEY", ""),
             os.getenv("QDRANT_COLLECTION", "eduswarm_knowledge"),
             os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"),
-            os.getenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/"),
+            os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/"),
         )
 
 

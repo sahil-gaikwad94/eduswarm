@@ -18,7 +18,7 @@ Set these environment variables on **eduswarm-agent**:
 ```text
 OPENROUTER_API_KEY=<your own OpenRouter key>
 OPENROUTER_MODEL=openrouter/free
-OPENAI_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 QDRANT_URL=https://<your-qdrant-cluster-host>
 QDRANT_API_KEY=<your-qdrant-key>
 QDRANT_COLLECTION=eduswarm_knowledge
