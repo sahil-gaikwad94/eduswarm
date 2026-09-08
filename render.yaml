@@ -36,7 +36,7 @@ services:
       - key: REDIS_URL
         sync: false
   - type: web
-    name: eduswarm-agent-runtime
+    name: eduswarm-agent
     runtime: python
     rootDir: services/agent-runtime
     buildCommand: pip install -r requirements.txt
@@ -47,20 +47,20 @@ services:
       mountPath: /tmp/eduswarm-state
       sizeGB: 1
     envVars:
-      - key: GEMINI_MODEL
-        value: gemini-3.6-flash
       - key: EDUSWARM_STATE_DIR
         value: /tmp/eduswarm-state
-      - key: GEMINI_API_KEY
+      - key: OPENROUTER_API_KEY
         sync: false
+      - key: OPENROUTER_MODEL
+        value: meta-llama/llama-3.3-70b-instruct:free
+      - key: OPENAI_BASE_URL
+        value: https://openrouter.ai/api/v1
       - key: QDRANT_URL
         sync: false
       - key: QDRANT_API_KEY
         sync: false
       - key: QDRANT_COLLECTION
         value: eduswarm_knowledge
-      - key: GEMINI_EMBEDDING_MODEL
-        value: gemini-embedding-001
   - type: web
     name: eduswarm-web
     runtime: static
