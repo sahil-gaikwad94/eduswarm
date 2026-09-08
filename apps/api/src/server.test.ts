@@ -62,3 +62,13 @@ test('specialist agents create sessions and answer messages', async () => {
   assert.equal(reply.status, 200);
   assert.equal(reply.body.messages.length, 3);
 });
+
+test('practice attempts are saved with a reusable step-by-step solution', async () => {
+  const headers = { 'x-demo-user': 'revision-learner' };
+  const result = await request('/api/practice/attempts', { method: 'POST', headers, body: { topicId: 'algo-complexity', subject: 'Algorithms', topic: 'Complexity', questionId: 'q-1', question: 'What is binary search?', selectedAnswer: 'O(log n)', correctAnswer: 'O(log n)', correct: true, explanation: 'Each step halves the search interval.', solution: { approach: 'Use repeated halving.', stepByStep: ['Check that the array is sorted.', 'Compare with the midpoint.', 'Discard half the remaining interval.', 'Repeat until found or empty.'], whyItWorks: 'The search interval shrinks geometrically.', commonMistake: 'Using binary search on unsorted input.' } } });
+  assert.equal(result.status, 201);
+  assert.equal(result.body.attempt.solution.stepByStep.length, 4);
+  const history = await request('/api/practice/attempts', { headers });
+  assert.equal(history.body.attempts.length, 1);
+  assert.equal(history.body.attempts[0].solution.whyItWorks, 'The search interval shrinks geometrically.');
+});

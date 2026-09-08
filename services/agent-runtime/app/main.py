@@ -218,6 +218,27 @@ class AgentGraph:
             self.state.status = "failed"; self.state.error = str(exc); self.state.lease_until = None; self.event("Runtime", str(exc), "failed")
         self.save()
 
+class AgentChatRequest(BaseModel):
+    agent_id: str
+    agent_name: str = "Specialist Tutor"
+    agent_role: str = "Learning specialist"
+    topic_id: str | None = None
+    messages: list[dict[str, str]] = Field(default_factory=list)
+
+@app.post("/v1/agent-chat")
+def agent_chat(request: AgentChatRequest):
+    persona = {
+        "socratic-tutor": "Guide with questions, expose assumptions, use small counterexamples, and never skip the learner's reasoning.",
+        "pyq-coach": "Act as an exam strategist. Classify the question, identify the invariant, compare distractors, and teach time management.",
+        "code-reviewer": "Review code like a senior engineer. Cover correctness, edge cases, complexity, maintainability, and a concrete improvement.",
+        "revision-planner": "Design a realistic spaced-repetition plan based on confidence, errors, time budget, and the next measurable action.",
+    }.get(request.agent_id, "Teach clearly with examples and checks for understanding.")
+    try:
+        reply = OpenRouterRag().chat(request.messages[-12:], f"You are {request.agent_name}, EduSwarm's {request.agent_role}. {persona} The learner is studying {request.topic_id or 'a computer science topic'}. Give a thoughtful, actionable response. Explain the reasoning and connect concepts; do not mention hidden chain-of-thought or claim to have performed actions you did not perform.")
+        return {"reply": reply, "provider": "openrouter"}
+    except Exception as exc:
+        raise HTTPException(503, f"Agent provider unavailable: {exc}")
+
 @app.get("/health")
 def health(): return {"ok": True, "service": "agent-runtime", "mode": "langgraph-openrouter-qdrant", "providerConfigured": bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"))}
 @app.get("/ready")

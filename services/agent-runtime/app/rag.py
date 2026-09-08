@@ -173,5 +173,15 @@ class OpenRouterRag:
             raise RuntimeError(f"OpenAI-compatible provider HTTP {last_error.code}: {detail[:1000]}") from last_error
         raise RuntimeError(f"OpenAI-compatible provider request failed: {last_error}") from last_error
 
+    def chat(self, messages: list[dict[str, str]], system: str) -> str:
+        payload = json.dumps({"model": self.settings.model, "messages": [{"role": "system", "content": system}, *messages], "temperature": 0.35}).encode("utf-8")
+        request = urllib.request.Request(f"{self.settings.base_url}/chat/completions", data=payload, headers={"Authorization": f"Bearer {self.settings.api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://eduswarm-web.onrender.com", "X-Title": "EduSwarm"}, method="POST")
+        with urllib.request.urlopen(request, timeout=90) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        content = body["choices"][0]["message"]["content"]
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        return str(content).strip()
+
 
 RagProvider = OpenRouterRag
