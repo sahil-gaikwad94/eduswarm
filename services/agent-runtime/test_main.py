@@ -71,3 +71,19 @@ def test_all_advertised_topics_publish_and_path_ids_are_rejected():
         (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
     invalid = client.post('/v1/topic-jobs', json={'job_id': '../escape', 'topic_id': 'algo-complexity'})
     assert invalid.status_code == 422
+
+
+def test_missing_provider_configuration_fails_job_without_crashing_request(monkeypatch):
+    monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+    monkeypatch.delenv('OPENAI_API_KEY', raising=False)
+    monkeypatch.setattr('app.main.OpenRouterRag', lambda: (_ for _ in ()).throw(RuntimeError('OPENROUTER_API_KEY is required for the intelligent agent runtime')))
+    job_id = 'missing-provider-regression'
+    (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+
+    response = client.post('/v1/topic-jobs', json={'job_id': job_id, 'topic_id': 'algo-complexity'})
+
+    assert response.status_code == 202
+    result = client.get(f'/v1/topic-jobs/{job_id}').json()
+    assert result['status'] == 'failed'
+    assert 'OPENROUTER_API_KEY' in result['error']
+    (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)

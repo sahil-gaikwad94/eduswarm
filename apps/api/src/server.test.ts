@@ -9,7 +9,21 @@ test('health endpoint is available', async () => { const result = await request(
 test('demo session returns the isolated learner identity', async () => { const result = await request('/api/session', { headers: { 'x-demo-user': 'session-user' } }); assert.equal(result.status, 200); assert.equal(result.body.authenticated, true); assert.equal(result.body.user.id, 'session-user'); });
 test('onboarding creates an independent goal', async () => { const result = await request('/api/onboarding', { method: 'POST', body: { name: 'Ada', goal: 'gate-cs', dailyMinutes: 30 } }); assert.equal(result.status, 201); assert.equal(result.body.goals.length, 1); assert.equal(result.body.dailyMinutes, 30); });
 	test('curriculum exposes prerequisite-aware topics', async () => { const result = await request('/api/curriculum/gate-cs'); assert.equal(result.status, 200); assert.equal(result.body.topics[0].status, 'available'); assert.equal(result.body.topics[1].prerequisites.length, 1); });
-	test('curriculum includes the full GATE, full-stack, and AI/ML catalogs', async () => { const gate = await request('/api/curriculum/gate-cs'); const web = await request('/api/curriculum/web-dev'); const ai = await request('/api/curriculum/ai-ml'); assert.equal(gate.body.topics.length >= 40, true); assert.equal(web.body.topics.length >= 30, true); assert.equal(ai.body.topics.length >= 35, true); assert.equal(ai.body.topics.some((topic: any) => topic.title === 'RAG Systems'), true); });
+test('curriculum includes the full GATE, full-stack, and AI/ML catalogs', async () => { const gate = await request('/api/curriculum/gate-cs'); const web = await request('/api/curriculum/web-dev'); const ai = await request('/api/curriculum/ai-ml'); assert.equal(gate.body.topics.length >= 40, true); assert.equal(web.body.topics.length >= 30, true); assert.equal(ai.body.topics.length >= 35, true); assert.equal(ai.body.topics.some((topic: any) => topic.title === 'RAG Systems'), true); });
+test('quiz catalog is available without a study prerequisite and supports subject/topic filters', async () => {
+  const all = await request('/api/quiz/catalog?course=gate-cs&source=gate-pyq');
+  assert.equal(all.status, 200);
+  assert.equal(all.body.available, true);
+  assert.equal(all.body.questions.length > 0, true);
+  assert.equal(all.body.filters.subjects.includes('Operating Systems'), true);
+  const filtered = await request('/api/quiz/catalog?course=gate-cs&source=gate-pyq&subject=Algorithms&topic=Complexity');
+  assert.equal(filtered.body.questions.every((question: any) => question.subject === 'Algorithms' && question.topic === 'Complexity'), true);
+});
+test('agent directory returns goal-oriented specialist roles', async () => {
+  const result = await request('/api/agents');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.agents.some((agent: any) => agent.id === 'pyq-coach'), true);
+});
 test('topic job publishes only a verified package', async () => {
   const created = await request('/api/jobs', { method: 'POST', body: { topicId: 'algo-complexity' } });
   assert.equal(created.status, 202);

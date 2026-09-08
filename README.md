@@ -2,6 +2,8 @@
 
 EduSwarm is a multi-agent AI learning platform for GATE CS, Web Development, and AI/ML. This repository contains the first production-minded vertical slice: onboarding, independent goals, a GATE Algorithms curriculum, asynchronous topic jobs, live progress, verified notes, flashcards, quizzes, and PYQ metadata.
 
+The learning workspace now keeps practice available from day one: learners can switch between GATE CSE, Full-stack, and AI/ML universes, open the PYQ quiz directly, filter GATE CSE questions by subject/topic/year, and browse specialist agents matched to common learning obstacles.
+
 ## Architecture
 
 - `apps/web`: React + Vite + TypeScript frontend.
@@ -32,6 +34,8 @@ The agent runtime uses `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL=https://openro
 ## Quality gates
 
 `npm test` runs API unit tests. `npm run build` builds both applications. Run the agent runtime tests from its package directory with `cd services/agent-runtime && python -m pytest test_main.py`. The deterministic evaluation fixture lives under `tests/evaluation`.
+
+The runtime regression suite also covers missing provider configuration: a topic request is accepted and persisted as a failed, inspectable job rather than crashing during request handling. In production, inspect `/health` and `/ready` on the agent service before debugging provider or Qdrant issues.
 
 ## Security notes
 

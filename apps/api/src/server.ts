@@ -15,6 +15,22 @@ const sessionCookie = 'eduswarm_session';
 const oauthStateCookie = 'eduswarm_oauth_state';
 const sessionTtlMs = 1000 * 60 * 60 * 24 * 30;
 
+const PYQ_BANK = [
+  { id: 'gate-cse-2023-os-scheduling', course: 'gate-cs', source: 'gate-pyq', year: 2023, subject: 'Operating Systems', topic: 'CPU Scheduling', difficulty: 'medium', question: 'A process scheduling policy that gives each ready process a fixed time slice in cyclic order is:', options: ['FCFS', 'Round Robin', 'Shortest Job First', 'Non-preemptive priority'], answer: 1, explanation: 'Round Robin cycles through ready processes and assigns each a bounded time quantum.' },
+  { id: 'gate-cse-2022-db-normalization', course: 'gate-cs', source: 'gate-pyq', year: 2022, subject: 'DBMS', topic: 'Normalization', difficulty: 'medium', question: 'A relation is in BCNF when, for every non-trivial functional dependency X → Y, X is a:', options: ['Foreign key', 'Candidate key', 'Prime attribute', 'Superkey'], answer: 3, explanation: 'BCNF requires every determinant of a non-trivial dependency to be a superkey.' },
+  { id: 'gate-cse-2021-algo-complexity', course: 'gate-cs', source: 'gate-pyq', year: 2021, subject: 'Algorithms', topic: 'Complexity', difficulty: 'easy', question: 'The worst-case time complexity of binary search on a sorted array is:', options: ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)'], answer: 1, explanation: 'Each comparison halves the remaining search interval.' },
+  { id: 'gate-cse-2020-cn-routing', course: 'gate-cs', source: 'gate-pyq', year: 2020, subject: 'Computer Networks', topic: 'Routing', difficulty: 'medium', question: 'Which algorithm is classically associated with distance-vector routing?', options: ['Dijkstra', 'Bellman-Ford', 'Kruskal', 'Prim'], answer: 1, explanation: 'Distance-vector protocols exchange route distances and use Bellman-Ford style updates.' },
+  { id: 'gate-cse-2019-toc-automata', course: 'gate-cs', source: 'gate-pyq', year: 2019, subject: 'Theory of Computation', topic: 'Finite Automata', difficulty: 'medium', question: 'Regular languages are closed under:', options: ['Union', 'Only reversal', 'Only complement', 'None of these'], answer: 0, explanation: 'Regular languages are closed under union, intersection, complement, concatenation, and more.' },
+  { id: 'gate-cse-2018-coa-cache', course: 'gate-cs', source: 'gate-pyq', year: 2018, subject: 'Computer Organization', topic: 'Cache Memory', difficulty: 'hard', question: 'The main benefit of a cache is exploiting:', options: ['Only parallelism', 'Locality of reference', 'Instruction pipelining', 'Virtualization'], answer: 1, explanation: 'Caches rely on temporal and spatial locality of reference.' },
+];
+
+const AGENT_CATALOG = [
+  { id: 'socratic-tutor', name: 'Socratic Tutor', role: 'Concept guide', description: 'Asks the right next question instead of giving away the answer.', bestFor: 'Breaking through confusing concepts', icon: '◌' },
+  { id: 'pyq-coach', name: 'PYQ Coach', role: 'Exam strategist', description: 'Turns missed GATE questions into patterns, shortcuts, and timed drills.', bestFor: 'GATE CSE preparation', icon: '⌁' },
+  { id: 'code-reviewer', name: 'Code Reviewer', role: 'Practice partner', description: 'Reviews your implementation for correctness, complexity, and edge cases.', bestFor: 'Full-stack and AI/ML projects', icon: '</>' },
+  { id: 'revision-planner', name: 'Revision Planner', role: 'Study architect', description: 'Builds a realistic next-session plan from your confidence and weak topics.', bestFor: 'Keeping momentum over time', icon: '↗' },
+];
+
 app.use(cors({ origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)), credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 
@@ -70,6 +86,19 @@ app.get('/api/me', async (req: Request, res: Response) => { const user = await r
 app.post('/api/onboarding', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const body = req.body || {}; const updated = await store.upsertUser({ ...user, name: body.name || user.name, skillLevel: body.skillLevel || user.skillLevel, dailyMinutes: Number(body.dailyMinutes || user.dailyMinutes), targetDate: body.targetDate || null, avatar: body.avatar || user.avatar, goals: [{ id: randomUUID(), type: body.goal || 'gate-cs', title: body.goalTitle || 'Clear GATE CS', progress: 0, paused: false }], updatedAt: now() }); res.status(201).json(updated); });
 app.get('/api/goals', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (user) res.json(user.goals); });
 app.get('/api/curriculum/:goal', (req: Request, res: Response) => { const goal = String(req.params.goal); const topics = getCatalog(goal); if (!topics.length) return res.status(404).json({ error: 'Unknown curriculum' }); const labels: Record<string, string> = { 'gate-cs': 'GATE CSE Complete Preparation', 'web-dev': 'Full-stack Engineering Universe', 'ai-ml': 'AI / ML Engineering Universe' }; res.json({ template: labels[goal] || goal, goal, counts: catalogCounts, topics }); });
+app.get('/api/quiz/catalog', (req: Request, res: Response) => {
+  const course = String(req.query.course || 'gate-cs');
+  const source = String(req.query.source || 'gate-pyq');
+  const subject = String(req.query.subject || 'all');
+  const topic = String(req.query.topic || 'all');
+  const year = String(req.query.year || 'all');
+  const questions = PYQ_BANK.filter((item) => item.course === course && item.source === source && (subject === 'all' || item.subject === subject) && (topic === 'all' || item.topic === topic) && (year === 'all' || String(item.year) === year));
+  const subjects = [...new Set(PYQ_BANK.filter((item) => item.course === course).map((item) => item.subject))];
+  const topics = [...new Set(PYQ_BANK.filter((item) => item.course === course && (subject === 'all' || item.subject === subject)).map((item) => item.topic))];
+  const years = [...new Set(PYQ_BANK.filter((item) => item.course === course).map((item) => item.year))].sort((a, b) => b - a);
+  res.json({ course, source, questions, filters: { subjects, topics, years }, available: questions.length > 0 });
+});
+app.get('/api/agents', (_req: Request, res: Response) => res.json({ agents: AGENT_CATALOG }));
 app.get('/api/jobs/:id', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const job = await store.getJob(param(req.params.id)); if (!job || job.ownerId !== user.id) return res.status(404).json({ error: 'Job not found' }); res.json(job); });
 app.get('/api/jobs/:id/events', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const job = await store.getJob(param(req.params.id)); if (!job || job.ownerId !== user.id) return res.status(404).end(); res.setHeader('Content-Type', 'text/event-stream'); res.setHeader('Cache-Control', 'no-cache'); res.setHeader('Connection', 'keep-alive'); res.flushHeaders?.(); res.write(`data: ${JSON.stringify(job)}\n\n`); const unsubscribe = await store.subscribe(param(req.params.id), (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)); req.on('close', () => void unsubscribe()); });
 app.post('/api/jobs', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const topicId = req.body?.topicId || 'gate-cs-algorithms-time-and-space-complexity'; if (!getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' }); const id = randomUUID(); const job = { id, ownerId: user.id, topicId, status: 'queued', stage: 'Dean', message: 'Queued for the learning team', package: null, createdAt: now(), updatedAt: now() }; await store.saveJob(job); res.status(202).json(job); void dispatchJob(id, topicId); });

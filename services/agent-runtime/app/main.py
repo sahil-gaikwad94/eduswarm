@@ -140,7 +140,7 @@ class ToolRegistry:
 TOOLS = ToolRegistry()
 
 class AgentGraph:
-    def __init__(self, state: JobState): self.state = state; self.rag = OpenRouterRag()
+    def __init__(self, state: JobState): self.state = state; self.rag: OpenRouterRag | None = None
     def save(self): STORE.save(self.state)
     def event(self, agent: str, message: str, status: str = "running"):
         self.state.events.append({"id": len(self.state.events) + 1, "agent": agent, "message": message, "status": status, "node": self.state.current_node, "iteration": self.state.iteration, "timestamp": now()}); self.save()
@@ -159,6 +159,7 @@ class AgentGraph:
         depth = "foundational examples" if self.state.learner_level == "beginner" else "exam-style tradeoffs"
         self.state.context = {"topic": topic, "plan": ["ground evidence", "compose", "practice", "verify", "publish"], "depth": depth, "daily_minutes": self.state.daily_minutes}; self.run_agent("Dean", "Plan the topic package", "Adapt scope to learner profile and time budget.", lambda: {"depth": depth, "minutes": self.state.daily_minutes}); self.state.current_node = "research"
     def research(self):
+        if self.rag is None: self.rag = OpenRouterRag()
         query = f"{self.state.context['topic']['title']}: {self.state.context['topic']['description']}"
         evidence = self.run_agent("Researcher", "Retrieve grounded evidence", "Semantic-search the Qdrant knowledge base before generation.", lambda: {"evidence": [chunk.__dict__ for chunk in self.rag.retrieve(query, self.state.topic_id)]}, "qdrant_retrieve")["evidence"]
         self.state.sources = evidence; self.state.context["evidence"] = evidence
