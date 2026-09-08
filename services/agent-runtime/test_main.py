@@ -10,7 +10,7 @@ from app.rag import EvidenceChunk
 client = TestClient(app)
 
 
-class FakeGeminiRag:
+class FakeProviderRag:
     def retrieve(self, _query, _topic_id):
         return [
             EvidenceChunk('mit-0', 'mit', 'MIT Algorithms', 'https://ocw.mit.edu/example', 'Binary search repeatedly removes half of a sorted search interval.'),
@@ -25,13 +25,13 @@ class FakeGeminiRag:
 
 @pytest.fixture(autouse=True)
 def fake_rag(monkeypatch):
-    monkeypatch.setattr('app.main.GeminiRag', FakeGeminiRag)
+    monkeypatch.setattr('app.main.OpenRouterRag', FakeProviderRag)
 
 
 def test_health_reports_agent_graph_mode():
     response = client.get('/health')
     assert response.status_code == 200
-    assert response.json()['mode'] == 'langgraph-gemini-qdrant'
+    assert response.json()['mode'] == 'langgraph-openrouter-qdrant'
 
 
 def test_topic_job_runs_agents_and_publishes_verified_package():
