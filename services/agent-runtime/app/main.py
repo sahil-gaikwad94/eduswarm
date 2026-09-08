@@ -1,3 +1,4 @@
+"""Durable, evidence-gated topic-package runtime."""
 from __future__ import annotations
 
 import asyncio
