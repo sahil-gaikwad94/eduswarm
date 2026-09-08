@@ -1,8 +1,3 @@
-"""Durable, evidence-gated topic-package runtime.
-
-The default provider is deterministic so CI is reproducible. A future Gemini provider is
-intentionally an adapter boundary; no provider key is required to run this service.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -19,7 +14,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from langgraph.graph import END, StateGraph
 from typing_extensions import TypedDict
-from app.rag import GeminiRag
+from app.rag import OpenRouterRag
 
 class GraphState(TypedDict):
     node: str
@@ -135,7 +130,7 @@ class ToolRegistry:
 TOOLS = ToolRegistry()
 
 class AgentGraph:
-    def __init__(self, state: JobState): self.state = state; self.rag = GeminiRag()
+    def __init__(self, state: JobState): self.state = state; self.rag = OpenRouterRag()
     def save(self): STORE.save(self.state)
     def event(self, agent: str, message: str, status: str = "running"):
         self.state.events.append({"id": len(self.state.events) + 1, "agent": agent, "message": message, "status": status, "node": self.state.current_node, "iteration": self.state.iteration, "timestamp": now()}); self.save()
@@ -160,12 +155,12 @@ class AgentGraph:
     def compose(self):
         evidence = self.state.context["evidence"]
         prompt = f'''You are the EduSwarm lesson author. Return JSON only with {{"notes":{{"sections":[{{"heading":str,"body":str,"claimIds":[int]}}]}},"claims":[{{"text":str,"evidenceIds":[str,str]}}]}}. Write a concise {self.state.learner_level} lesson for {self.state.context['topic']['title']}. Every factual claim must cite exactly two distinct chunk IDs from this evidence. Do not use facts outside it.\n\nEVIDENCE:\n''' + "\n\n".join(f"[chunk_id={item['chunk_id']}; source={item['title']}]\n{item['text']}" for item in evidence)
-        generated = self.run_agent("Notes Author", "Generate grounded notes with Gemini", "Generate only from retrieved chunks and require claim-level citations.", lambda: self.rag.structured_generate(prompt), "gemini_generate_content")
-        if not generated.get("notes", {}).get("sections") or not generated.get("claims"): raise RuntimeError("Gemini returned an invalid lesson schema")
+        generated = self.run_agent("Notes Author", "Generate grounded notes with the language model", "Generate only from retrieved chunks and require claim-level citations.", lambda: self.rag.structured_generate(prompt), "structured_generate")
+        if not generated.get("notes", {}).get("sections") or not generated.get("claims"): raise RuntimeError("The language model returned an invalid lesson schema")
         self.state.artifacts.update({"notes": generated["notes"], "claims": generated["claims"]}); self.state.current_node = "practice"
     def practice(self):
         prompt = f'''Return JSON only with {{"flashcards":[{{"question":str,"answer":str,"claimIds":[int]}}],"quiz":[{{"question":str,"options":[str,str,str,str],"answer":int,"explanation":str,"claimIds":[int]}}],"pyqs":[{{"year":int,"question":str,"difficulty":str,"claimIds":[int]}}]}}. Build active-recall practice only from these verified claims: {json.dumps(self.state.artifacts['claims'])}. Every item needs claimIds.'''
-        generated = self.run_agent("Practice Team", "Generate grounded practice with Gemini", "Derive practice only from verified claims.", lambda: self.rag.structured_generate(prompt), "gemini_generate_content")
+        generated = self.run_agent("Practice Team", "Generate grounded practice with the language model", "Derive practice only from verified claims.", lambda: self.rag.structured_generate(prompt), "structured_generate")
         self.state.artifacts.update(generated); self.state.current_node = "verify"
     def verify(self):
         result = self.run_agent("Fact-Checker", "Verify package", "Fail closed on incomplete evidence.", lambda: TOOLS.validate_package(self.state.artifacts, self.state.context["evidence"]), "validate_package"); self.state.verification = result; self.state.current_node = "publish" if result["status"] == "approved" else "failed"; self.state.error = "; ".join(result["errors"]) if result["status"] != "approved" else None
@@ -187,18 +182,18 @@ class AgentGraph:
         self.save()
 
 @app.get("/health")
-def health(): return {"ok": True, "service": "agent-runtime", "mode": "langgraph-gemini-qdrant", "geminiConfigured": bool(os.getenv("GEMINI_API_KEY"))}
+def health(): return {"ok": True, "service": "agent-runtime", "mode": "langgraph-openrouter-qdrant", "providerConfigured": bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"))}
 @app.get("/ready")
 def ready():
-    if not os.getenv("GEMINI_API_KEY"): raise HTTPException(503, "GEMINI_API_KEY is not configured")
+    if not (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")): raise HTTPException(503, "OPENROUTER_API_KEY is not configured")
     try:
-        GeminiRag().qdrant.get_collections()
+        OpenRouterRag().qdrant.get_collections()
     except Exception as exc:
         raise HTTPException(503, f"Qdrant is not ready: {exc}")
-    return {"ok": True, "service": "agent-runtime", "mode": "langgraph-gemini-qdrant"}
+    return {"ok": True, "service": "agent-runtime", "mode": "langgraph-openrouter-qdrant"}
 @app.post("/v1/knowledge/documents", status_code=202)
 def ingest_document(document: KnowledgeDocument):
-    try: chunks = GeminiRag().ingest(**document.model_dump())
+    try: chunks = OpenRouterRag().ingest(**document.model_dump())
     except Exception as exc: raise HTTPException(503, f"Knowledge ingestion unavailable: {exc}")
     return {"source_id": document.source_id, "chunks": chunks}
 @app.post("/v1/topic-jobs", status_code=202)
