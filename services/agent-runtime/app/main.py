@@ -239,6 +239,10 @@ def agent_chat(request: AgentChatRequest):
     except Exception as exc:
         raise HTTPException(503, f"Agent provider unavailable: {exc}")
 
+async def launch_agent(state: JobState):
+    """Run blocking LangGraph/provider work outside FastAPI's event loop."""
+    await asyncio.to_thread(lambda: asyncio.run(AgentGraph(state).execute()))
+
 @app.get("/health")
 def health(): return {"ok": True, "service": "agent-runtime", "mode": "langgraph-openrouter-qdrant", "providerConfigured": bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"))}
 @app.get("/ready")
@@ -260,7 +264,7 @@ async def create_job(job: TopicJob, background_tasks: BackgroundTasks):
     if existing and existing.status in {"running", "completed"}: return asdict(existing)
     state = existing or JobState(**job.model_dump())
     if not STORE.claim(state): return asdict(STORE.load(job.job_id) or state)
-    background_tasks.add_task(AgentGraph(state).execute); return asdict(state)
+    asyncio.create_task(launch_agent(state)); return asdict(state)
 @app.get("/v1/topic-jobs/{job_id}")
 def get_job(job_id: str):
     try: state = STORE.load(job_id)
@@ -278,4 +282,4 @@ async def resume_job(job_id: str, background_tasks: BackgroundTasks):
     if not state: raise HTTPException(404, "Job not found")
     if state.status == "completed": return asdict(state)
     if not STORE.claim(state): return {"job_id": job_id, "status": "running"}
-    background_tasks.add_task(AgentGraph(state).execute); return {"job_id": job_id, "resumed_from": state.current_node, "status": "queued"}
+    asyncio.create_task(launch_agent(state)); return {"job_id": job_id, "resumed_from": state.current_node, "status": "queued"}
