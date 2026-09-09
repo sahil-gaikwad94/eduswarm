@@ -9,7 +9,7 @@ const store = createStore();
 const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map((origin) => origin.trim()).filter(Boolean));
 const runtime = normalizeServiceUrl(process.env.AGENT_RUNTIME_URL || 'http://localhost:8000');
 const authMode = process.env.AUTH_MODE || (process.env.NODE_ENV === 'production' ? 'google' : 'demo');
-const allowLocalFallback = process.env.ALLOW_LOCAL_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production';
+const allowLocalFallback = process.env.ALLOW_LOCAL_FALLBACK === 'true' || (process.env.ALLOW_LOCAL_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
 const sessionSecret = process.env.SESSION_SECRET || 'development-only-session-secret';
 const sessionCookie = 'eduswarm_session';
 const oauthStateCookie = 'eduswarm_oauth_state';
