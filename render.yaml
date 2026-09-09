@@ -16,7 +16,7 @@ services:
       - key: CORS_ORIGINS
         value: https://eduswarm-web.onrender.com
       - key: ALLOW_LOCAL_FALLBACK
-        value: 'false'
+        value: 'true'
       - key: AUTH_MODE
         value: google
       - key: PUBLIC_API_URL
