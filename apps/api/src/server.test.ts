@@ -38,6 +38,18 @@ test('topic job publishes only a verified package', async () => {
   assert.equal(content.body.verification.status, 'approved');
   assert.equal(content.body.verification.sources.length >= 2, true);
 });
+test('runtime outage completes through the local recovery path', async () => {
+  const previous = process.env.AGENT_RUNTIME_URL;
+  process.env.AGENT_RUNTIME_URL = 'http://127.0.0.1:1';
+  const created = await request('/api/jobs', { method: 'POST', body: { topicId: 'algo-complexity' } });
+  assert.equal(created.status, 202);
+  let result: any;
+  for (let attempt = 0; attempt < 30; attempt += 1) { await new Promise((resolve) => setTimeout(resolve, 100)); result = await request(`/api/jobs/${created.body.id}`); if (result.body.status === 'completed') break; }
+  assert.equal(result.body.status, 'completed');
+  assert.equal(result.body.package.verification.status, 'approved');
+  if (previous === undefined) delete process.env.AGENT_RUNTIME_URL; else process.env.AGENT_RUNTIME_URL = previous;
+});
+
 test('jobs cannot be read by another learner', async () => {
   const created = await request('/api/jobs', { method: 'POST', headers: { 'x-demo-user': 'owner-user' }, body: { topicId: 'algo-complexity' } });
   const result = await request(`/api/jobs/${created.body.id}`, { headers: { 'x-demo-user': 'other-user' } });
