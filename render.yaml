@@ -5,7 +5,7 @@ services:
     rootDir: apps/api
     buildCommand: npm install && npm run build
     startCommand: npm start
-    healthCheckPath: /ready
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
@@ -41,7 +41,7 @@ services:
     rootDir: services/agent-runtime
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port 10000
-    healthCheckPath: /ready
+    healthCheckPath: /health
     disk:
       name: agent-runtime-state
       mountPath: /tmp/eduswarm-state
