@@ -64,6 +64,7 @@ class OpenRouterRag:
         if not self.settings.api_key:
             raise RuntimeError("OPENROUTER_API_KEY is required for the intelligent agent runtime")
         self.qdrant = QdrantClient(url=self.settings.qdrant_url, api_key=self.settings.qdrant_api_key or None)
+        self.request_timeout = max(30, int(os.getenv("OPENROUTER_REQUEST_TIMEOUT_SECONDS", "300")))
 
     @staticmethod
     def _embed(text: str) -> list[float]:
@@ -153,7 +154,7 @@ class OpenRouterRag:
         last_error: Exception | None = None
         for attempt in range(3):
             try:
-                with urllib.request.urlopen(request, timeout=90) as response:
+                with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
                     body = json.loads(response.read().decode("utf-8"))
                 content = body["choices"][0]["message"]["content"]
                 if isinstance(content, list):
@@ -176,7 +177,7 @@ class OpenRouterRag:
     def chat(self, messages: list[dict[str, str]], system: str) -> str:
         payload = json.dumps({"model": self.settings.model, "messages": [{"role": "system", "content": system}, *messages], "temperature": 0.35}).encode("utf-8")
         request = urllib.request.Request(f"{self.settings.base_url}/chat/completions", data=payload, headers={"Authorization": f"Bearer {self.settings.api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://eduswarm-web.onrender.com", "X-Title": "EduSwarm"}, method="POST")
-        with urllib.request.urlopen(request, timeout=90) as response:
+        with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
             body = json.loads(response.read().decode("utf-8"))
         content = body["choices"][0]["message"]["content"]
         if isinstance(content, list):

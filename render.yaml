@@ -53,6 +53,8 @@ services:
         sync: false
       - key: OPENROUTER_MODEL
         value: openrouter/free
+      - key: OPENROUTER_REQUEST_TIMEOUT_SECONDS
+        value: 300
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
       - key: QDRANT_URL
