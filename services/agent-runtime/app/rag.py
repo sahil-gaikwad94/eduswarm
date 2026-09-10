@@ -175,7 +175,10 @@ class OpenRouterRag:
         raise RuntimeError(f"OpenAI-compatible provider request failed: {last_error}") from last_error
 
     def chat(self, messages: list[dict[str, str]], system: str) -> str:
-        payload = json.dumps({"model": self.settings.model, "messages": [{"role": "system", "content": system}, *messages], "temperature": 0.35}).encode("utf-8")
+        normalized = [{"role": str(message.get("role", "user")), "content": str(message.get("content", message.get("text", "")))} for message in messages if message.get("text") or message.get("content")]
+        latest = normalized[-1]["content"] if normalized else ""
+        reinforced_system = system + f"\n\nThe latest learner message is exactly: <learner_message>{latest}</learner_message>\nYou must answer that message directly. Do not ask the learner to provide the message again when it is present."
+        payload = json.dumps({"model": self.settings.model, "messages": [{"role": "system", "content": reinforced_system}, *normalized], "temperature": 0.35}).encode("utf-8")
         request = urllib.request.Request(f"{self.settings.base_url}/chat/completions", data=payload, headers={"Authorization": f"Bearer {self.settings.api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://eduswarm-web.onrender.com", "X-Title": "EduSwarm"}, method="POST")
         with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
             body = json.loads(response.read().decode("utf-8"))
