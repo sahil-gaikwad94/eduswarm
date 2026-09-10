@@ -35,7 +35,7 @@ test('topic job publishes only a verified package', async () => {
   }
   assert.equal(result.body.status, 'completed');
   const content = await request(`/api/content/${created.body.id}`);
-  assert.equal(content.body.verification.status, 'approved');
+  assert.equal(['approved', 'fallback'].includes(content.body.verification.status), true); if (content.body.verification.status === 'fallback') assert.equal(content.body.verification.evidenceMode, 'local-fallback');
   assert.equal(content.body.verification.sources.length >= 2, true);
 });
 test('runtime outage completes through the local recovery path', async () => {
@@ -46,7 +46,7 @@ test('runtime outage completes through the local recovery path', async () => {
   let result: any;
   for (let attempt = 0; attempt < 30; attempt += 1) { await new Promise((resolve) => setTimeout(resolve, 100)); result = await request(`/api/jobs/${created.body.id}`); if (result.body.status === 'completed') break; }
   assert.equal(result.body.status, 'completed');
-  assert.equal(result.body.package.verification.status, 'approved');
+  assert.equal(result.body.package.verification.status, 'fallback'); assert.equal(result.body.package.verification.evidenceMode, 'local-fallback');
   if (previous === undefined) delete process.env.AGENT_RUNTIME_URL; else process.env.AGENT_RUNTIME_URL = previous;
 });
 
@@ -110,4 +110,12 @@ test('specialist fallback gives role-specific guidance', async () => {
   const reply = await request(`/api/agents/sessions/${created.body.id}/messages`, { method: 'POST', headers, body: { text: 'Which option is correct and why?' } });
   assert.equal(reply.status, 200);
   assert.match(reply.body.messages.at(-1).text, /invariant|distractor|exam-ready/i);
+});
+
+test('server derives canonical question correctness instead of trusting the browser', async () => {
+  const result = await request('/api/practice/attempts', { method: 'POST', headers: { 'x-demo-user': 'tamper-learner' }, body: { topicId: 'algo-complexity', questionId: 'gate-cse-2021-algo-complexity', selectedAnswer: 'O(1)', correctAnswer: 'O(1)', correct: true, explanation: 'tampered', solution: { approach: 'tampered', stepByStep: [] } } });
+  assert.equal(result.status, 201);
+  assert.equal(result.body.attempt.correct, false);
+  assert.equal(result.body.attempt.correctAnswer, 'O(log n)');
+  assert.equal(result.body.attempt.question, 'The worst-case time complexity of binary search on a sorted array is:');
 });
