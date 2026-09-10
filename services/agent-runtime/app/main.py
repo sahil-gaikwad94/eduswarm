@@ -234,7 +234,7 @@ def agent_chat(request: AgentChatRequest):
         "revision-planner": "Design a realistic spaced-repetition plan based on confidence, errors, time budget, and the next measurable action.",
     }.get(request.agent_id, "Teach clearly with examples and checks for understanding.")
     try:
-        reply = OpenRouterRag().chat(request.messages[-12:], f"You are {request.agent_name}, EduSwarm's {request.agent_role}. {persona} The learner is studying {request.topic_id or 'a computer science topic'}. Give a thoughtful, actionable response. Explain the reasoning and connect concepts; do not mention hidden chain-of-thought or claim to have performed actions you did not perform.")
+        reply = OpenRouterRag().chat(request.messages[-12:], f"You are {request.agent_name}, EduSwarm's {request.agent_role}. {persona} The learner is studying {request.topic_id or 'a computer science topic'}. Give a precise, actionable response. Start with a direct diagnosis or answer, then use a short structured format: concept, worked example or code, edge case, and next action. Tailor the advice to the specialist role and the learner topic. Never give generic study advice when the learner supplied a concrete question. If code is supplied, identify the bug, explain why it fails, provide corrected code, and state complexity. If an exam question is supplied, eliminate each option and justify the correct one. Do not mention hidden chain-of-thought or claim to have performed actions you did not perform.")
         return {"reply": reply, "provider": "openrouter"}
     except Exception as exc:
         raise HTTPException(503, f"Agent provider unavailable: {exc}")

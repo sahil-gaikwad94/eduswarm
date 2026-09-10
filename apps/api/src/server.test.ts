@@ -84,3 +84,30 @@ test('practice attempts are saved with a reusable step-by-step solution', async 
   assert.equal(history.body.attempts.length, 1);
   assert.equal(history.body.attempts[0].solution.whyItWorks, 'The search interval shrinks geometrically.');
 });
+
+test('quiz catalog supports full-stack and AI/ML subject and topic filters', async () => {
+  const web = await request('/api/quiz/catalog?course=web-dev&source=practice&subject=Backend&topic=API%20Design');
+  assert.equal(web.status, 200);
+  assert.equal(web.body.questions.length, 1);
+  assert.equal(web.body.questions[0].course, 'web-dev');
+  const ai = await request('/api/quiz/catalog?course=ai-ml&source=practice&subject=Generative%20AI&topic=RAG%20Systems');
+  assert.equal(ai.status, 200);
+  assert.equal(ai.body.questions.length, 1);
+  assert.equal(ai.body.questions[0].answer, 1);
+});
+
+test('video recommendations are topic-specific and actionable', async () => {
+  const result = await request('/api/recommendations/videos?topicId=algo-complexity');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.recommendations.length, 3);
+  assert.equal(result.body.recommendations.every((item: any) => item.url.includes('youtube.com')), true);
+  assert.equal(result.body.recommendations.some((item: any) => item.channel === 'NPTEL'), true);
+});
+
+test('specialist fallback gives role-specific guidance', async () => {
+  const headers = { 'x-demo-user': 'quality-learner' };
+  const created = await request('/api/agents/pyq-coach/sessions', { method: 'POST', headers, body: { topicId: 'algo-complexity' } });
+  const reply = await request(`/api/agents/sessions/${created.body.id}/messages`, { method: 'POST', headers, body: { text: 'Which option is correct and why?' } });
+  assert.equal(reply.status, 200);
+  assert.match(reply.body.messages.at(-1).text, /invariant|distractor|exam-ready/i);
+});
