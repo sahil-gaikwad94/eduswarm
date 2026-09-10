@@ -119,3 +119,25 @@ test('server derives canonical question correctness instead of trusting the brow
   assert.equal(result.body.attempt.correctAnswer, 'O(log n)');
   assert.equal(result.body.attempt.question, 'The worst-case time complexity of binary search on a sorted array is:');
 });
+
+test('incorrect answers create a repairable mistake notebook entry', async () => {
+  const headers = { 'x-demo-user': 'mistake-learner' };
+  const result = await request('/api/practice/attempts', { method: 'POST', headers, body: { topicId: 'algo-complexity', questionId: 'gate-cse-2021-algo-complexity', selectedAnswer: 'O(1)', correct: true } });
+  assert.equal(result.status, 201);
+  const mistakes = await request('/api/mistakes', { headers });
+  assert.equal(mistakes.status, 200);
+  assert.equal(mistakes.body.mistakes.length, 1);
+  assert.equal(mistakes.body.mistakes[0].correctAnswer, 'O(log n)');
+  const repair = await request(`/api/mistakes/${mistakes.body.mistakes[0].id}/repair`, { method: 'POST', headers });
+  assert.equal(repair.status, 200);
+  assert.equal(repair.body.steps.length, 3);
+});
+
+test('adaptive practice prioritizes a repeated weak question', async () => {
+  const headers = { 'x-demo-user': 'adaptive-learner' };
+  for (let i = 0; i < 2; i += 1) await request('/api/practice/attempts', { method: 'POST', headers, body: { topicId: 'algo-complexity', questionId: 'gate-cse-2021-algo-complexity', selectedAnswer: 'O(1)', correct: true } });
+  const result = await request('/api/practice/adaptive?course=gate-cs&subject=Algorithms', { headers });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.question.id, 'gate-cse-2021-algo-complexity');
+  assert.equal(result.body.strategy, 'repair-repeated-mistake');
+});
