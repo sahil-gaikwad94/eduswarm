@@ -20,7 +20,7 @@ from app.rag import EvidenceChunk, OpenRouterRag
 class GraphState(TypedDict):
     node: str
 
-app = FastAPI(title="EduSwarm Agent Runtime", version="1.1.0")
+app = FastAPI(title="EduSwarm Agent Runtime", version="1.2.0")
 STATE_DIR = Path(os.getenv("EDUSWARM_STATE_DIR", "/tmp/eduswarm-state"))
 STATE_DIR.mkdir(parents=True, exist_ok=True)
 JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
@@ -50,6 +50,14 @@ CURRICULUM_SOURCES = {
     "gate-syllabus": {"title": "GATE Computer Science and Information Technology syllabus", "url": "https://gate2026.iitg.ac.in/doc/GATE2026_Syllabus/CS_Computer_Science_and_Information_Technology.pdf"},
     "nptel-cs": {"title": "NPTEL Computer Science and Engineering courses", "url": "https://nptel.ac.in/course.html"},
 }
+
+def resolve_topic(topic_id: str) -> dict[str, Any]:
+    """Resolve any curriculum topic id (legacy or new slug) to teachable metadata."""
+    if topic_id in TOPICS:
+        return TOPICS[topic_id]
+    readable = re.sub(r"^(gate-cs|web-dev|ai-ml)-", "", topic_id).replace("-", " ").title()
+    return {"title": readable, "description": f"A detailed tutorial on {readable} with concepts, examples, code, and practice.", "prerequisites": []}
+
 
 def curriculum_fallback_evidence(topic_id: str, topic: dict[str, Any]) -> list[EvidenceChunk]:
     """Return clearly labeled curriculum briefs when Qdrant has not been seeded yet.
@@ -172,10 +180,7 @@ class AgentGraph:
         if status == "failed": raise RuntimeError(f"{agent}: {output['error']}")
         return output
     def dean(self):
-        topic = TOPICS.get(self.state.topic_id)
-        if not topic:
-            readable = re.sub(r"^(gate-cs|web-dev|ai-ml)-", "", self.state.topic_id).replace("-", " ").title()
-            topic = {"title": readable, "description": f"A detailed tutorial on {readable} with concepts, examples, code, and practice.", "prerequisites": []}
+        topic = resolve_topic(self.state.topic_id)
         depth = "foundational examples" if self.state.learner_level == "beginner" else "exam-style tradeoffs"
         self.state.context = {"topic": topic, "plan": ["ground evidence", "compose", "practice", "verify", "publish"], "depth": depth, "daily_minutes": self.state.daily_minutes}; self.run_agent("Dean", "Plan the topic package", "Adapt scope to learner profile and time budget.", lambda: {"depth": depth, "minutes": self.state.daily_minutes}); self.state.current_node = "research"
     def research(self):
@@ -230,14 +235,160 @@ def agent_chat(request: AgentChatRequest):
     persona = {
         "socratic-tutor": "Guide with questions, expose assumptions, use small counterexamples, and never skip the learner's reasoning.",
         "pyq-coach": "Act as an exam strategist. Classify the question, identify the invariant, compare distractors, and teach time management.",
+        "doubt-solver": "Debug the learner's understanding. Give one hint at a time, diagnose the exact failed assumption, then walk the full solution.",
         "code-reviewer": "Review code like a senior engineer. Cover correctness, edge cases, complexity, maintainability, and a concrete improvement.",
+        "mock-examiner": "Coach exam temperament. Analyze accuracy, negative-mark leakage, pacing, and subject order for the next mock.",
         "revision-planner": "Design a realistic spaced-repetition plan based on confidence, errors, time budget, and the next measurable action.",
+        "career-mentor": "Connect learning to careers. Map skills to roles, projects, and interview stories with a concrete ladder.",
     }.get(request.agent_id, "Teach clearly with examples and checks for understanding.")
     try:
         reply = OpenRouterRag().chat(request.messages[-12:], f"You are {request.agent_name}, EduSwarm's {request.agent_role}. {persona} The learner is studying {request.topic_id or 'a computer science topic'}. Give a precise, actionable response. Start with a direct diagnosis or answer, then use a short structured format: concept, worked example or code, edge case, and next action. Tailor the advice to the specialist role and the learner topic. Never give generic study advice when the learner supplied a concrete question. If code is supplied, identify the bug, explain why it fails, provide corrected code, and state complexity. If an exam question is supplied, eliminate each option and justify the correct one. Do not mention hidden chain-of-thought or claim to have performed actions you did not perform.")
         return {"reply": reply, "provider": "openrouter"}
     except Exception as exc:
         raise HTTPException(503, f"Agent provider unavailable: {exc}")
+
+class DoubtSolveRequest(BaseModel):
+    topic_id: str | None = None
+    messages: list[dict[str, str]] = Field(default_factory=list)
+    lesson_context: str = Field(default="", max_length=6000)
+
+
+class StudyPlanRequest(BaseModel):
+    goal: str = "gate-cs"
+    daily_minutes: int = Field(default=60, ge=15, le=240)
+    target_date: str | None = None
+    weak_topics: list[str] = Field(default_factory=list)
+    due_reviews: int = Field(default=0, ge=0)
+    next_topic: str | None = None
+
+
+class EvaluateCodeRequest(BaseModel):
+    language: str = "javascript"
+    code: str = Field(min_length=10, max_length=20000)
+    problem: str = Field(default="General code review", max_length=4000)
+
+
+class MockAnalysisRequest(BaseModel):
+    course: str = "gate-cs"
+    score: float = 0
+    max_marks: float = 1
+    accuracy: float = 0
+    per_subject: list[dict[str, Any]] = Field(default_factory=list)
+    mistakes: list[str] = Field(default_factory=list)
+
+
+@app.post("/v1/doubt-solve")
+def doubt_solve(request: DoubtSolveRequest):
+    """Answer a learner doubt grounded in retrieved evidence + lesson context."""
+    question = ""
+    for message in reversed(request.messages):
+        text = str(message.get("content", message.get("text", ""))).strip()
+        if message.get("role", "user") != "assistant" and text:
+            question = text
+            break
+    if not question:
+        raise HTTPException(422, "A learner question is required")
+    try:
+        rag = OpenRouterRag()
+        evidence: list[EvidenceChunk] = []
+        if request.topic_id:
+            try:
+                evidence = rag.retrieve(f"{resolve_topic(request.topic_id)['title']}: {question}", request.topic_id, limit=4)
+            except Exception:
+                evidence = []
+        grounding = "\n\n".join(chunk.as_prompt() for chunk in evidence) if evidence else "No indexed evidence available; rely on the lesson context and first principles."
+        system = (
+            "You are EduSwarm's Doubt Solver. Resolve the doubt precisely.\n"
+            f"Topic: {resolve_topic(request.topic_id)['title'] if request.topic_id else 'general'}\n"
+            f"Lesson context:\n{request.lesson_context or '(none provided)'}\n\n"
+            f"Retrieved evidence:\n{grounding}\n\n"
+            "Format: start with the direct answer in one or two sentences, then a short worked explanation, "
+            "then the trap to avoid. If the question is ambiguous, state your assumption explicitly."
+        )
+        reply = rag.chat(request.messages[-8:], system)
+        return {"reply": reply, "provider": "openrouter", "sources": sorted({chunk.title for chunk in evidence})}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, f"Agent provider unavailable: {exc}")
+
+
+@app.post("/v1/study-plan")
+def study_plan(request: StudyPlanRequest):
+    """Generate a time-boxed daily plan as structured JSON."""
+    prompt = (
+        'Return JSON only with {"totalMinutes": int, "intensity": "steady|focused|sprint", '
+        '"blocks": [{"kind": str, "title": str, "detail": str, "minutes": int}]}. '
+        f"Design today's study plan for a {request.goal} learner with {request.daily_minutes} minutes. "
+        f"Weak topics: {request.weak_topics or ['none reported']}. "
+        f"Due flashcard reviews: {request.due_reviews}. "
+        f"Next new topic: {request.next_topic or 'syllabus order'}. "
+        f"Target exam/career date: {request.target_date or 'not set'}. "
+        "Rules: blocks must sum to at most daily minutes; put spaced review first when due; "
+        "include exactly one new-topic block when one is available; keep titles concrete."
+    )
+    try:
+        plan = OpenRouterRag().structured_generate(prompt)
+    except Exception as exc:
+        raise HTTPException(503, f"Agent provider unavailable: {exc}")
+    blocks = plan.get("blocks") if isinstance(plan, dict) else None
+    if not blocks:
+        raise HTTPException(502, "The planner returned an empty plan")
+    total = sum(int(block.get("minutes", 0)) for block in blocks if isinstance(block, dict))
+    return {"totalMinutes": total or request.daily_minutes, "intensity": str(plan.get("intensity", "steady")), "blocks": blocks, "provider": "openrouter"}
+
+
+@app.post("/v1/evaluate-code")
+def evaluate_code(request: EvaluateCodeRequest):
+    """Rubric-based code review as structured JSON."""
+    prompt = (
+        'Return JSON only with {"verdict": str, "score": int (0-100), "findings": [str], '
+        '"strengths": [str], "complexity": str, "corrected_code": str | null}. '
+        f"Review this {request.language} solution for: {request.problem}\n\n```{request.language}\n{request.code}\n```\n\n"
+        "Be specific: name the failing input for each finding, state worst-case time/space, "
+        "and provide corrected code only when a real defect exists."
+    )
+    try:
+        review = OpenRouterRag().structured_generate(prompt)
+    except Exception as exc:
+        raise HTTPException(503, f"Agent provider unavailable: {exc}")
+    if not isinstance(review, dict) or "verdict" not in review:
+        raise HTTPException(502, "The reviewer returned an invalid report")
+    review["provider"] = "openrouter"
+    return review
+
+
+@app.post("/v1/mock-analysis")
+def mock_analysis(request: MockAnalysisRequest):
+    """Turn a mock score split into strengths, weaknesses, and next steps."""
+    prompt = (
+        'Return JSON only with {"summary": str, "strengths": [str], "weaknesses": [str], "next_steps": [str]}. '
+        f"Analyze this {request.course} mock: score {request.score}/{request.max_marks}, accuracy {request.accuracy}%. "
+        f"Per-subject split: {json.dumps(request.per_subject) or 'not provided'}. "
+        f"Recent mistake topics: {request.mistakes or ['none']}. "
+        "Give exam-temperament advice: question order, time budget, and which two topics to repair before the next mock."
+    )
+    try:
+        analysis = OpenRouterRag().structured_generate(prompt)
+    except Exception as exc:
+        raise HTTPException(503, f"Agent provider unavailable: {exc}")
+    if not isinstance(analysis, dict) or "next_steps" not in analysis:
+        raise HTTPException(502, "The examiner returned an invalid analysis")
+    analysis["provider"] = "openrouter"
+    return analysis
+
+
+@app.get("/v1/knowledge/search")
+def knowledge_search(q: str, topic_id: str | None = None, limit: int = 6):
+    """Hybrid knowledge search (works with Qdrant alone — no LLM key needed)."""
+    if len(q.strip()) < 2:
+        raise HTTPException(422, "Query must be at least 2 characters")
+    try:
+        chunks = OpenRouterRag().search(q.strip(), topic_id=topic_id, limit=max(1, min(12, limit)))
+    except Exception as exc:
+        raise HTTPException(503, f"Knowledge search unavailable: {exc}")
+    return {"query": q.strip(), "chunks": [chunk.__dict__ for chunk in chunks]}
+
 
 async def launch_agent(state: JobState):
     """Run blocking LangGraph/provider work outside FastAPI's event loop."""

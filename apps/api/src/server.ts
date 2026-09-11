@@ -1,57 +1,121 @@
-import express, { Request, Response } from 'express';
+/**
+ * EduSwarm API — learning platform services.
+ *
+ * Sections:
+ *  1. App setup, auth + sessions
+ *  2. Curriculum, quiz catalog, agents, recommendations
+ *  3. Topic jobs (agent runtime + local recovery) with SSE progress
+ *  4. Learning content, progress, practice, adaptive engine, mistakes
+ *  5. Intelligence: dashboard, search, study plans, SRS flashcards
+ *  6. Mock exams, code lab, doubts, diagnostics, analytics, achievements
+ */
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createStore, StoredUser } from './store.js';
 import { getCatalog, getTopic, catalogCounts } from './curriculum.js';
+import {
+  QUESTION_BANK,
+  filterQuestions,
+  bankFilters,
+  questionById,
+  difficultyOf,
+  stripAnswers,
+} from './questionBank.js';
+import {
+  masteryForTopic,
+  xpForAttempt,
+  levelForXp,
+  sm2Schedule,
+  dateKey,
+  streakInfo,
+  gradeMock,
+  seededShuffle,
+  searchScore,
+  achievementsFor,
+  adaptiveRank,
+  generateStudyPlan,
+  type ProgressLike,
+} from './intelligence.js';
+import { runJavaScript, type RunCase } from './codeRunner.js';
+import { CODE_CHALLENGES, challengeById, publicChallenges } from './challenges.js';
+
+// ------------------------------------------------------------------ setup
 
 const app = express();
 const store = createStore();
-const allowedOrigins = new Set((process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map((origin) => origin.trim()).filter(Boolean));
+const bootAt = Date.now();
+const metrics = { jobsCreated: 0, attemptsLogged: 0 };
+
+const allowedOrigins = new Set(
+  (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map((o) => o.trim()).filter(Boolean),
+);
 const runtime = normalizeServiceUrl(process.env.AGENT_RUNTIME_URL || 'http://localhost:8000');
 const authMode = process.env.AUTH_MODE || (process.env.NODE_ENV === 'production' ? 'google' : 'demo');
-const allowLocalFallback = process.env.ALLOW_LOCAL_FALLBACK === 'true' || (process.env.ALLOW_LOCAL_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
+const allowLocalFallback =
+  process.env.ALLOW_LOCAL_FALLBACK === 'true' ||
+  (process.env.ALLOW_LOCAL_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
 const runtimeTimeoutMs = Math.max(3000, Number(process.env.AGENT_RUNTIME_TIMEOUT_MS || 10000));
 const runtimeMaxWaitMs = Math.max(5000, Number(process.env.AGENT_RUNTIME_MAX_WAIT_MS || 600000));
 const agentChatTimeoutMs = Math.max(10000, Number(process.env.AGENT_CHAT_TIMEOUT_MS || 300000));
-const recommendationCache = new Map<string, { expiresAt: number; value: any }>();
-const recommendationCacheTtlMs = 6 * 60 * 60 * 1000;
 const recoverWithLocalFallback = allowLocalFallback || process.env.NODE_ENV === 'production';
 const sessionSecret = process.env.SESSION_SECRET || 'development-only-session-secret';
 const sessionCookie = 'eduswarm_session';
 const oauthStateCookie = 'eduswarm_oauth_state';
 const sessionTtlMs = 1000 * 60 * 60 * 24 * 30;
 
-const PYQ_BANK = [
-  { id: 'gate-cse-2023-os-scheduling', course: 'gate-cs', source: 'gate-pyq', year: 2023, subject: 'Operating Systems', topic: 'CPU Scheduling', difficulty: 'medium', question: 'A process scheduling policy that gives each ready process a fixed time slice in cyclic order is:', options: ['FCFS', 'Round Robin', 'Shortest Job First', 'Non-preemptive priority'], answer: 1, explanation: 'Round Robin cycles through ready processes and assigns each a bounded time quantum.' },
-  { id: 'gate-cse-2022-db-normalization', course: 'gate-cs', source: 'gate-pyq', year: 2022, subject: 'DBMS', topic: 'Normalization', difficulty: 'medium', question: 'A relation is in BCNF when, for every non-trivial functional dependency X → Y, X is a:', options: ['Foreign key', 'Candidate key', 'Prime attribute', 'Superkey'], answer: 3, explanation: 'BCNF requires every determinant of a non-trivial dependency to be a superkey.' },
-  { id: 'gate-cse-2021-algo-complexity', course: 'gate-cs', source: 'gate-pyq', year: 2021, subject: 'Algorithms', topic: 'Complexity', difficulty: 'easy', question: 'The worst-case time complexity of binary search on a sorted array is:', options: ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)'], answer: 1, explanation: 'Each comparison halves the remaining search interval.' },
-  { id: 'gate-cse-2020-cn-routing', course: 'gate-cs', source: 'gate-pyq', year: 2020, subject: 'Computer Networks', topic: 'Routing', difficulty: 'medium', question: 'Which algorithm is classically associated with distance-vector routing?', options: ['Dijkstra', 'Bellman-Ford', 'Kruskal', 'Prim'], answer: 1, explanation: 'Distance-vector protocols exchange route distances and use Bellman-Ford style updates.' },
-  { id: 'gate-cse-2019-toc-automata', course: 'gate-cs', source: 'gate-pyq', year: 2019, subject: 'Theory of Computation', topic: 'Finite Automata', difficulty: 'medium', question: 'Regular languages are closed under:', options: ['Union', 'Only reversal', 'Only complement', 'None of these'], answer: 0, explanation: 'Regular languages are closed under union, intersection, complement, concatenation, and more.' },
-  { id: 'gate-cse-2018-coa-cache', course: 'gate-cs', source: 'gate-pyq', year: 2018, subject: 'Computer Organization', topic: 'Cache Memory', difficulty: 'hard', question: 'The main benefit of a cache is exploiting:', options: ['Only parallelism', 'Locality of reference', 'Instruction pipelining', 'Virtualization'], answer: 1, explanation: 'Caches rely on temporal and spatial locality of reference.' },
-
-{ id: 'web-html-accessibility', course: 'web-dev', source: 'practice', year: 2025, subject: 'Frontend', topic: 'HTML & Accessibility', difficulty: 'medium', question: 'Which attribute gives an informative accessible name to an icon-only button?', options: ['class', 'aria-label', 'tabindex=-1', 'role=img'], answer: 1, explanation: 'aria-label supplies an accessible name when visible text is not present.' },
-  { id: 'web-api-idempotency', course: 'web-dev', source: 'practice', year: 2025, subject: 'Backend', topic: 'API Design', difficulty: 'medium', question: 'Which HTTP method is designed to be idempotent for replacing a resource?', options: ['POST', 'PATCH', 'PUT', 'CONNECT'], answer: 2, explanation: 'Repeating the same PUT replacement has the same intended effect as applying it once.' },
-  { id: 'web-db-index', course: 'web-dev', source: 'practice', year: 2025, subject: 'Backend', topic: 'Databases', difficulty: 'medium', question: 'What is the primary trade-off of adding an index to a frequently queried column?', options: ['Reads become impossible', 'Writes and storage cost increase', 'Transactions stop being atomic', 'The table cannot be joined'], answer: 1, explanation: 'Indexes speed compatible reads but must be maintained during writes and consume storage.' },
-  { id: 'ai-ml-overfit', course: 'ai-ml', source: 'practice', year: 2025, subject: 'Machine Learning', topic: 'Generalization', difficulty: 'medium', question: 'Which observation most strongly suggests overfitting?', options: ['Training and validation loss are both high', 'Training loss is low while validation loss remains high', 'Both losses decrease together', 'The dataset has labels'], answer: 1, explanation: 'A large train-validation gap indicates memorization without generalization.' },
-  { id: 'ai-ml-recall', course: 'ai-ml', source: 'practice', year: 2025, subject: 'Machine Learning', topic: 'Evaluation', difficulty: 'medium', question: 'When false negatives are especially costly, which metric deserves particular attention?', options: ['Recall', 'Training accuracy only', 'Mean squared error', 'Parameter count'], answer: 0, explanation: 'Recall measures the fraction of actual positives that the model catches.' },
-  { id: 'ai-ml-rag', course: 'ai-ml', source: 'practice', year: 2025, subject: 'Generative AI', topic: 'RAG Systems', difficulty: 'medium', question: 'What is the main purpose of retrieval in a RAG system?', options: ['Replace the language model', 'Supply relevant external context to generation', 'Guarantee every answer is true', 'Remove the need for evaluation'], answer: 1, explanation: 'Retrieval supplies relevant evidence that the generator can use and cite.' },
- ];
 const AGENT_CATALOG = [
   { id: 'socratic-tutor', name: 'Socratic Tutor', role: 'Concept guide', description: 'Asks the right next question instead of giving away the answer.', bestFor: 'Breaking through confusing concepts', icon: '◌' },
   { id: 'pyq-coach', name: 'PYQ Coach', role: 'Exam strategist', description: 'Turns missed GATE questions into patterns, shortcuts, and timed drills.', bestFor: 'GATE CSE preparation', icon: '⌁' },
+  { id: 'doubt-solver', name: 'Doubt Solver', role: 'Concept debugger', description: 'Unsticks you on any question with hints first, then a full worked solution.', bestFor: 'Stuck on a problem right now', icon: '?' },
   { id: 'code-reviewer', name: 'Code Reviewer', role: 'Practice partner', description: 'Reviews your implementation for correctness, complexity, and edge cases.', bestFor: 'Full-stack and AI/ML projects', icon: '</>' },
+  { id: 'mock-examiner', name: 'Mock Examiner', role: 'Test analyst', description: 'Designs timed drills and dissects your mock performance subject by subject.', bestFor: 'Exam temperament and speed', icon: '◷' },
   { id: 'revision-planner', name: 'Revision Planner', role: 'Study architect', description: 'Builds a realistic next-session plan from your confidence and weak topics.', bestFor: 'Keeping momentum over time', icon: '↗' },
+  { id: 'career-mentor', name: 'Career Mentor', role: 'Pathfinder', description: 'Maps your skills to roles, projects, and interview readiness.', bestFor: 'Placements and direction', icon: '★' },
 ];
 
-app.use(cors({ origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)), credentials: true }));
+app.use(cors({ origin: (origin, cb) => cb(null, !origin || allowedOrigins.has(origin)), credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 
-function normalizeServiceUrl(value: string) { const candidate = value.trim(); return /^https?:\/\//i.test(candidate) ? candidate.replace(/\/$/, '') : `https://${candidate}`; }
-function param(value: string | string[] | undefined): string {
-  if (Array.isArray(value)) return value[0] ?? "";
-  return value ?? "";
-}
+// ------------------------------------------------------------ rate limiting
 
+const buckets = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMITS: Array<[RegExp, number]> = [
+  [/^\/api\/code\/run$/, 60],
+  [/^\/api\/jobs$/, 60],
+  [/^\/api\//, 1200],
+];
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (process.env.NODE_ENV === 'test') return next();
+  const rule = RATE_LIMITS.find(([pattern]) => pattern.test(req.path));
+  if (!rule) return next();
+  const [, perMinute] = rule;
+  const identity = String(req.headers['x-demo-user'] || req.ip || 'anon');
+  const key = `${identity}:${req.path}`;
+  const nowMs = Date.now();
+  const slot = buckets.get(key);
+  if (!slot || slot.resetAt <= nowMs) {
+    buckets.set(key, { count: 1, resetAt: nowMs + 60_000 });
+    return next();
+  }
+  slot.count += 1;
+  if (slot.count > perMinute) {
+    res.status(429).json({ error: 'Too many requests — please slow down and retry.' });
+    return;
+  }
+  next();
+});
+
+// ----------------------------------------------------------------- helpers
+
+function normalizeServiceUrl(value: string) {
+  const candidate = value.trim();
+  return /^https?:\/\//i.test(candidate) ? candidate.replace(/\/$/, '') : `https://${candidate}`;
+}
+function param(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] ?? '';
+  return value ?? '';
+}
 function cookieOptions(maxAge: number) {
   const isProd = process.env.NODE_ENV === 'production';
   return [
@@ -59,18 +123,47 @@ function cookieOptions(maxAge: number) {
     'Path=/',
     'HttpOnly',
     isProd ? 'SameSite=None' : 'SameSite=Lax',
-    ...(isProd ? ['Secure'] : [])
+    ...(isProd ? ['Secure'] : []),
   ].join('; ');
 }
-function setCookie(res: Response, name: string, value: string, maxAge: number) { res.setHeader('Set-Cookie', `${name}=${encodeURIComponent(value)}; ${cookieOptions(maxAge)}`); }
+function setCookie(res: Response, name: string, value: string, maxAge: number) {
+  res.setHeader('Set-Cookie', `${name}=${encodeURIComponent(value)}; ${cookieOptions(maxAge)}`);
+}
 function clearCookie(res: Response, name: string) { setCookie(res, name, '', 0); }
-function cookies(req: Request) { return Object.fromEntries((req.headers.cookie || '').split(';').filter(Boolean).map((part) => { const index = part.indexOf('='); return [part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1))]; })); }
-function sign(value: string) { return `${value}.${createHmac('sha256', sessionSecret).update(value).digest('base64url')}`; }
-function verify(value: string | undefined) { if (!value) return null; const [raw, signature] = value.split('.'); if (!raw || !signature) return null; const expected = createHmac('sha256', sessionSecret).update(raw).digest('base64url'); const actualBuffer = Buffer.from(signature); const expectedBuffer = Buffer.from(expected); return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer) ? raw : null; }
-function redirectUri() { return process.env.OAUTH_REDIRECT_URI || `${process.env.PUBLIC_API_URL || 'http://localhost:4000'}/auth/google/callback`; }
-function publicWebUrl() { return process.env.WEB_URL || [...allowedOrigins][0] || 'http://localhost:5173'; }
+function cookies(req: Request) {
+  return Object.fromEntries(
+    (req.headers.cookie || '').split(';').filter(Boolean).map((part) => {
+      const index = part.indexOf('=');
+      return [part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1))];
+    }),
+  );
+}
+function sign(value: string) {
+  return `${value}.${createHmac('sha256', sessionSecret).update(value).digest('base64url')}`;
+}
+function verify(value: string | undefined) {
+  if (!value) return null;
+  const [raw, signature] = value.split('.');
+  if (!raw || !signature) return null;
+  const expected = createHmac('sha256', sessionSecret).update(raw).digest('base64url');
+  const actual = Buffer.from(signature);
+  const wanted = Buffer.from(expected);
+  return actual.length === wanted.length && timingSafeEqual(actual, wanted) ? raw : null;
+}
+function redirectUri() {
+  return process.env.OAUTH_REDIRECT_URI || `${process.env.PUBLIC_API_URL || 'http://localhost:4000'}/auth/google/callback`;
+}
+function publicWebUrl() {
+  return process.env.WEB_URL || [...allowedOrigins][0] || 'http://localhost:5173';
+}
 function now() { return new Date().toISOString(); }
-function defaultUser(id: string, overrides: Partial<StoredUser> = {}): StoredUser { return { id, name: 'Demo Learner', skillLevel: 'beginner', dailyMinutes: 60, avatar: { base: 'owl', color: 'yellow', accessory: 'glasses' }, goals: [], createdAt: now(), updatedAt: now(), ...overrides }; }
+function defaultUser(id: string, overrides: Partial<StoredUser> = {}): StoredUser {
+  return {
+    id, name: 'Demo Learner', skillLevel: 'beginner', dailyMinutes: 60,
+    avatar: { base: 'owl', color: 'yellow', accessory: 'glasses' },
+    goals: [], createdAt: now(), updatedAt: now(), ...overrides,
+  };
+}
 
 async function ready() { await store.connect(); }
 async function userFor(req: Request) {
@@ -84,56 +177,1231 @@ async function userFor(req: Request) {
   const session = sessionId ? await store.getSession(sessionId) : null;
   return session ? store.getUser(session.userId) : null;
 }
-async function requireUser(req: Request, res: Response) { const user = await userFor(req); if (!user) { res.status(401).json({ error: 'Authentication required' }); return null; } return user; }
-function emit(jobId: string, event: any) { void store.publish(jobId, event); }
+async function requireUser(req: Request, res: Response) {
+  const user = await userFor(req);
+  if (!user) { res.status(401).json({ error: 'Authentication required' }); return null; }
+  return user;
+}
+function emit(jobId: string, event: unknown) { void store.publish(jobId, event); }
 
-app.get('/health', (_req: Request, res: Response) => res.json({ ok: true, service: 'eduswarm-api', version: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'local' }));
-app.get('/ready', async (_req: Request, res: Response) => { try { await ready(); const response = await fetch(`${runtime}/ready`); if (!response.ok) throw new Error('runtime unavailable'); res.json({ ok: true, service: 'eduswarm-api', dependencies: { database: 'ready', redis: 'ready', runtime: 'ready' } }); } catch { res.status(503).json({ ok: false, service: 'eduswarm-api' }); } });
-app.get('/api/session', async (req: Request, res: Response) => { const user = await userFor(req); if (!user) return res.status(401).json({ authenticated: false }); res.json({ authenticated: true, user, mode: authMode }); });
-app.get('/auth/google', (_req: Request, res: Response) => { if (authMode !== 'google') return res.redirect(publicWebUrl()); if (!process.env.GOOGLE_CLIENT_ID) return res.status(503).send('Google OAuth is not configured'); const state = randomBytes(24).toString('base64url'); setCookie(res, oauthStateCookie, sign(state), 10 * 60 * 1000); const params = new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: redirectUri(), response_type: 'code', scope: 'openid email profile', state, access_type: 'online', prompt: 'select_account' }); res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`); });
-app.get('/auth/google/callback', async (req: Request, res: Response) => { try { const expected = verify(cookies(req)[oauthStateCookie]); clearCookie(res, oauthStateCookie); if (!expected || expected !== String(req.query.state || '')) return res.status(400).send('Invalid OAuth state'); if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return res.status(503).send('Google OAuth is not configured'); const tokenResponse = await fetch('https://oauth2.googleapis.com/token', { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ code: String(req.query.code || ''), client_id: process.env.GOOGLE_CLIENT_ID, client_secret: process.env.GOOGLE_CLIENT_SECRET, redirect_uri: redirectUri(), grant_type: 'authorization_code' }) }); if (!tokenResponse.ok) throw new Error('OAuth token exchange failed'); const tokens = await tokenResponse.json() as any; const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', { headers: { authorization: `Bearer ${tokens.access_token}` } }); if (!profileResponse.ok) throw new Error('OAuth profile lookup failed'); const profile = await profileResponse.json() as any; const existing = await store.getUserByProvider('google', profile.sub); const user = await store.upsertUser(defaultUser(existing?.id || `google:${profile.sub}`, { ...existing, provider: 'google', providerSubject: profile.sub, email: profile.email, name: profile.name || profile.email || 'Learner', avatar: existing?.avatar || { base: 'owl', color: 'yellow', accessory: 'glasses' } })); const sessionId = randomBytes(32).toString('base64url'); await store.createSession({ id: sessionId, userId: user.id, expiresAt: new Date(Date.now() + sessionTtlMs) }); setCookie(res, sessionCookie, sessionId, sessionTtlMs); res.redirect(publicWebUrl()); } catch (error) { console.error('OAuth callback failed', error); res.status(502).send('Unable to sign in with Google'); } });
-app.post('/auth/logout', async (req: Request, res: Response) => { const id = cookies(req)[sessionCookie]; if (id) await store.deleteSession(id); clearCookie(res, sessionCookie); res.status(204).end(); });
+async function logActivity(ownerId: string, kind: string, extra: Record<string, unknown> = {}) {
+  try {
+    const createdAt = now();
+    await store.logActivity({ id: randomUUID(), ownerId, kind, date: createdAt.slice(0, 10), createdAt, ...extra });
+  } catch { /* analytics must never break learning */ }
+}
 
-app.get('/api/me', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (user) res.json(user); });
-app.post('/api/onboarding', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const body = req.body || {}; const updated = await store.upsertUser({ ...user, name: body.name || user.name, skillLevel: body.skillLevel || user.skillLevel, dailyMinutes: Number(body.dailyMinutes || user.dailyMinutes), targetDate: body.targetDate || null, avatar: body.avatar || user.avatar, goals: [{ id: randomUUID(), type: body.goal || 'gate-cs', title: body.goalTitle || 'Clear GATE CS', progress: 0, paused: false }], updatedAt: now() }); res.status(201).json(updated); });
-app.get('/api/goals', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (user) res.json(user.goals); });
-app.get('/api/curriculum/:goal', (req: Request, res: Response) => { const goal = String(req.params.goal); const topics = getCatalog(goal); if (!topics.length) return res.status(404).json({ error: 'Unknown curriculum' }); const labels: Record<string, string> = { 'gate-cs': 'GATE CSE Complete Preparation', 'web-dev': 'Full-stack Engineering Universe', 'ai-ml': 'AI / ML Engineering Universe' }; res.json({ template: labels[goal] || goal, goal, counts: catalogCounts, topics }); });
+// ------------------------------------------------------- health + sessions
+
+app.get('/health', (_req: Request, res: Response) =>
+  res.json({ ok: true, service: 'eduswarm-api', version: process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || 'local' }));
+
+app.get('/ready', async (_req: Request, res: Response) => {
+  try {
+    await ready();
+    const response = await fetch(`${runtime}/ready`);
+    if (!response.ok) throw new Error('runtime unavailable');
+    res.json({ ok: true, service: 'eduswarm-api', dependencies: { database: 'ready', redis: 'ready', runtime: 'ready' } });
+  } catch {
+    res.status(503).json({ ok: false, service: 'eduswarm-api' });
+  }
+});
+
+app.get('/api/metrics', (_req: Request, res: Response) =>
+  res.json({ ok: true, uptimeSec: Math.floor((Date.now() - bootAt) / 1000), ...metrics, timestamp: now() }));
+
+app.get('/api/session', async (req: Request, res: Response) => {
+  const user = await userFor(req);
+  if (!user) return res.status(401).json({ authenticated: false });
+  res.json({ authenticated: true, user, mode: authMode });
+});
+
+app.get('/auth/google', (_req: Request, res: Response) => {
+  if (authMode !== 'google') return res.redirect(publicWebUrl());
+  if (!process.env.GOOGLE_CLIENT_ID) return res.status(503).send('Google OAuth is not configured');
+  const state = randomBytes(24).toString('base64url');
+  setCookie(res, oauthStateCookie, sign(state), 10 * 60 * 1000);
+  const params = new URLSearchParams({
+    client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: redirectUri(), response_type: 'code',
+    scope: 'openid email profile', state, access_type: 'online', prompt: 'select_account',
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+app.get('/auth/google/callback', async (req: Request, res: Response) => {
+  try {
+    const expected = verify(cookies(req)[oauthStateCookie]);
+    clearCookie(res, oauthStateCookie);
+    if (!expected || expected !== String(req.query.state || '')) return res.status(400).send('Invalid OAuth state');
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) return res.status(503).send('Google OAuth is not configured');
+    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code: String(req.query.code || ''), client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET, redirect_uri: redirectUri(), grant_type: 'authorization_code',
+      }),
+    });
+    if (!tokenResponse.ok) throw new Error('OAuth token exchange failed');
+    const tokens = (await tokenResponse.json()) as any;
+    const profileResponse = await fetch('https://openidconnect.googleapis.com/v1/userinfo', {
+      headers: { authorization: `Bearer ${tokens.access_token}` },
+    });
+    if (!profileResponse.ok) throw new Error('OAuth profile lookup failed');
+    const profile = (await profileResponse.json()) as any;
+    const existing = await store.getUserByProvider('google', profile.sub);
+    const user = await store.upsertUser(defaultUser(existing?.id || `google:${profile.sub}`, {
+      ...existing, provider: 'google', providerSubject: profile.sub, email: profile.email,
+      name: profile.name || profile.email || 'Learner',
+      avatar: existing?.avatar || { base: 'owl', color: 'yellow', accessory: 'glasses' },
+    }));
+    const sessionId = randomBytes(32).toString('base64url');
+    await store.createSession({ id: sessionId, userId: user.id, expiresAt: new Date(Date.now() + sessionTtlMs) });
+    setCookie(res, sessionCookie, sessionId, sessionTtlMs);
+    res.redirect(publicWebUrl());
+  } catch (error) {
+    console.error('OAuth callback failed', error);
+    res.status(502).send('Unable to sign in with Google');
+  }
+});
+
+app.post('/auth/logout', async (req: Request, res: Response) => {
+  const id = cookies(req)[sessionCookie];
+  if (id) await store.deleteSession(id);
+  clearCookie(res, sessionCookie);
+  res.status(204).end();
+});
+
+// ------------------------------------------------------------- me + goals
+
+app.get('/api/me', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (user) res.json(user);
+});
+
+app.patch('/api/me', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const body = req.body || {};
+  const patch: Partial<StoredUser> = { updatedAt: now() };
+  if (typeof body.name === 'string' && body.name.trim()) patch.name = body.name.trim().slice(0, 80);
+  if (['beginner', 'intermediate', 'advanced'].includes(body.skillLevel)) patch.skillLevel = body.skillLevel;
+  if (Number.isFinite(Number(body.dailyMinutes))) patch.dailyMinutes = Math.max(15, Math.min(240, Number(body.dailyMinutes)));
+  if (body.targetDate === null || /^\d{4}-\d{2}-\d{2}$/.test(String(body.targetDate || ''))) patch.targetDate = body.targetDate || null;
+  if (body.avatar && typeof body.avatar === 'object') patch.avatar = body.avatar;
+  res.json(await store.upsertUser({ ...user, ...patch }));
+});
+
+app.post('/api/onboarding', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const body = req.body || {};
+  const updated = await store.upsertUser({
+    ...user,
+    name: body.name || user.name,
+    skillLevel: body.skillLevel || user.skillLevel,
+    dailyMinutes: Number(body.dailyMinutes || user.dailyMinutes),
+    targetDate: body.targetDate || null,
+    avatar: body.avatar || user.avatar,
+    goals: [{ id: randomUUID(), type: body.goal || 'gate-cs', title: body.goalTitle || 'Clear GATE CS', progress: 0, paused: false }],
+    updatedAt: now(),
+  });
+  void logActivity(user.id, 'onboarding', {});
+  res.status(201).json(updated);
+});
+
+app.get('/api/goals', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (user) res.json(user.goals);
+});
+
+const GOAL_TITLES: Record<string, string> = {
+  'gate-cs': 'Clear GATE CS', 'web-dev': 'Become job-ready full-stack', 'ai-ml': 'Ship real AI systems', other: 'Custom goal',
+};
+
+app.post('/api/goals', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const type = String(req.body?.type || '');
+  if (!['gate-cs', 'web-dev', 'ai-ml', 'other'].includes(type)) {
+    return res.status(400).json({ error: 'Unknown goal type' });
+  }
+  const goal = { id: randomUUID(), type, title: String(req.body?.title || GOAL_TITLES[type]), progress: 0, paused: false };
+  await store.upsertUser({ ...user, goals: [...user.goals, goal], updatedAt: now() });
+  res.status(201).json(goal);
+});
+
+app.patch('/api/goals/:id', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const id = param(req.params.id);
+  const goals = user.goals.map((g) => {
+    if (String(g.id) !== id) return g;
+    const next = { ...g };
+    if (typeof req.body?.title === 'string' && req.body.title.trim()) next.title = req.body.title.trim().slice(0, 120);
+    if (Number.isFinite(Number(req.body?.progress))) next.progress = Math.max(0, Math.min(100, Number(req.body.progress)));
+    if (typeof req.body?.paused === 'boolean') next.paused = req.body.paused;
+    return next;
+  });
+  if (!user.goals.some((g) => String(g.id) === id)) return res.status(404).json({ error: 'Goal not found' });
+  const updated = await store.upsertUser({ ...user, goals, updatedAt: now() });
+  res.json(updated.goals.find((g) => String(g.id) === id));
+});
+
+app.delete('/api/goals/:id', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  await store.upsertUser({ ...user, goals: user.goals.filter((g) => String(g.id) !== param(req.params.id)), updatedAt: now() });
+  res.status(204).end();
+});
+
+// --------------------------------------- curriculum, quiz, agents, videos
+
+app.get('/api/curriculum/:goal', (req: Request, res: Response) => {
+  const goal = String(req.params.goal);
+  const topics = getCatalog(goal);
+  if (!topics.length) return res.status(404).json({ error: 'Unknown curriculum' });
+  const labels: Record<string, string> = {
+    'gate-cs': 'GATE CSE Complete Preparation',
+    'web-dev': 'Full-stack Engineering Universe',
+    'ai-ml': 'AI / ML Engineering Universe',
+  };
+  res.json({ template: labels[goal] || goal, goal, counts: catalogCounts, topics });
+});
+
 app.get('/api/quiz/catalog', (req: Request, res: Response) => {
   const course = String(req.query.course || 'gate-cs');
-  const source = String(req.query.source || 'gate-pyq');
+  const source = String(req.query.source || (course === 'gate-cs' ? 'gate-pyq' : 'practice'));
   const subject = String(req.query.subject || 'all');
   const topic = String(req.query.topic || 'all');
   const year = String(req.query.year || 'all');
-  const questions = PYQ_BANK.filter((item) => item.course === course && item.source === source && (subject === 'all' || item.subject === subject) && (topic === 'all' || item.topic === topic) && (year === 'all' || String(item.year) === year));
-  const subjects = [...new Set(PYQ_BANK.filter((item) => item.course === course).map((item) => item.subject))];
-  const topics = [...new Set(PYQ_BANK.filter((item) => item.course === course && (subject === 'all' || item.subject === subject)).map((item) => item.topic))];
-  const years = [...new Set(PYQ_BANK.filter((item) => item.course === course).map((item) => item.year))].sort((a, b) => b - a);
-  res.json({ course, source, questions, filters: { subjects, topics, years }, available: questions.length > 0 });
+  const difficulty = String(req.query.difficulty || 'all');
+  const questions = filterQuestions({ course, source, subject, topic, year, difficulty });
+  const scoped = QUESTION_BANK.filter((item) => item.course === course && (source === 'all' || item.source === source));
+  res.json({
+    course, source, questions,
+    filters: {
+      subjects: [...new Set(scoped.map((item) => item.subject))].sort(),
+      topics: [...new Set(scoped.filter((item) => subject === 'all' || item.subject === subject).map((item) => item.topic))].sort(),
+      years: [...new Set(scoped.map((item) => item.year))].sort((a, b) => b - a),
+      difficulties: ['easy', 'medium', 'hard'],
+    },
+    available: questions.length > 0,
+  });
 });
-app.get('/api/agents', (_req: Request, res: Response) => res.json({ agents: AGENT_CATALOG }));
-app.get('/api/recommendations/videos', (req: Request, res: Response) => { const topicId = String(req.query.topicId || ''); const topic = getTopic(topicId); if (!topic) return res.status(404).json({ error: 'Unknown topic' }); const query = encodeURIComponent(topic.title + ' tutorial'); const recommendations = [ { title: topic.title + ' — NPTEL lecture', channel: 'NPTEL', kind: 'University lecture', url: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(topic.title + ' NPTEL lecture') }, { title: topic.title + ' — MIT OpenCourseWare', channel: 'MIT OpenCourseWare', kind: 'Conceptual deep dive', url: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(topic.title + ' MIT OpenCourseWare') }, { title: topic.title + ' — practical walkthrough', channel: 'freeCodeCamp / community', kind: 'Worked examples', url: 'https://www.youtube.com/results?search_query=' + query } ]; res.json({ topicId, topic: topic.title, recommendations }); });
-app.get('/api/jobs/:id', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const job = await store.getJob(param(req.params.id)); if (!job || job.ownerId !== user.id) return res.status(404).json({ error: 'Job not found' }); const age = Date.now() - new Date(job.updatedAt || job.createdAt).getTime(); if (['queued', 'running'].includes(job.status) && age > 2 * 60 * 1000) { if (recoverWithLocalFallback) void runLocalFallback(job.id, job.topicId); else void dispatchJob(job.id, job.topicId); } res.json(job); });
-app.get('/api/jobs/:id/events', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const job = await store.getJob(param(req.params.id)); if (!job || job.ownerId !== user.id) return res.status(404).end(); res.setHeader('Content-Type', 'text/event-stream'); res.setHeader('Cache-Control', 'no-cache'); res.setHeader('Connection', 'keep-alive'); res.flushHeaders?.(); res.write(`data: ${JSON.stringify(job)}\n\n`); const unsubscribe = await store.subscribe(param(req.params.id), (event) => res.write(`data: ${JSON.stringify(event)}\n\n`)); req.on('close', () => void unsubscribe()); });
-app.post('/api/jobs', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const topicId = req.body?.topicId || 'gate-cs-algorithms-time-and-space-complexity'; if (!getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' }); const id = randomUUID(); const job = { id, ownerId: user.id, topicId, status: 'queued', stage: 'Dean', message: 'Queued for the learning team', package: null, createdAt: now(), updatedAt: now() }; await store.saveJob(job); res.status(202).json(job); void dispatchJob(id, topicId); });
-app.get('/api/content/:jobId', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const job = await store.getJob(param(req.params.jobId)); if (!job || job.ownerId !== user.id || !job.package) return res.status(404).json({ error: 'Verified package is not ready' }); res.json(job.package); });
-app.get('/api/learning/content', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (user) res.json({ content: await store.listContent(user.id), progress: await store.listProgress(user.id) }); });
-app.get('/api/learning/content/:topicId', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const content = await store.getContent(user.id, param(req.params.topicId)); if (!content) return res.status(404).json({ error: 'No saved learning package' }); res.json(content.package); });
-app.post('/api/learning/progress', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const topicId = String(req.body?.topicId || ''); if (!getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' }); const progress = await store.saveProgress({ id: user.id + ':' + topicId, ownerId: user.id, topicId, completed: Boolean(req.body?.completed), solvedQuestions: Number(req.body?.solvedQuestions || 0), reviewedFlashcards: Number(req.body?.reviewedFlashcards || 0), updatedAt: now() }); res.json(progress); });
-app.post('/api/practice/attempts', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const topicId=String(req.body?.topicId||''); if (!getTopic(topicId)) return res.status(400).json({error:'Unknown topic'}); const current=await store.getProgress(user.id, topicId); const questionId=String(req.body?.questionId||randomUUID()); const canonical=PYQ_BANK.find((item)=>item.id===questionId); const selectedAnswer=String(req.body?.selectedAnswer||''); const attempt={id:randomUUID(),questionId,subject:String(canonical?.subject||req.body?.subject||'General'),topic:String(canonical?.topic||req.body?.topic||getTopic(topicId)?.title||topicId),question:String(canonical?.question||req.body?.question||''),selectedAnswer,correctAnswer:String(canonical ? canonical.options[canonical.answer] : (req.body?.correctAnswer||'')),correct:Boolean(canonical ? selectedAnswer===canonical.options[canonical.answer] : req.body?.correct),solution:req.body?.solution||{approach:'Identify the governing concept and its invariant.',stepByStep:['Restate the question and list the given facts.','Name the concept or invariant that constrains the answer.','Eliminate choices that contradict the definition or edge cases.','Verify the remaining choice with a small example.'],whyItWorks:String(req.body?.explanation||'The selected answer follows from the definition and its stated constraints.'),commonMistake:'Choosing a familiar-looking option without checking the assumptions.'},answeredAt:now()}; const attempts=[...(current?.attempts||[]).filter((item:any)=>item.questionId!==attempt.questionId),attempt]; const progress=await store.saveProgress({id:user.id+':'+topicId,ownerId:user.id,topicId,completed:Boolean(req.body?.completed||current?.completed),solvedQuestions:attempts.length,reviewedFlashcards:Number(req.body?.reviewedFlashcards||current?.reviewedFlashcards||0),attempts,updatedAt:now()}); if (!attempt.correct) await store.saveMistake({ id: randomUUID(), ownerId: user.id, questionId: attempt.questionId, topicId, subject: attempt.subject, topic: attempt.topic, question: attempt.question, learnerAnswer: attempt.selectedAnswer, correctAnswer: attempt.correctAnswer, explanation: attempt.solution.whyItWorks, misconception: attempt.solution.commonMistake, createdAt: attempt.answeredAt }); res.status(201).json({attempt,progress}); });
-app.get('/api/practice/attempts', async (req: Request, res: Response) => { const user=await requireUser(req,res); if(user){ const progress=await store.listProgress(user.id); res.json({attempts:progress.flatMap((item:any)=>item.attempts||[])}); } });
-app.get('/api/practice/adaptive', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const course = String(req.query.course || 'gate-cs'); const subject = String(req.query.subject || 'all'); const topic = String(req.query.topic || 'all'); const attempts = (await store.listProgress(user.id)).flatMap((item: any) => item.attempts || []); const candidates = PYQ_BANK.filter((item) => item.course === course && (subject === 'all' || item.subject === subject) && (topic === 'all' || item.topic === topic)); if (!candidates.length) return res.json({ question: null, reason: 'No questions match these filters.' }); const stats = new Map<string, { wrong: number; recent: number }>(); for (const attempt of attempts) { const stat = stats.get(attempt.questionId) || { wrong: 0, recent: 0 }; if (!attempt.correct) stat.wrong += 1; stat.recent = Math.max(stat.recent, new Date(attempt.answeredAt || 0).getTime()); stats.set(attempt.questionId, stat); } const ranked = candidates.map((item) => ({ item, stat: stats.get(item.id) || { wrong: 0, recent: 0 } })).sort((a, b) => (b.stat.wrong - a.stat.wrong) || (a.stat.recent - b.stat.recent) || (a.item.difficulty === 'easy' ? -1 : 0)); res.json({ question: ranked[0].item, strategy: ranked[0].stat.wrong ? 'repair-repeated-mistake' : 'build-recall', attempts: attempts.length }); });
-app.get('/api/mistakes', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (user) res.json({ mistakes: await store.listMistakes(user.id) }); });
-app.delete('/api/mistakes/:id', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (user) { await store.deleteMistake(user.id, param(req.params.id)); res.status(204).end(); } });
-app.post('/api/mistakes/:id/repair', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const mistake = (await store.listMistakes(user.id)).find((item: any) => item.id === param(req.params.id)); if (!mistake) return res.status(404).json({ error: 'Mistake not found' }); res.json({ title: `Repair lesson: ${mistake.topic}`, steps: [`Recall the concept behind ${mistake.topic} without looking at the answer.`, `Compare your answer with the governing definition: ${mistake.misconception || 'identify the assumption that failed.'}`, 'Solve one smaller example, then retry the original pattern.'], questionId: mistake.questionId, topic: mistake.topic }); });
-app.post('/api/agents/:agentId/sessions', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const agent = AGENT_CATALOG.find((item) => item.id === param(req.params.agentId)); if (!agent) return res.status(404).json({ error: 'Unknown agent' }); const session = await store.saveAgentSession({ id: randomUUID(), ownerId: user.id, agentId: agent.id, agent, topicId: req.body?.topicId || null, messages: [{ role: 'assistant', text: 'I am ' + agent.name + '. Tell me what you are studying, where you are stuck, and what outcome you want. I will guide you step by step.' }], createdAt: now(), updatedAt: now() }); res.status(201).json(session); });
-app.get('/api/agents/sessions', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (user) res.json({ sessions: await store.listAgentSessions(user.id) }); });
-app.post('/api/agents/sessions/:id/messages', async (req: Request, res: Response) => { const user = await requireUser(req, res); if (!user) return; const session = await store.getAgentSession(user.id, param(req.params.id)); if (!session) return res.status(404).json({ error: 'Session not found' }); const text = String(req.body?.text || '').trim(); if (!text) return res.status(400).json({ error: 'Message required' }); let reply=''; try { const ai=await fetch(runtime+'/v1/agent-chat',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({agent_id:session.agentId,agent_name:session.agent?.name,agent_role:session.agent?.role,topic_id:session.topicId,messages:session.messages.concat({role:'user',text})}),signal:AbortSignal.timeout(agentChatTimeoutMs)}); if(ai.ok){ const data=await ai.json(); reply=String(data.reply||''); } } catch {} if(!reply){const lower=text.toLowerCase();const subject=text.length>80?'the exact problem you described':'this topic';reply=session.agentId==='socratic-tutor'?`Let us solve ${subject} instead of jumping to a conclusion. First, restate the goal and list the facts you know. Then choose the smallest concrete example and predict the result. Next, name the definition or invariant that must remain true after each step. Check one boundary case and explain why the result still follows. Your next action: write those facts and the smallest example; I will challenge the next assumption.`:session.agentId==='pyq-coach'?`Here is an exam-ready approach for ${subject}: (1) classify the question by concept, (2) write the governing definition or invariant, (3) estimate the expected complexity or constraint, (4) eliminate every distractor by a specific contradiction, and (5) verify with a small edge case. Do one untimed attempt first, record the trap you fell into, then repeat it in 90 seconds. Send the question and options if you want a complete option-by-option solution.`:session.agentId==='code-reviewer'?`I will review ${subject} as production code, not just style. Start by stating the contract: inputs, outputs, errors, and side effects. Then test empty, singleton, duplicate, maximum, invalid, and adversarial inputs. Check the invariant after every mutation, prove termination, and calculate worst-case time and extra space. Finally separate correctness fixes from refactors. Paste the code, expected behavior, actual behavior, and one failing case; I will return line-level findings with a corrected implementation and tests.`:`For ${subject}, use a revision loop: recall the definition without notes, solve one representative problem, compare your reasoning with the expected invariant, log the exact error category, and schedule reviews at 1 day, 3 days, 7 days, and 14 days. Your next session should have one weak concept, two timed questions, and one explanation written from memory.`;} session.messages=[...(session.messages||[]),{role:'user',text},{role:'assistant',text:reply}]; session.updatedAt=now(); await store.saveAgentSession(session); res.json(session); });
 
-async function updateJob(id: string, patch: Record<string, unknown>) { const job = await store.updateJob(id, { ...patch, updatedAt: now() }); if (job) emit(id, job); return job; }
-async function dispatchJob(id: string, topicId: string) { try { const response = await fetch(`${runtime}/v1/topic-jobs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ job_id: id, topic_id: topicId }), signal: AbortSignal.timeout(runtimeTimeoutMs) }); if (!response.ok) throw new Error(`runtime ${response.status}`); void syncRuntimeJob(id); } catch { if (recoverWithLocalFallback) await runLocalFallback(id, (await store.getJob(id))?.topicId || 'algo-complexity'); else await updateJob(id, { status: 'failed', message: 'The agent runtime is unavailable; please retry later.' }); } }
-async function syncRuntimeJob(id: string) { for (let attempt = 0; attempt < Math.ceil(runtimeMaxWaitMs / 1000); attempt += 1) { await new Promise((resolve) => setTimeout(resolve, 1000)); try { const response = await fetch(`${runtime}/v1/topic-jobs/${id}`, { signal: AbortSignal.timeout(5000) }); if (!response.ok) throw new Error('runtime polling failed'); const remote = await response.json() as any; const latest = remote.events?.at(-1); if (latest) await updateJob(id, { stage: latest.agent, message: latest.message }); if (remote.status === 'failed' || remote.status === 'missing') { if (recoverWithLocalFallback) return void await runLocalFallback(id, (await store.getJob(id))?.topicId || 'algo-complexity'); return void await updateJob(id, { status: 'failed', message: remote.error || latest?.message || 'The agent runtime could not complete this topic.' }); } if (remote.status === 'completed') { const current = await store.getJob(id); if (current?.status === 'completed') return; if (!remote.package?.topicId || remote.package.verification?.status !== 'approved') throw new Error('invalid verified package'); const completed = await updateJob(id, { status: 'completed', package: remote.package }); if (completed) { await store.saveContent({ id: completed.id, ownerId: completed.ownerId, topicId: completed.topicId, package: remote.package, savedAt: now() }); await store.saveProgress({ id: completed.ownerId + ':' + completed.topicId, ownerId: completed.ownerId, topicId: completed.topicId, completed: true, solvedQuestions: 0, reviewedFlashcards: 0, updatedAt: now() }); } return; } } catch {} } if (recoverWithLocalFallback) return void await runLocalFallback(id, (await store.getJob(id))?.topicId || 'algo-complexity'); await updateJob(id, { status: 'failed', message: 'The agent team timed out; please retry.' }); }
-async function runLocalFallback(id: string, topicId: string) { const topic = getTopic(topicId) || { title: topicId.replace(/^(gate-cs|web-dev|ai-ml)-/,'').replaceAll('-',' ').replace(/\b\w/g,(c:string)=>c.toUpperCase()), description: 'A complete tutorial with definitions, examples, edge cases, and practice.' }; const stages = [['Dean','Selecting topic'],['Researcher','Grounding sources'],['Notes Author','Writing detailed notes'],['Practice Team','Creating recall practice'],['Fact-Checker','Checking claims'],['Publisher','Saving your study kit']]; await updateJob(id,{status:'running'}); for (const [stage,message] of stages) { await updateJob(id,{stage,message}); await new Promise((resolve)=>setTimeout(resolve,120)); } const title=topic.title; const section=(heading:string, body:string)=>({heading,body}); const packageData:any={topicId,title,verification:{status:'fallback',evidenceMode:'local-fallback',provider:'local-template',fallbackReason:'Agent runtime or provider was unavailable',sources:['MIT OpenCourseWare','NPTEL','MDN Web Docs'],claimsChecked:0},notes:{sections:[section('Start with the intuition',title+' becomes easier when you connect the definition to a small concrete example. Name the input, the transformation, and the result. Then ask what must remain true after every step. This mental model is more useful than memorising a one-line definition.\n\nTest the idea with an edge case and explain it in your own words before reaching for notation or code.'),section('Formal definition and vocabulary',topic.description+' In a formal solution, define each variable, state assumptions, and distinguish the general rule from a special case. Translate the problem into these terms before choosing an algorithm; that prevents most avoidable mistakes.\n\nBe explicit about preconditions, bounds, and whether the behaviour depends on input order.'),section('Worked example, step by step','Take a small input and write down the state after every operation. At each step identify the invariant: the fact that remains true and guarantees progress. Increase the input and check that the same reasoning scales. Keep implementation close to the proof and state time and extra-space complexity beside it.'),section('Common mistakes and edge cases','Check empty input, a single element, duplicates, sorted and reverse-sorted data, maximum values, and invalid states. Compare alternative approaches by invariant, worst case, memory use, and failure modes rather than only by happy-path output.'),section('Exam and real-world connection','In an exam, classify the pattern, then eliminate options that violate the invariant or complexity constraint. In production, the same idea appears in APIs, data pipelines, caching, and observability. Finish by writing a two-sentence summary and one open question.') ]},videos:[{title:title+' — NPTEL lecture',url:'https://www.youtube.com/results?search_query='+encodeURIComponent(title+' NPTEL lecture'),timestamp:'00:00'},{title:title+' — tutorial walkthrough',url:'https://www.youtube.com/results?search_query='+encodeURIComponent(title+' tutorial'),timestamp:'00:00'}],flashcards:[{question:'What is the core idea behind '+title+'?',answer:'State the input, invariant, transformation, and result; verify the rule with a small example and its edge cases.'},{question:'How should you analyse a solution?',answer:'Check preconditions, correctness invariant, time complexity, extra space, and boundary cases.'},{question:'What is a common failure mode?',answer:'Using a valid rule without checking its assumptions, especially on empty, duplicate, maximum, or adversarial inputs.'},{question:'How do you turn this into exam readiness?',answer:'Classify the pattern, solve untimed, explain every distractor, then repeat under a time limit.'}],quiz:[{question:'Which is the strongest first step when solving '+title+'?',options:['Memorise a template','Identify input, invariant, and preconditions','Skip edge cases','Optimise before proving'],answer:1,explanation:'A clear model and explicit assumptions guide both proof and implementation.'},{question:'What should a high-quality explanation include?',options:['Only final answer','Definition, example, mistakes, trade-offs, and practice','Only a formula','Unverified links'],answer:1,explanation:'Learning sticks when concepts connect to intuition, formal language, examples, and retrieval.'}],pyqs:[{year:2024,question:'Apply the invariant and complexity analysis to a '+title+' problem.',difficulty:'medium'}]}; const completed=await updateJob(id,{status:'completed',package:packageData}); if(completed){await store.saveContent({id:completed.id,ownerId:completed.ownerId,topicId,package:packageData,savedAt:now()}); await store.saveProgress({id:completed.ownerId+':'+topicId,ownerId:completed.ownerId,topicId,completed:true,solvedQuestions:0,reviewedFlashcards:0,updatedAt:now()});} }
+app.get('/api/agents', (_req: Request, res: Response) => res.json({ agents: AGENT_CATALOG }));
+
+app.get('/api/recommendations/videos', (req: Request, res: Response) => {
+  const topicId = String(req.query.topicId || '');
+  const topic = getTopic(topicId);
+  if (!topic) return res.status(404).json({ error: 'Unknown topic' });
+  const query = encodeURIComponent(`${topic.title} tutorial`);
+  res.json({
+    topicId, topic: topic.title,
+    recommendations: [
+      { title: `${topic.title} — NPTEL lecture`, channel: 'NPTEL', kind: 'University lecture', url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${topic.title} NPTEL lecture`)}` },
+      { title: `${topic.title} — MIT OpenCourseWare`, channel: 'MIT OpenCourseWare', kind: 'Conceptual deep dive', url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${topic.title} MIT OpenCourseWare`)}` },
+      { title: `${topic.title} — practical walkthrough`, channel: 'freeCodeCamp / community', kind: 'Worked examples', url: `https://www.youtube.com/results?search_query=${query}` },
+    ],
+  });
+});
+
+// ------------------------------------------------- topic jobs + SSE stream
+
+app.get('/api/jobs/:id', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const job = await store.getJob(param(req.params.id));
+  if (!job || job.ownerId !== user.id) return res.status(404).json({ error: 'Job not found' });
+  const age = Date.now() - new Date(job.updatedAt || job.createdAt).getTime();
+  if (['queued', 'running'].includes(job.status) && age > 2 * 60 * 1000) {
+    if (recoverWithLocalFallback) void runLocalFallback(job.id, job.topicId);
+    else void dispatchJob(job.id, job.topicId);
+  }
+  res.json(job);
+});
+
+app.get('/api/jobs/:id/events', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const job = await store.getJob(param(req.params.id));
+  if (!job || job.ownerId !== user.id) return res.status(404).end();
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+  res.write(`data: ${JSON.stringify(job)}\n\n`);
+  const unsubscribe = await store.subscribe(param(req.params.id), (event) => res.write(`data: ${JSON.stringify(event)}\n\n`));
+  req.on('close', () => void unsubscribe());
+});
+
+app.post('/api/jobs', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const topicId = req.body?.topicId || 'gate-cs-algorithms-time-and-space-complexity';
+  if (!getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' });
+  const id = randomUUID();
+  const job = {
+    id, ownerId: user.id, topicId, status: 'queued', stage: 'Dean',
+    message: 'Queued for the learning team', package: null, createdAt: now(), updatedAt: now(),
+  };
+  await store.saveJob(job);
+  metrics.jobsCreated += 1;
+  res.status(202).json(job);
+  void dispatchJob(id, topicId);
+});
+
+app.get('/api/content/:jobId', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const job = await store.getJob(param(req.params.jobId));
+  if (!job || job.ownerId !== user.id || !job.package) return res.status(404).json({ error: 'Verified package is not ready' });
+  res.json(job.package);
+});
+
+// ------------------------------------ learning content, progress, practice
+
+app.get('/api/learning/content', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (user) res.json({ content: await store.listContent(user.id), progress: await store.listProgress(user.id) });
+});
+
+app.get('/api/learning/content/:topicId', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const content = await store.getContent(user.id, param(req.params.topicId));
+  if (!content) return res.status(404).json({ error: 'No saved learning package' });
+  res.json(content.package);
+});
+
+app.post('/api/learning/progress', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const topicId = String(req.body?.topicId || '');
+  if (!getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' });
+  const progress = await store.saveProgress({
+    id: `${user.id}:${topicId}`, ownerId: user.id, topicId,
+    completed: Boolean(req.body?.completed),
+    solvedQuestions: Number(req.body?.solvedQuestions || 0),
+    reviewedFlashcards: Number(req.body?.reviewedFlashcards || 0),
+    updatedAt: now(),
+  });
+  res.json(progress);
+});
+
+app.post('/api/practice/attempts', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const topicId = String(req.body?.topicId || '');
+  if (!getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' });
+  const current = await store.getProgress(user.id, topicId);
+  const questionId = String(req.body?.questionId || randomUUID());
+  // Canonical correctness: the bank is the source of truth, never the browser.
+  const canonical = questionById(questionId);
+  const selectedAnswer = String(req.body?.selectedAnswer || '');
+  const attempt = {
+    id: randomUUID(),
+    questionId,
+    subject: String(canonical?.subject || req.body?.subject || 'General'),
+    topic: String(canonical?.topic || req.body?.topic || getTopic(topicId)?.title || topicId),
+    question: String(canonical?.question || req.body?.question || ''),
+    selectedAnswer,
+    correctAnswer: String(canonical ? canonical.options[canonical.answer] : req.body?.correctAnswer || ''),
+    correct: Boolean(canonical ? selectedAnswer === canonical.options[canonical.answer] : req.body?.correct),
+    solution: req.body?.solution || {
+      approach: 'Identify the governing concept and its invariant.',
+      stepByStep: [
+        'Restate the question and list the given facts.',
+        'Name the concept or invariant that constrains the answer.',
+        'Eliminate choices that contradict the definition or edge cases.',
+        'Verify the remaining choice with a small example.',
+      ],
+      whyItWorks: String(req.body?.explanation || 'The selected answer follows from the definition and its stated constraints.'),
+      commonMistake: 'Choosing a familiar-looking option without checking the assumptions.',
+    },
+    answeredAt: now(),
+  };
+  const attempts = [...(current?.attempts || []).filter((item: any) => item.questionId !== attempt.questionId), attempt];
+  const progress = await store.saveProgress({
+    id: `${user.id}:${topicId}`, ownerId: user.id, topicId,
+    completed: Boolean(req.body?.completed || current?.completed),
+    solvedQuestions: attempts.length,
+    reviewedFlashcards: Number(req.body?.reviewedFlashcards || current?.reviewedFlashcards || 0),
+    attempts, updatedAt: now(),
+  });
+  metrics.attemptsLogged += 1;
+  void logActivity(user.id, 'attempt', {
+    topicId, questionId, correct: attempt.correct,
+    xp: xpForAttempt(attempt.correct, difficultyOf(questionId)),
+  });
+  if (!attempt.correct) {
+    await store.saveMistake({
+      id: randomUUID(), ownerId: user.id, questionId: attempt.questionId, topicId,
+      subject: attempt.subject, topic: attempt.topic, question: attempt.question,
+      learnerAnswer: attempt.selectedAnswer, correctAnswer: attempt.correctAnswer,
+      explanation: attempt.solution.whyItWorks, misconception: attempt.solution.commonMistake,
+      createdAt: attempt.answeredAt,
+    });
+  }
+  res.status(201).json({ attempt, progress });
+});
+
+app.get('/api/practice/attempts', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (user) {
+    const progress = await store.listProgress(user.id);
+    res.json({ attempts: progress.flatMap((item: any) => item.attempts || []) });
+  }
+});
+
+app.get('/api/practice/adaptive', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const course = String(req.query.course || 'gate-cs');
+  const subject = String(req.query.subject || 'all');
+  const topic = String(req.query.topic || 'all');
+  const attempts = (await store.listProgress(user.id)).flatMap((item: any) => item.attempts || []);
+  const candidates = filterQuestions({ course, source: 'all', subject, topic });
+  if (!candidates.length) return res.json({ question: null, reason: 'No questions match these filters.' });
+  const stats = new Map<string, { wrong: number; seen: number; recent: number }>();
+  for (const attempt of attempts) {
+    const stat = stats.get(attempt.questionId) || { wrong: 0, seen: 0, recent: 0 };
+    stat.seen += 1;
+    if (!attempt.correct) stat.wrong += 1;
+    stat.recent = Math.max(stat.recent, new Date(attempt.answeredAt || 0).getTime());
+    stats.set(attempt.questionId, stat);
+  }
+  const ranked = adaptiveRank(candidates, stats, user.skillLevel);
+  const top = ranked[0];
+  const topStat = stats.get(top.id);
+  res.json({
+    question: top,
+    strategy: topStat && topStat.wrong > 0 ? 'repair-repeated-mistake' : 'build-recall',
+    attempts: attempts.length,
+  });
+});
+
+app.get('/api/mistakes', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (user) res.json({ mistakes: await store.listMistakes(user.id) });
+});
+
+app.delete('/api/mistakes/:id', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (user) {
+    await store.deleteMistake(user.id, param(req.params.id));
+    res.status(204).end();
+  }
+});
+
+app.post('/api/mistakes/:id/repair', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const mistake = (await store.listMistakes(user.id)).find((item: any) => item.id === param(req.params.id));
+  if (!mistake) return res.status(404).json({ error: 'Mistake not found' });
+  res.json({
+    title: `Repair lesson: ${mistake.topic}`,
+    steps: [
+      `Recall the concept behind ${mistake.topic} without looking at the answer.`,
+      `Compare your answer with the governing definition: ${mistake.misconception || 'identify the assumption that failed.'}`,
+      'Solve one smaller example, then retry the original pattern.',
+    ],
+    questionId: mistake.questionId, topic: mistake.topic,
+  });
+});
+
+// ------------------------------------------------ specialist agent sessions
+
+app.post('/api/agents/:agentId/sessions', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const agent = AGENT_CATALOG.find((item) => item.id === param(req.params.agentId));
+  if (!agent) return res.status(404).json({ error: 'Unknown agent' });
+  const session = await store.saveAgentSession({
+    id: randomUUID(), ownerId: user.id, agentId: agent.id, agent, topicId: req.body?.topicId || null,
+    messages: [{ role: 'assistant', text: `I am ${agent.name}. Tell me what you are studying, where you are stuck, and what outcome you want. I will guide you step by step.` }],
+    createdAt: now(), updatedAt: now(),
+  });
+  res.status(201).json(session);
+});
+
+app.get('/api/agents/sessions', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (user) res.json({ sessions: await store.listAgentSessions(user.id) });
+});
+
+app.post('/api/agents/sessions/:id/messages', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const session = await store.getAgentSession(user.id, param(req.params.id));
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  const text = String(req.body?.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Message required' });
+  let reply = '';
+  try {
+    const ai = await fetch(`${runtime}/v1/agent-chat`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        agent_id: session.agentId, agent_name: session.agent?.name, agent_role: session.agent?.role,
+        topic_id: session.topicId, messages: session.messages.concat({ role: 'user', text }),
+      }),
+      signal: AbortSignal.timeout(agentChatTimeoutMs),
+    });
+    if (ai.ok) reply = String((await ai.json()).reply || '');
+  } catch { /* local specialist guidance below */ }
+  if (!reply) reply = specialistFallback(session.agentId, text);
+  session.messages = [...(session.messages || []), { role: 'user', text }, { role: 'assistant', text: reply }];
+  session.updatedAt = now();
+  await store.saveAgentSession(session);
+  res.json(session);
+});
+
+function specialistFallback(agentId: string, text: string): string {
+  const subject = text.length > 80 ? 'the exact problem you described' : 'this topic';
+  if (agentId === 'socratic-tutor') {
+    return `Let us solve ${subject} instead of jumping to a conclusion. First, restate the goal and list the facts you know. Then choose the smallest concrete example and predict the result. Next, name the definition or invariant that must remain true after each step. Check one boundary case and explain why the result still follows. Your next action: write those facts and the smallest example; I will challenge the next assumption.`;
+  }
+  if (agentId === 'pyq-coach') {
+    return `Here is an exam-ready approach for ${subject}: (1) classify the question by concept, (2) write the governing definition or invariant, (3) estimate the expected complexity or constraint, (4) eliminate every distractor by a specific contradiction, and (5) verify with a small edge case. Do one untimed attempt first, record the trap you fell into, then repeat it in 90 seconds. Send the question and options if you want a complete option-by-option solution.`;
+  }
+  if (agentId === 'doubt-solver') {
+    return `Let us debug ${subject} with hints before answers. Hint 1: name the single concept being tested and its definition. Hint 2: work the smallest concrete example by hand. Hint 3: check which option violates the invariant or an edge case. If you are still stuck, tell me your current guess and why — I will pinpoint the exact failed assumption and then walk the full solution.`;
+  }
+  if (agentId === 'code-reviewer') {
+    return `I will review ${subject} as production code, not just style. Start by stating the contract: inputs, outputs, errors, and side effects. Then test empty, singleton, duplicate, maximum, invalid, and adversarial inputs. Check the invariant after every mutation, prove termination, and calculate worst-case time and extra space. Finally separate correctness fixes from refactors. Paste the code, expected behavior, actual behavior, and one failing case; I will return line-level findings with a corrected implementation and tests.`;
+  }
+  if (agentId === 'mock-examiner') {
+    return `For ${subject}, train temperament like the exam: attempt easy questions first, park hard ones for round two, and never let one question consume more than its marks deserve. Track three numbers per mock — accuracy, negative marks leaked, and skips converted. Send your last mock score split and I will prescribe the exact subject order and time budget for your next attempt.`;
+  }
+  if (agentId === 'career-mentor') {
+    return `For ${subject}, connect learning to proof of work: one concept → one built artifact → one interview story. Pick the role you want, list its three most-tested skills, and ship a small project demonstrating each. Tell me your target role and timeline; I will map a project ladder and the questions you must be able to answer cold.`;
+  }
+  return `For ${subject}, use a revision loop: recall the definition without notes, solve one representative problem, compare your reasoning with the expected invariant, log the exact error category, and schedule reviews at 1 day, 3 days, 7 days, and 14 days. Your next session should have one weak concept, two timed questions, and one explanation written from memory.`;
+}
+
+// ============================================================ INTELLIGENCE
+
+type LearnerSnapshot = {
+  progress: ProgressLike[];
+  attempts: any[];
+  mistakes: any[];
+  reviews: any[];
+  mocks: any[];
+  activities: any[];
+  content: any[];
+};
+
+async function snapshot(userId: string): Promise<LearnerSnapshot> {
+  const [progress, mistakes, reviews, mocks, activities, content] = await Promise.all([
+    store.listProgress(userId), store.listMistakes(userId), store.listReviews(userId),
+    store.listMocks(userId), store.listActivities(userId, 500), store.listContent(userId),
+  ]);
+  return { progress: progress as ProgressLike[], attempts: progress.flatMap((p: any) => p.attempts || []), mistakes, reviews, mocks, activities, content };
+}
+
+function xpFromSnapshot(snap: LearnerSnapshot): number {
+  let xp = 0;
+  for (const attempt of snap.attempts) xp += xpForAttempt(Boolean(attempt.correct), difficultyOf(String(attempt.questionId || '')));
+  for (const p of snap.progress) if (p.completed) xp += 40;
+  xp += snap.reviews.length * 4;
+  xp += snap.mocks.filter((m) => m.status === 'submitted').length * 30;
+  xp += snap.activities.filter((a) => a.kind === 'code' && a.solved).length * 20;
+  return xp;
+}
+
+function accuracyOf(attempts: any[]): number {
+  if (!attempts.length) return 0;
+  return Math.round((attempts.filter((a) => a.correct).length / attempts.length) * 100);
+}
+
+async function dueCards(userId: string, topicId: string | null, limit = 20) {
+  const [reviews, content] = await Promise.all([store.listReviews(userId), store.listContent(userId)]);
+  const nowMs = Date.now();
+  const scoped = topicId ? reviews.filter((r) => r.topicId === topicId) : reviews;
+  const due = scoped
+    .filter((r) => new Date(r.nextDueAt).getTime() <= nowMs)
+    .sort((a, b) => new Date(a.nextDueAt).getTime() - new Date(b.nextDueAt).getTime())
+    .map((r) => ({ cardKey: r.cardKey, topicId: r.topicId, question: r.question, answer: r.answer, fresh: false, efactor: r.efactor, intervalDays: r.intervalDays, repetitions: r.repetitions }));
+  const scheduled = new Set(reviews.map((r) => r.cardKey));
+  const fresh: any[] = [];
+  for (const item of content) {
+    if (topicId && item.topicId !== topicId) continue;
+    for (const card of item.package?.flashcards || []) {
+      const cardKey = `${item.topicId}:${card.question}`;
+      if (!scheduled.has(cardKey)) {
+        fresh.push({ cardKey, topicId: item.topicId, question: card.question, answer: card.answer, fresh: true });
+      }
+    }
+  }
+  return { due: [...due, ...fresh].slice(0, limit), dueCount: due.length, freshCount: fresh.length };
+}
+
+// ------------------------------------------------------------- dashboard
+
+app.get('/api/dashboard', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const goal = String(req.query.goal || (user.goals[0] as any)?.type || 'gate-cs');
+  const topics = getCatalog(goal);
+  const snap = await snapshot(user.id);
+
+  const masteryByTopic = new Map(topics.map((t) => [t.id, masteryForTopic(snap.progress.find((p) => p.topicId === t.id))]));
+  const modules = [...new Set(topics.map((t) => t.module))].map((module) => {
+    const group = topics.filter((t) => t.module === module);
+    const scores = group.map((t) => masteryByTopic.get(t.id)?.score || 0);
+    return {
+      module,
+      score: group.length ? Math.round(scores.reduce((a, b) => a + b, 0) / group.length) : 0,
+      completed: group.filter((t) => masteryByTopic.get(t.id)?.completed).length,
+      topics: group.length,
+    };
+  });
+
+  const xp = xpFromSnapshot(snap);
+  const activeDates = [
+    ...snap.attempts.map((a) => dateKey(a.answeredAt || '')),
+    ...snap.progress.map((p) => dateKey(p.updatedAt || '')),
+    ...snap.activities.map((a) => a.date),
+  ].filter(Boolean);
+  const streak = streakInfo(activeDates);
+  const { dueCount, freshCount } = await dueCards(user.id, null, 1);
+  const totalDue = dueCount + freshCount;
+
+  const nextNew = topics.find((t) => !snap.progress.some((p) => p.topicId === t.id && p.completed));
+  const weakModule = [...modules].sort((a, b) => a.score - b.score).find((m) => m.score < 80);
+  const nextActions: any[] = [];
+  if (totalDue > 0) nextActions.push({ kind: 'review', icon: '▤', title: `Review ${totalDue} due card${totalDue === 1 ? '' : 's'}`, detail: 'Spaced repetition keeps recall sharp.', page: 'flashcards' });
+  if (snap.mistakes.length > 0) nextActions.push({ kind: 'repair', icon: '!', title: `Repair ${snap.mistakes.length} mistake${snap.mistakes.length === 1 ? '' : 's'}`, detail: `Start with ${snap.mistakes[0].topic || 'your latest miss'}.`, page: 'mistakes' });
+  if (nextNew) nextActions.push({ kind: 'learn', icon: '◈', title: `Continue: ${nextNew.title}`, detail: nextNew.module, page: 'lesson', topicId: nextNew.id });
+  if (weakModule && snap.attempts.length > 0) nextActions.push({ kind: 'drill', icon: '✓', title: `Drill ${weakModule.module}`, detail: `Mastery ${weakModule.score}% — adaptive questions first.`, page: 'quiz' });
+  if (snap.progress.filter((p) => p.completed).length >= 3) nextActions.push({ kind: 'mock', icon: '◷', title: 'Take a mini mock', detail: 'Timed, with GATE negative marking.', page: 'mocks' });
+  if (!nextActions.length) nextActions.push({ kind: 'explore', icon: '▦', title: 'Explore the syllabus', detail: 'Pick any topic to generate your first kit.', page: 'syllabus' });
+
+  const bySubject = new Map<string, { correct: number; total: number }>();
+  for (const a of snap.attempts) {
+    const key = a.subject || 'General';
+    const entry = bySubject.get(key) || { correct: 0, total: 0 };
+    entry.total += 1;
+    if (a.correct) entry.correct += 1;
+    bySubject.set(key, entry);
+  }
+  const weakSubject = [...bySubject.entries()].filter(([, v]) => v.total >= 3).sort((a, b) => a[1].correct / a[1].total - b[1].correct / b[1].total)[0];
+  const insights: string[] = [];
+  const completedCount = snap.progress.filter((p) => p.completed).length;
+  insights.push(completedCount === 0
+    ? 'Generate your first study kit to activate mastery tracking.'
+    : `You have completed ${completedCount} of ${topics.length} tutorials in this universe.`);
+  if (snap.attempts.length >= 5) {
+    insights.push(`Practice accuracy is ${accuracyOf(snap.attempts)}% across ${snap.attempts.length} attempts.`);
+    if (weakSubject) insights.push(`Weakest area with real volume: ${weakSubject[0]} (${Math.round((weakSubject[1].correct / weakSubject[1].total) * 100)}%).`);
+  } else if (snap.attempts.length > 0) {
+    insights.push('Answer a few more questions to unlock weak-area detection.');
+  } else {
+    insights.push('Attempt the PYQ lab once — adaptive picks improve with every answer.');
+  }
+  insights.push(streak.current >= 2
+    ? `You are on a ${streak.current}-day streak. Protect it with a 15-minute review.`
+    : 'Short daily sessions beat weekend marathons — consistency builds recall.');
+
+  const week: any[] = [];
+  for (let i = 6; i >= 0; i -= 1) {
+    const date = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10);
+    const dayAttempts = snap.attempts.filter((a) => dateKey(a.answeredAt || '') === date);
+    week.push({
+      date,
+      attempts: dayAttempts.length,
+      correct: dayAttempts.filter((a) => a.correct).length,
+      xp: dayAttempts.reduce((n, a) => n + xpForAttempt(Boolean(a.correct), difficultyOf(String(a.questionId || ''))), 0),
+    });
+  }
+
+  res.json({
+    goal,
+    xp,
+    level: levelForXp(xp),
+    streak,
+    completedTopics: completedCount,
+    totalTopics: topics.length,
+    accuracy: accuracyOf(snap.attempts),
+    totalAttempts: snap.attempts.length,
+    dueReviews: totalDue,
+    mistakes: snap.mistakes.length,
+    mastery: modules,
+    topicMastery: topics.map((t) => {
+      const m = masteryByTopic.get(t.id);
+      return { topicId: t.id, score: m ? m.score : 0, band: m ? m.band : 'nascent', attempts: m ? m.attempts : 0, accuracy: m ? m.accuracy : 0, completed: m ? m.completed : false };
+    }),
+    nextActions: nextActions.slice(0, 5),
+    insights,
+    week,
+  });
+});
+
+// ---------------------------------------------------------------- search
+
+app.get('/api/search', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ topics: [], questions: [], lessons: [] });
+  const goal = String(req.query.goal || '');
+  const goals = goal ? [goal] : ['gate-cs', 'web-dev', 'ai-ml'];
+  const topics = goals
+    .flatMap((g) => getCatalog(g).map((t) => ({ ...t, goal: g })))
+    .map((t) => ({ ...t, _score: searchScore(q, `${t.title} ${t.module} ${t.description}`) }))
+    .filter((t) => t._score > 0)
+    .sort((a, b) => b._score - a._score)
+    .slice(0, 8)
+    .map(({ _score: _s, ...rest }) => rest);
+  const courseFilter = goal === 'web-dev' ? 'web-dev' : goal === 'ai-ml' ? 'ai-ml' : goal === 'gate-cs' ? 'gate-cs' : '';
+  const questions = QUESTION_BANK
+    .filter((item) => !courseFilter || item.course === courseFilter)
+    .map((item) => ({ ...item, _score: searchScore(q, `${item.question} ${item.subject} ${item.topic}`) + searchScore(q, item.subject) }))
+    .filter((item) => item._score > 0)
+    .sort((a, b) => b._score - a._score)
+    .slice(0, 8)
+    .map(({ answer: _a, explanation: _e, _score: _s, ...rest }) => rest);
+  const content = await store.listContent(user.id);
+  const lessons = content
+    .map((item) => ({ topicId: item.topicId, title: item.package?.title || item.topicId, savedAt: item.savedAt, _score: searchScore(q, `${item.package?.title || ''} ${item.topicId}`) }))
+    .filter((item) => item._score > 0)
+    .sort((a, b) => b._score - a._score)
+    .slice(0, 5)
+    .map(({ _score: _s, ...rest }) => rest);
+  res.json({ topics, questions, lessons });
+});
+
+// ------------------------------------------------------------ study plan
+
+async function studyPlanFor(user: StoredUser, goal: string) {
+  const topics = getCatalog(goal);
+  const [progress, mistakes] = await Promise.all([store.listProgress(user.id), store.listMistakes(user.id)]);
+  const mastery = new Map(topics.map((t) => [t.id, masteryForTopic(progress.find((p: any) => p.topicId === t.id))]));
+  const completedIds = new Set(progress.filter((p: any) => p.completed).map((p: any) => p.topicId));
+  const { dueCount, freshCount } = await dueCards(user.id, null, 1);
+  // Try the agent runtime for an LLM-crafted plan; fall back deterministically.
+  try {
+    const response = await fetch(`${runtime}/v1/study-plan`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        goal, daily_minutes: user.dailyMinutes, target_date: user.targetDate || null,
+        weak_topics: mistakes.slice(0, 5).map((m: any) => m.topic),
+        due_reviews: dueCount + freshCount,
+        next_topic: topics.find((t) => !completedIds.has(t.id))?.title || null,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (response.ok) {
+      const plan = await response.json();
+      if (Array.isArray(plan.blocks) && plan.blocks.length) return { goal, date: dateKey(), provider: 'agent', ...plan };
+    }
+  } catch { /* deterministic plan below */ }
+  return {
+    goal, date: dateKey(), provider: 'planner',
+    ...generateStudyPlan({
+      topics, mastery, completedIds,
+      mistakeTopics: [...new Set(mistakes.map((m: any) => String(m.topic || 'Mixed')))],
+      dailyMinutes: user.dailyMinutes, dueReviews: dueCount + freshCount, targetDate: user.targetDate,
+    }),
+  };
+}
+
+app.get('/api/study-plan', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const goal = String(req.query.goal || (user.goals[0] as any)?.type || 'gate-cs');
+  res.json(await studyPlanFor(user, goal));
+});
+
+app.post('/api/study-plan', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const goal = String(req.body?.goal || req.query.goal || (user.goals[0] as any)?.type || 'gate-cs');
+  res.json(await studyPlanFor(user, goal));
+});
+
+// ------------------------------------------------------ SRS flashcard flow
+
+app.get('/api/flashcards/due', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const topicId = req.query.topicId ? String(req.query.topicId) : null;
+  if (topicId && !getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' });
+  const limit = Math.max(1, Math.min(50, Number(req.query.limit || 20)));
+  const result = await dueCards(user.id, topicId, limit);
+  res.json({ ...result, count: result.due.length });
+});
+
+app.post('/api/flashcards/review', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const { cardKey, topicId, question, answer, quality } = req.body || {};
+  if (!cardKey || !topicId || !getTopic(String(topicId))) return res.status(400).json({ error: 'cardKey and a valid topicId are required' });
+  const q = Math.max(0, Math.min(5, Number(quality ?? 4)));
+  const existing = (await store.listReviews(user.id)).find((r) => r.cardKey === String(cardKey));
+  const schedule = sm2Schedule(q, existing || {});
+  const review = await store.saveReview({
+    id: existing?.id || randomUUID(), ownerId: user.id,
+    cardKey: String(cardKey), topicId: String(topicId),
+    question: String(question || existing?.question || ''), answer: String(answer || existing?.answer || ''),
+    efactor: schedule.efactor, intervalDays: schedule.intervalDays, repetitions: schedule.repetitions,
+    nextDueAt: schedule.nextDueAt, lastQuality: q, updatedAt: now(),
+  });
+  const current = await store.getProgress(user.id, String(topicId));
+  await store.saveProgress({
+    id: `${user.id}:${topicId}`, ownerId: user.id, topicId: String(topicId),
+    completed: Boolean(current?.completed), solvedQuestions: Number(current?.solvedQuestions || 0),
+    reviewedFlashcards: Number(current?.reviewedFlashcards || 0) + 1,
+    attempts: (current as any)?.attempts || [], updatedAt: now(),
+  });
+  void logActivity(user.id, 'review', { topicId: String(topicId), quality: q, xp: 4 });
+  const remaining = await dueCards(user.id, null, 1);
+  res.json({ review, dueRemaining: remaining.dueCount + remaining.freshCount });
+});
+
+// ------------------------------------------------------------- mock exams
+
+function stripMock(mock: any) {
+  return {
+    id: mock.id, ownerId: mock.ownerId, course: mock.course, status: mock.status,
+    config: mock.config, questions: stripAnswers(mock.questions || []),
+    createdAt: mock.createdAt, startedAt: mock.startedAt, submittedAt: mock.submittedAt || null,
+    result: mock.result || null,
+  };
+}
+
+app.post('/api/mock-exams', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const course = String(req.body?.course || 'gate-cs');
+  if (!['gate-cs', 'web-dev', 'ai-ml'].includes(course)) return res.status(400).json({ error: 'Unknown course' });
+  const subject = String(req.body?.subject || 'all');
+  const topic = String(req.body?.topic || 'all');
+  let pool = filterQuestions({ course, source: 'all', subject, topic });
+  if (pool.length < 3) pool = filterQuestions({ course, source: 'all' });
+  const count = Math.max(3, Math.min(30, Number(req.body?.count || 10)));
+  const id = randomUUID();
+  const questions = seededShuffle(pool, id).slice(0, Math.min(count, pool.length));
+  const minutes = Math.max(5, Math.min(180, Number(req.body?.minutes || questions.length * 2)));
+  const mock = {
+    id, ownerId: user.id, course, subject, topic, status: 'active',
+    config: {
+      count: questions.length, minutes,
+      totalMarks: questions.reduce((n, q) => n + (q.marks || 1), 0),
+      negative: 'One-third of marks per wrong answer (GATE scheme)',
+    },
+    questions, answers: {}, createdAt: now(), startedAt: now(),
+  };
+  await store.saveMock(mock);
+  res.status(201).json(stripMock(mock));
+});
+
+app.get('/api/mock-exams', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const mocks = await store.listMocks(user.id);
+  res.json({
+    mocks: mocks.map((m: any) => ({
+      id: m.id, course: m.course, status: m.status, totalQuestions: (m.questions || []).length,
+      score: m.result?.score ?? null, maxMarks: m.config?.totalMarks ?? null,
+      accuracy: m.result?.accuracy ?? null, createdAt: m.createdAt, submittedAt: m.submittedAt || null,
+    })),
+  });
+});
+
+app.get('/api/mock-exams/:id', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const mock = await store.getMock(param(req.params.id));
+  if (!mock || mock.ownerId !== user.id) return res.status(404).json({ error: 'Mock exam not found' });
+  if (mock.status !== 'submitted') return res.json(stripMock(mock));
+  res.json({
+    ...stripMock(mock),
+    answers: mock.answers,
+    review: (mock.questions || []).map((q: any) => {
+      const row = (mock.result?.perQuestion || []).find((r: any) => r.id === q.id) || {};
+      return { ...q, selected: row.selected ?? null, isCorrect: Boolean(row.isCorrect), delta: row.delta ?? 0 };
+    }),
+  });
+});
+
+app.post('/api/mock-exams/:id/submit', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const mock = await store.getMock(param(req.params.id));
+  if (!mock || mock.ownerId !== user.id) return res.status(404).json({ error: 'Mock exam not found' });
+  if (mock.status === 'submitted') return res.json({ result: mock.result, review: mock.questions });
+  const answers = (req.body?.answers || {}) as Record<string, number | null>;
+  const timeUsedSec = Math.max(0, Number(req.body?.timeUsedSec || 0));
+  const grade = gradeMock(
+    (mock.questions || []).map((q: any) => ({ id: q.id, answer: q.answer, marks: q.marks || 1 })),
+    answers,
+  );
+  const pct = grade.maxMarks ? Math.round((Math.max(0, grade.score) / grade.maxMarks) * 100) : 0;
+  const result = { ...grade, pct, timeUsedSec };
+  await store.saveMock({ ...mock, status: 'submitted', answers, result, submittedAt: now(), updatedAt: now() });
+  void logActivity(user.id, 'mock', { mockId: mock.id, score: grade.score, xp: 30 });
+  // Wrong mock answers join the mistake notebook automatically.
+  const existing = await store.listMistakes(user.id);
+  const seen = new Set(existing.map((m: any) => m.questionId));
+  for (const row of grade.perQuestion) {
+    if (row.isCorrect || row.skipped || seen.has(row.id)) continue;
+    const canonical = questionById(row.id);
+    if (!canonical) continue;
+    seen.add(row.id);
+    await store.saveMistake({
+      id: randomUUID(), ownerId: user.id, questionId: canonical.id, topicId: 'algo-complexity',
+      subject: canonical.subject, topic: canonical.topic, question: canonical.question,
+      learnerAnswer: row.selected === null ? '(skipped)' : canonical.options[row.selected] || '(invalid)',
+      correctAnswer: canonical.options[canonical.answer],
+      explanation: canonical.explanation, misconception: 'Recheck the governing definition under time pressure.',
+      createdAt: now(), source: 'mock-exam',
+    });
+  }
+  res.json({
+    result,
+    review: (mock.questions || []).map((q: any) => {
+      const row = grade.perQuestion.find((r) => r.id === q.id) || {};
+      return { ...q, selected: (row as any).selected ?? null, isCorrect: Boolean((row as any).isCorrect), delta: (row as any).delta ?? 0 };
+    }),
+  });
+});
+
+// ---------------------------------------------------------------- code lab
+
+app.get('/api/code/challenges', (_req: Request, res: Response) => {
+  res.json({ challenges: publicChallenges() });
+});
+
+app.post('/api/code/run', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const code = String(req.body?.code || '');
+  const challengeId = req.body?.challengeId ? String(req.body.challengeId) : null;
+  let cases: RunCase[];
+  let challenge: any = null;
+  if (challengeId) {
+    challenge = challengeById(challengeId);
+    if (!challenge) return res.status(404).json({ error: 'Unknown challenge' });
+    cases = challenge.tests;
+  } else if (Array.isArray(req.body?.tests)) {
+    try {
+      cases = (req.body.tests as any[]).slice(0, 10).map((t, i) => {
+        if (!t || !Array.isArray(t.args) || !('expected' in t)) throw new Error(`Test ${i + 1} needs {args:[...], expected}`);
+        return { args: t.args, expected: t.expected, label: t.label || `Case ${i + 1}` };
+      });
+      if (!cases.length) throw new Error('empty');
+    } catch {
+      return res.status(400).json({ error: 'Custom tests must look like [{args:[...], expected}] (max 10).' });
+    }
+  } else {
+    return res.status(400).json({ error: 'challengeId or custom tests are required' });
+  }
+  const result = runJavaScript(code, cases);
+  const solved = Boolean(result.ok && result.passed === result.total && result.total > 0);
+  if (challengeId) void logActivity(user.id, 'code', { challengeId, passed: result.passed, total: result.total, solved, xp: solved ? 20 : 5 });
+  res.json({ ...result, challengeId, solved });
+});
+
+app.post('/api/code/review', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const code = String(req.body?.code || '');
+  if (code.trim().length < 10) return res.status(400).json({ error: 'Submit your solution code for review.' });
+  const challenge = req.body?.challengeId ? challengeById(String(req.body.challengeId)) : null;
+  try {
+    const response = await fetch(`${runtime}/v1/evaluate-code`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        language: 'javascript', code: code.slice(0, 8000),
+        problem: challenge ? `${challenge.title}: ${challenge.prompt}` : 'General JavaScript solution review',
+      }),
+      signal: AbortSignal.timeout(60000),
+    });
+    if (response.ok) return res.json({ ...(await response.json()), provider: 'agent' });
+  } catch { /* static review below */ }
+  const findings: string[] = [];
+  const strengths: string[] = [];
+  if (!/function\s+solve/.test(code)) findings.push('Define solve(...) as a top-level function so the runner can invoke it.');
+  else strengths.push('solve(...) is defined and invocable.');
+  if (!/return\b/.test(code)) findings.push('No return statement found — every test path must return a value.');
+  if (/\bfor\b|\bwhile\b|\.map\b|\.reduce\b/.test(code)) strengths.push('Uses iteration or higher-order traversal.');
+  else findings.push('Consider whether the problem needs a loop or a direct formula.');
+  if (code.length > 3000) findings.push('Long solution — extract a helper to keep solve(...) readable.');
+  if (/console\.log/.test(code)) findings.push('Remove console.log before treating this as final.');
+  if (/\[\]|\bnull\b|length\s*===?\s*0/.test(code)) strengths.push('Shows awareness of empty-input edge cases.');
+  else findings.push('Add explicit handling for empty inputs.');
+  const score = Math.max(20, Math.min(95, 55 + strengths.length * 12 - findings.length * 8));
+  res.json({
+    provider: 'local-static',
+    verdict: score >= 75 ? 'Strong solution — polish edge cases.' : score >= 55 ? 'Working direction — tighten correctness.' : 'Needs rework — revisit the approach.',
+    score, findings, strengths,
+    complexity: 'Estimate time/space beside your loops and state whether the bound is worst-case.',
+  });
+});
+
+// ------------------------------------------------------------------ doubts
+
+app.post('/api/doubt', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const question = String(req.body?.question || '').trim();
+  const topicId = req.body?.topicId ? String(req.body.topicId) : null;
+  if (question.length < 3 || question.length > 2000) return res.status(400).json({ error: 'Ask a specific question (3–2000 characters).' });
+  if (topicId && !getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' });
+  const topic = topicId ? getTopic(topicId) : null;
+  let lessonContext = String(req.body?.context || '');
+  if (!lessonContext && topicId) {
+    const saved = await store.getContent(user.id, topicId);
+    lessonContext = (saved?.package?.notes?.sections || []).slice(0, 2).map((s: any) => `${s.heading}: ${String(s.body || '').slice(0, 400)}`).join('\n\n');
+  }
+  try {
+    const response = await fetch(`${runtime}/v1/doubt-solve`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ topic_id: topicId, messages: [{ role: 'user', content: question }], lesson_context: lessonContext.slice(0, 4000) }),
+      signal: AbortSignal.timeout(60000),
+    });
+    if (response.ok) {
+      const data = await response.json();
+      return res.json({ answer: data.reply, provider: 'agent', topicId, related: [] });
+    }
+  } catch { /* local guide below */ }
+  const related = QUESTION_BANK
+    .map((item) => ({ ...item, _score: searchScore(question, `${item.question} ${item.subject} ${item.topic}`) + (topic ? searchScore(topic.title, `${item.subject} ${item.topic}`) : 0) }))
+    .filter((item) => item._score > 0)
+    .sort((a, b) => b._score - a._score)
+    .slice(0, 3)
+    .map(({ answer: _a, _score: _s, ...rest }) => rest);
+  const answer = [
+    `Here is a reliable way to attack this${topic ? ` in ${topic.title}` : ''}:`,
+    '1) Restate the question in one sentence and list the given facts.',
+    '2) Name the governing definition or invariant — most doubts collapse once it is written down.',
+    '3) Work the smallest concrete example by hand before touching the options.',
+    '4) Eliminate each option with a specific contradiction, not a feeling.',
+    related.length
+      ? `Related solved patterns: ${related.map((r) => `“${r.question.slice(0, 60)}…”`).join(' ')} Study their explanations, then retry your question.`
+      : 'If you are still stuck, paste the exact question text and your current guess — the Doubt Solver agent will pinpoint the failed assumption.',
+  ].join('\n');
+  res.json({ answer, provider: 'local-guide', topicId, related });
+});
+
+// --------------------------------------------------------------- diagnostic
+
+const DIAGNOSTIC_IDS = [
+  'gate-cse-2024-apt-train', 'gate-cse-2024-cn-tcp', 'gate-cse-2023-os-scheduling',
+  'gate-cse-2022-db-normalization', 'gate-cse-2023-algo-knapsack',
+];
+
+app.get('/api/diagnostic', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const questions = DIAGNOSTIC_IDS.map((id) => questionById(id)).filter(Boolean) as any[];
+  const pool = questions.length === 5 ? questions : filterQuestions({ course: 'gate-cs', source: 'all' }).slice(0, 5);
+  res.json({ questions: stripAnswers(pool), total: pool.length });
+});
+
+app.post('/api/diagnostic', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const answers = Array.isArray(req.body?.answers) ? req.body.answers : [];
+  const breakdown = answers.slice(0, 10).map((a: any) => {
+    const canonical = questionById(String(a.questionId || ''));
+    if (!canonical) return null;
+    const selected = Number(a.selected);
+    return {
+      questionId: canonical.id, correct: selected === canonical.answer,
+      correctAnswer: canonical.options[canonical.answer], explanation: canonical.explanation,
+    };
+  }).filter(Boolean);
+  const score = breakdown.filter((b: any) => b.correct).length;
+  const recommendedLevel = score <= 1 ? 'beginner' : score <= 3 ? 'intermediate' : 'advanced';
+  await store.upsertUser({ ...user, skillLevel: recommendedLevel, updatedAt: now() });
+  void logActivity(user.id, 'diagnostic', { score, total: breakdown.length });
+  res.json({ score, total: breakdown.length, recommendedLevel, breakdown });
+});
+
+// ---------------------------------------------------------------- analytics
+
+app.get('/api/analytics/weekly', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const snap = await snapshot(user.id);
+  const days: any[] = [];
+  for (let i = 6; i >= 0; i -= 1) {
+    const date = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10);
+    const dayAttempts = snap.attempts.filter((a) => dateKey(a.answeredAt || '') === date);
+    const reviews = snap.reviews.filter((r) => dateKey(r.updatedAt || '') === date).length;
+    days.push({
+      date,
+      label: new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' }),
+      attempts: dayAttempts.length,
+      correct: dayAttempts.filter((a) => a.correct).length,
+      xp: dayAttempts.reduce((n, a) => n + xpForAttempt(Boolean(a.correct), difficultyOf(String(a.questionId || ''))), 0) + reviews * 4,
+      reviews,
+    });
+  }
+  const totals = {
+    attempts: snap.attempts.length,
+    accuracy: accuracyOf(snap.attempts),
+    xp: xpFromSnapshot(snap),
+    activeDays: streakInfo(snap.attempts.map((a) => dateKey(a.answeredAt || ''))).activeDays,
+    reviews: snap.reviews.length,
+    mocks: snap.mocks.filter((m) => m.status === 'submitted').length,
+  };
+  res.json({ days, totals });
+});
+
+// -------------------------------------------------------------- achievements
+
+app.get('/api/achievements', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const snap = await snapshot(user.id);
+  const ordered = [...snap.attempts].sort((a, b) => String(a.answeredAt).localeCompare(String(b.answeredAt)));
+  const seenWrong = new Set<string>();
+  let comebacks = 0;
+  for (const attempt of ordered) {
+    const key = String(attempt.questionId || attempt.id);
+    if (!attempt.correct) seenWrong.add(key);
+    else if (seenWrong.has(key)) { comebacks += 1; seenWrong.delete(key); }
+  }
+  const submitted = snap.mocks.filter((m) => m.status === 'submitted');
+  const xp = xpFromSnapshot(snap);
+  const achievements = achievementsFor({
+    completedTopics: snap.progress.filter((p) => p.completed).length,
+    totalAttempts: snap.attempts.length,
+    accuracy: accuracyOf(snap.attempts),
+    reviews: snap.reviews.length,
+    mocksSubmitted: submitted.length,
+    bestMockPct: submitted.reduce((best, m) => Math.max(best, Number(m.result?.pct || 0)), 0),
+    challengesSolved: snap.activities.filter((a) => a.kind === 'code' && a.solved).length,
+    comebacks,
+    streak: streakInfo(snap.attempts.map((a) => dateKey(a.answeredAt || ''))).current,
+  });
+  res.json({ achievements, unlocked: achievements.filter((a) => a.unlocked).length, total: achievements.length, xp, level: levelForXp(xp) });
+});
+
+// ================================================== runtime job orchestration
+
+async function updateJob(id: string, patch: Record<string, unknown>) {
+  const job = await store.updateJob(id, { ...patch, updatedAt: now() });
+  if (job) emit(id, job);
+  return job;
+}
+
+async function dispatchJob(id: string, topicId: string) {
+  try {
+    const response = await fetch(`${runtime}/v1/topic-jobs`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ job_id: id, topic_id: topicId }),
+      signal: AbortSignal.timeout(runtimeTimeoutMs),
+    });
+    if (!response.ok) throw new Error(`runtime ${response.status}`);
+    void syncRuntimeJob(id);
+  } catch {
+    if (recoverWithLocalFallback) await runLocalFallback(id, (await store.getJob(id))?.topicId || 'algo-complexity');
+    else await updateJob(id, { status: 'failed', message: 'The agent runtime is unavailable; please retry later.' });
+  }
+}
+
+async function syncRuntimeJob(id: string) {
+  for (let attempt = 0; attempt < Math.ceil(runtimeMaxWaitMs / 1000); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const response = await fetch(`${runtime}/v1/topic-jobs/${id}`, { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) throw new Error('runtime polling failed');
+      const remote = (await response.json()) as any;
+      const latest = remote.events?.at(-1);
+      if (latest) await updateJob(id, { stage: latest.agent, message: latest.message });
+      if (remote.status === 'failed' || remote.status === 'missing') {
+        if (recoverWithLocalFallback) return void (await runLocalFallback(id, (await store.getJob(id))?.topicId || 'algo-complexity'));
+        return void (await updateJob(id, { status: 'failed', message: remote.error || latest?.message || 'The agent runtime could not complete this topic.' }));
+      }
+      if (remote.status === 'completed') {
+        const current = await store.getJob(id);
+        if (current?.status === 'completed') return;
+        if (!remote.package?.topicId || remote.package.verification?.status !== 'approved') throw new Error('invalid verified package');
+        const completed = await updateJob(id, { status: 'completed', package: remote.package });
+        if (completed) {
+          await store.saveContent({ id: completed.id, ownerId: completed.ownerId, topicId: completed.topicId, package: remote.package, savedAt: now() });
+          await store.saveProgress({
+            id: `${completed.ownerId}:${completed.topicId}`, ownerId: completed.ownerId, topicId: completed.topicId,
+            completed: true, solvedQuestions: 0, reviewedFlashcards: 0, updatedAt: now(),
+          });
+          void logActivity(completed.ownerId, 'lesson', { topicId: completed.topicId, xp: 40 });
+        }
+        return;
+      }
+    } catch { /* keep polling until the deadline */ }
+  }
+  if (recoverWithLocalFallback) return void (await runLocalFallback(id, (await store.getJob(id))?.topicId || 'algo-complexity'));
+  await updateJob(id, { status: 'failed', message: 'The agent team timed out; please retry.' });
+}
+
+async function runLocalFallback(id: string, topicId: string) {
+  const topic = getTopic(topicId) || {
+    title: topicId.replace(/^(gate-cs|web-dev|ai-ml)-/, '').replaceAll('-', ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
+    description: 'A complete tutorial with definitions, examples, edge cases, and practice.',
+  };
+  const stages = [
+    ['Dean', 'Selecting topic'], ['Researcher', 'Grounding sources'], ['Notes Author', 'Writing detailed notes'],
+    ['Practice Team', 'Creating recall practice'], ['Fact-Checker', 'Checking claims'], ['Publisher', 'Saving your study kit'],
+  ];
+  await updateJob(id, { status: 'running' });
+  for (const [stage, message] of stages) {
+    await updateJob(id, { stage, message });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+  const title = topic.title;
+  const section = (heading: string, body: string) => ({ heading, body });
+  const packageData: any = {
+    topicId, title,
+    verification: {
+      status: 'fallback', evidenceMode: 'local-fallback', provider: 'local-template',
+      fallbackReason: 'Agent runtime or provider was unavailable',
+      sources: ['MIT OpenCourseWare', 'NPTEL', 'MDN Web Docs'], claimsChecked: 0,
+    },
+    notes: {
+      sections: [
+        section('Start with the intuition', `${title} becomes easier when you connect the definition to a small concrete example. Name the input, the transformation, and the result. Then ask what must remain true after every step. This mental model is more useful than memorising a one-line definition.\n\nTest the idea with an edge case and explain it in your own words before reaching for notation or code.`),
+        section('Formal definition and vocabulary', `${topic.description} In a formal solution, define each variable, state assumptions, and distinguish the general rule from a special case. Translate the problem into these terms before choosing an algorithm; that prevents most avoidable mistakes.\n\nBe explicit about preconditions, bounds, and whether the behaviour depends on input order.`),
+        section('Worked example, step by step', 'Take a small input and write down the state after every operation. At each step identify the invariant: the fact that remains true and guarantees progress. Increase the input and check that the same reasoning scales. Keep implementation close to the proof and state time and extra-space complexity beside it.'),
+        section('Common mistakes and edge cases', 'Check empty input, a single element, duplicates, sorted and reverse-sorted data, maximum values, and invalid states. Compare alternative approaches by invariant, worst case, memory use, and failure modes rather than only by happy-path output.'),
+        section('Exam and real-world connection', 'In an exam, classify the pattern, then eliminate options that violate the invariant or complexity constraint. In production, the same idea appears in APIs, data pipelines, caching, and observability. Finish by writing a two-sentence summary and one open question.'),
+      ],
+    },
+    videos: [
+      { title: `${title} — NPTEL lecture`, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${title} NPTEL lecture`)}`, timestamp: '00:00' },
+      { title: `${title} — tutorial walkthrough`, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${title} tutorial`)}`, timestamp: '00:00' },
+    ],
+    flashcards: [
+      { question: `What is the core idea behind ${title}?`, answer: 'State the input, invariant, transformation, and result; verify the rule with a small example and its edge cases.' },
+      { question: 'How should you analyse a solution?', answer: 'Check preconditions, correctness invariant, time complexity, extra space, and boundary cases.' },
+      { question: 'What is a common failure mode?', answer: 'Using a valid rule without checking its assumptions, especially on empty, duplicate, maximum, or adversarial inputs.' },
+      { question: 'How do you turn this into exam readiness?', answer: 'Classify the pattern, solve untimed, explain every distractor, then repeat under a time limit.' },
+    ],
+    quiz: [
+      { question: `Which is the strongest first step when solving ${title}?`, options: ['Memorise a template', 'Identify input, invariant, and preconditions', 'Skip edge cases', 'Optimise before proving'], answer: 1, explanation: 'A clear model and explicit assumptions guide both proof and implementation.' },
+      { question: 'What should a high-quality explanation include?', options: ['Only final answer', 'Definition, example, mistakes, trade-offs, and practice', 'Only a formula', 'Unverified links'], answer: 1, explanation: 'Learning sticks when concepts connect to intuition, formal language, examples, and retrieval.' },
+    ],
+    pyqs: [{ year: 2024, question: `Apply the invariant and complexity analysis to a ${title} problem.`, difficulty: 'medium' }],
+  };
+  const completed = await updateJob(id, { status: 'completed', package: packageData });
+  if (completed) {
+    await store.saveContent({ id: completed.id, ownerId: completed.ownerId, topicId, package: packageData, savedAt: now() });
+    await store.saveProgress({
+      id: `${completed.ownerId}:${topicId}`, ownerId: completed.ownerId, topicId,
+      completed: true, solvedQuestions: 0, reviewedFlashcards: 0, updatedAt: now(),
+    });
+    void logActivity(completed.ownerId, 'lesson', { topicId, xp: 40 });
+  }
+}
 
 export { app, store };
+
 const serverPort = Number(process.env.PORT || 4000);
-if (process.env.NODE_ENV !== 'test') void store.connect().then(() => app.listen(serverPort, () => console.log(`EduSwarm API listening on ${serverPort}`))).catch((error) => { console.error('API startup failed', error); process.exit(1); });
+if (process.env.NODE_ENV !== 'test') {
+  void store.connect()
+    .then(() => app.listen(serverPort, () => console.log(`EduSwarm API listening on ${serverPort}`)))
+    .catch((error) => { console.error('API startup failed', error); process.exit(1); });
+}
