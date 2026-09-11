@@ -111,3 +111,72 @@ def test_unindexed_curriculum_topic_uses_safe_preview_evidence(monkeypatch):
     assert result['package']['verification']['status'] == 'approved'
     assert result['context']['evidence_mode'] == 'curriculum-preview'
     (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+
+
+class FakeSpecialistRag(FakeProviderRag):
+    def retrieve(self, query, topic_id, limit=6):
+        return FakeProviderRag.retrieve(self, query, topic_id)[:limit]
+
+    def search(self, query, topic_id=None, limit=6):
+        return self.retrieve(query, topic_id or "algo-complexity", limit)[:limit]
+
+    def chat(self, messages, system):
+        latest = messages[-1].get("content", messages[-1].get("text", "")) if messages else ""
+        return f"Grounded answer to: {latest[:60]}"
+
+
+def test_doubt_solve_returns_grounded_answer(monkeypatch):
+    monkeypatch.setattr("app.main.OpenRouterRag", FakeSpecialistRag)
+    response = client.post("/v1/doubt-solve", json={"topic_id": "algo-complexity", "messages": [{"role": "user", "content": "Why is binary search O(log n)?"}]})
+    assert response.status_code == 200
+    body = response.json()
+    assert "binary search" in body["reply"].lower()
+    assert body["sources"]
+
+
+def test_doubt_solve_degrades_to_503_without_provider(monkeypatch):
+    monkeypatch.setattr("app.main.OpenRouterRag", lambda: (_ for _ in ()).throw(RuntimeError("OPENROUTER_API_KEY is required")))
+    response = client.post("/v1/doubt-solve", json={"messages": [{"role": "user", "content": "Why?"}]})
+    assert response.status_code == 503
+
+
+def test_study_plan_returns_timeboxed_blocks(monkeypatch):
+    class PlanRag(FakeSpecialistRag):
+        def structured_generate(self, prompt):
+            return {"totalMinutes": 60, "intensity": "focused", "blocks": [{"kind": "review", "title": "Review due cards", "detail": "SRS", "minutes": 15}, {"kind": "learn", "title": "New kit", "detail": "Study", "minutes": 45}]}
+
+    monkeypatch.setattr("app.main.OpenRouterRag", PlanRag)
+    response = client.post("/v1/study-plan", json={"goal": "gate-cs", "daily_minutes": 60, "due_reviews": 5})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["totalMinutes"] == 60
+    assert len(body["blocks"]) == 2
+
+
+def test_evaluate_code_returns_rubric(monkeypatch):
+    class ReviewRag(FakeSpecialistRag):
+        def structured_generate(self, prompt):
+            return {"verdict": "Good", "score": 82, "findings": ["Missing empty-input guard"], "strengths": ["Clean loop"], "complexity": "O(n) time, O(1) space", "corrected_code": None}
+
+    monkeypatch.setattr("app.main.OpenRouterRag", ReviewRag)
+    response = client.post("/v1/evaluate-code", json={"language": "javascript", "code": "function solve(a) { return a; }", "problem": "Identity"})
+    assert response.status_code == 200
+    assert response.json()["score"] == 82
+
+
+def test_mock_analysis_returns_next_steps(monkeypatch):
+    class ExamRag(FakeSpecialistRag):
+        def structured_generate(self, prompt):
+            return {"summary": "Solid", "strengths": ["Accuracy"], "weaknesses": ["Speed"], "next_steps": ["Drill CN subnetting"]}
+
+    monkeypatch.setattr("app.main.OpenRouterRag", ExamRag)
+    response = client.post("/v1/mock-analysis", json={"course": "gate-cs", "score": 7, "max_marks": 10, "accuracy": 70})
+    assert response.status_code == 200
+    assert response.json()["next_steps"] == ["Drill CN subnetting"]
+
+
+def test_knowledge_search_lists_chunks(monkeypatch):
+    monkeypatch.setattr("app.main.OpenRouterRag", FakeSpecialistRag)
+    response = client.get("/v1/knowledge/search", params={"q": "binary search", "topic_id": "algo-complexity"})
+    assert response.status_code == 200
+    assert len(response.json()["chunks"]) == 2

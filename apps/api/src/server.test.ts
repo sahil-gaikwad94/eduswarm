@@ -141,3 +141,127 @@ test('adaptive practice prioritizes a repeated weak question', async () => {
   assert.equal(result.body.question.id, 'gate-cse-2021-algo-complexity');
   assert.equal(result.body.strategy, 'repair-repeated-mistake');
 });
+
+test('dashboard returns a full intelligence snapshot', async () => {
+  const result = await request('/api/dashboard?goal=gate-cs', { headers: { 'x-demo-user': 'dash-learner' } });
+  assert.equal(result.status, 200);
+  assert.equal(typeof result.body.xp, 'number');
+  assert.equal(result.body.level.level >= 1, true);
+  assert.equal(result.body.mastery.length > 0, true);
+  assert.equal(result.body.topicMastery.length >= 40, true);
+  assert.equal(result.body.nextActions.length >= 1, true);
+  assert.equal(result.body.insights.length >= 3, true);
+  assert.equal(result.body.week.length, 7);
+});
+
+test('unified search finds topics and questions', async () => {
+  const result = await request('/api/search?q=binary%20search', { headers: { 'x-demo-user': 'search-learner' } });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.questions.length >= 1, true);
+  assert.equal('answer' in result.body.questions[0], false);
+});
+
+test('study plan fits the daily budget with ordered blocks', async () => {
+  const result = await request('/api/study-plan', { method: 'POST', headers: { 'x-demo-user': 'plan-learner' }, body: { goal: 'gate-cs' } });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.blocks.length >= 1, true);
+  assert.equal(result.body.totalMinutes <= 60, true);
+  assert.equal(['steady', 'focused', 'sprint'].includes(result.body.intensity), true);
+});
+
+test('spaced flashcards schedule reviews in the future', async () => {
+  const headers = { 'x-demo-user': 'srs-learner' };
+  const created = await request('/api/jobs', { method: 'POST', headers, body: { topicId: 'algo-complexity' } });
+  let job: any;
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    job = await request(`/api/jobs/${created.body.id}`, { headers });
+    if (job.body.status === 'completed') break;
+  }
+  assert.equal(job.body.status, 'completed');
+  const due = await request('/api/flashcards/due', { headers });
+  assert.equal(due.status, 200);
+  assert.equal(due.body.count >= 4, true);
+  const first = due.body.due[0];
+  const reviewed = await request('/api/flashcards/review', { method: 'POST', headers, body: { cardKey: first.cardKey, topicId: first.topicId, question: first.question, answer: first.answer, quality: 4 } });
+  assert.equal(reviewed.status, 200);
+  assert.equal(new Date(reviewed.body.review.nextDueAt).getTime() > Date.now(), true);
+});
+
+test('mock exams hide answers then grade with negative marking', async () => {
+  const headers = { 'x-demo-user': 'mock-learner' };
+  const created = await request('/api/mock-exams', { method: 'POST', headers, body: { course: 'gate-cs', count: 4 } });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.questions.length, 4);
+  assert.equal('answer' in created.body.questions[0], false);
+  const catalog = await request('/api/quiz/catalog?course=gate-cs&source=gate-pyq');
+  const key = new Map(catalog.body.questions.map((q: any) => [q.id, q]));
+  const qs = created.body.questions;
+  const answers: any = { [qs[0].id]: (key.get(qs[0].id) as any).answer, [qs[1].id]: (((key.get(qs[1].id) as any).answer + 1) % 4) };
+  const submitted = await request(`/api/mock-exams/${created.body.id}/submit`, { method: 'POST', headers, body: { answers } });
+  assert.equal(submitted.status, 200);
+  const expected = (key.get(qs[0].id) as any).marks - (key.get(qs[1].id) as any).marks / 3;
+  assert.ok(Math.abs(submitted.body.result.score - expected) < 0.02);
+  assert.equal(submitted.body.result.correct, 1);
+  assert.equal(submitted.body.result.wrong, 1);
+  assert.equal(submitted.body.result.skipped, 2);
+  const mistakes = await request('/api/mistakes', { headers });
+  assert.equal(mistakes.body.mistakes.length >= 1, true);
+});
+
+test('code runner executes solve() against hidden tests', async () => {
+  const headers = { 'x-demo-user': 'code-learner' };
+  const good = await request('/api/code/run', { method: 'POST', headers, body: { challengeId: 'two-sum', code: 'function solve(nums, target) { const seen = new Map(); for (let i = 0; i < nums.length; i += 1) { if (seen.has(target - nums[i])) return [seen.get(target - nums[i]), i]; seen.set(nums[i], i); } return []; }' } });
+  assert.equal(good.status, 200);
+  assert.equal(good.body.solved, true);
+  assert.equal(good.body.passed, good.body.total);
+  const bad = await request('/api/code/run', { method: 'POST', headers, body: { challengeId: 'two-sum', code: 'const x = 1;' } });
+  assert.equal(bad.body.ok, false);
+  assert.match(bad.body.error, /solve/);
+  const challenges = await request('/api/code/challenges');
+  assert.equal(challenges.body.challenges.length >= 10, true);
+  assert.equal('tests' in challenges.body.challenges[0], false);
+});
+
+test('diagnostic recommends a level and teaches from misses', async () => {
+  const quiz = await request('/api/diagnostic', { headers: { 'x-demo-user': 'diag-learner' } });
+  assert.equal(quiz.body.questions.length, 5);
+  assert.equal('answer' in quiz.body.questions[0], false);
+  const graded = await request('/api/diagnostic', { method: 'POST', headers: { 'x-demo-user': 'diag-learner' }, body: { answers: quiz.body.questions.map((q: any) => ({ questionId: q.id, selected: -1 })) } });
+  assert.equal(graded.body.score, 0);
+  assert.equal(graded.body.recommendedLevel, 'beginner');
+  assert.equal(graded.body.breakdown[0].explanation.length > 0, true);
+});
+
+test('goals support full lifecycle and profile is editable', async () => {
+  const headers = { 'x-demo-user': 'goals-learner' };
+  const created = await request('/api/goals', { method: 'POST', headers, body: { type: 'ai-ml' } });
+  assert.equal(created.status, 201);
+  const patched = await request(`/api/goals/${created.body.id}`, { method: 'PATCH', headers, body: { paused: true } });
+  assert.equal(patched.body.paused, true);
+  const me = await request('/api/me', { method: 'PATCH', headers, body: { dailyMinutes: 45 } });
+  assert.equal(me.body.dailyMinutes, 45);
+  const removed = await request(`/api/goals/${created.body.id}`, { method: 'DELETE', headers });
+  assert.equal(removed.status, 204);
+});
+
+test('doubts get guided help even when the runtime is offline', async () => {
+  const result = await request('/api/doubt', { method: 'POST', headers: { 'x-demo-user': 'doubt-learner' }, body: { question: 'Why does binary search need sorted input?' } });
+  assert.equal(result.status, 200);
+  assert.match(result.body.answer, /restate|invariant/i);
+});
+
+test('analytics and achievements summarize the week', async () => {
+  const headers = { 'x-demo-user': 'stats-learner' };
+  const weekly = await request('/api/analytics/weekly', { headers });
+  assert.equal(weekly.body.days.length, 7);
+  const badges = await request('/api/achievements', { headers });
+  assert.equal(badges.body.total, 11);
+  assert.equal(badges.body.achievements.some((a: any) => a.id === 'first-steps'), true);
+});
+
+test('metrics expose platform counters', async () => {
+  const result = await request('/api/metrics');
+  assert.equal(result.body.ok, true);
+  assert.equal(typeof result.body.jobsCreated, 'number');
+});
