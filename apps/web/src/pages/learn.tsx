@@ -1,20 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { API, apiPost, type Pack, type Topic } from '../lib/api';
-import { Avatar, Empty, JobCard } from '../components/ui';
+import { API, apiGet, apiPost, apiPut, type Pack, type Page, type Topic } from '../lib/api';
+import { Avatar, Empty, JobCard, Mermaid, RichText } from '../components/ui';
 
 const opts = { credentials: 'include' as const };
 
+const DEPTHS = [
+  { id: 'eli5', label: 'ELI5', hint: 'Story-first, zero jargon' },
+  { id: 'standard', label: 'Standard', hint: 'Full exam-grade kit' },
+  { id: 'deep', label: 'Deep', hint: '+ proofs, systems, drills' },
+];
+
 // ------------------------------------------------------------------ lesson
 
-export function Lesson({ topic, pack, job, onStart, onBack, onCards, onPractice }: {
-  topic: Topic; pack: Pack | null; job: any;
-  onStart: (t: Topic) => void; onBack: () => void; onCards: () => void; onPractice: () => void;
+export function Lesson({ topic, pack, job, topics, isComplete, onStart, onBack, onCards, onPractice, onOpen, onComplete, onNavigate }: {
+  topic: Topic; pack: Pack | null; job: any; topics: Topic[]; isComplete: boolean;
+  onStart: (t: Topic, depth: string) => void; onBack: () => void; onCards: () => void; onPractice: () => void;
+  onOpen: (t: Topic) => void; onComplete: (t: Topic) => void; onNavigate: (page: Page, topicId?: string) => void;
 }) {
   const [videos, setVideos] = useState<any[]>(pack?.videos || []);
   const [doubt, setDoubt] = useState('');
   const [doubtAnswer, setDoubtAnswer] = useState<any>(null);
   const [doubtBusy, setDoubtBusy] = useState(false);
+  const [depth, setDepth] = useState(pack?.depth || 'standard');
+  const [notes, setNotes] = useState('');
+  const [notesSaved, setNotesSaved] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
 
+  useEffect(() => { setDepth(pack?.depth || 'standard'); }, [pack?.topicId]);
   useEffect(() => {
     if (!pack) return;
     fetch(`${API}/api/recommendations/videos?topicId=${encodeURIComponent(topic.id)}`, opts)
@@ -22,6 +34,11 @@ export function Lesson({ topic, pack, job, onStart, onBack, onCards, onPractice 
       .then((d) => d?.recommendations && setVideos(d.recommendations))
       .catch(() => {});
   }, [pack?.topicId, topic.id]);
+
+  useEffect(() => {
+    setNotes(''); setNotesSaved(false); setCelebrate(false);
+    apiGet(`/api/notes/${encodeURIComponent(topic.id)}`).then((d) => setNotes(d.text || '')).catch(() => {});
+  }, [topic.id]);
 
   const askDoubt = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -36,23 +53,60 @@ export function Lesson({ topic, pack, job, onStart, onBack, onCards, onPractice 
     }
   };
 
+  const saveNotes = async () => {
+    try {
+      await apiPut(`/api/notes/${encodeURIComponent(topic.id)}`, { text: notes });
+      setNotesSaved(true);
+      window.setTimeout(() => setNotesSaved(false), 2000);
+    } catch { /* notes are best-effort */ }
+  };
+
+  const complete = () => {
+    setCelebrate(true);
+    onComplete(topic);
+    window.setTimeout(() => setCelebrate(false), 4000);
+  };
+
+  const order = topics.length ? topics : [topic];
+  const position = Math.max(0, order.findIndex((t) => t.id === topic.id));
+  const prev = position > 0 ? order[position - 1] : null;
+  const next = position < order.length - 1 ? order[position + 1] : null;
+
   const sections = pack?.notes?.sections || [{
     heading: 'Ready to generate your complete study kit?',
-    body: 'Start the learning team to receive a detailed, evidence-backed explanation with intuition, formal definitions, worked examples, edge cases, exam connections, flashcards, practice questions, and recommended videos.',
+    body: 'Pick an explanation depth and start the learning team to receive a detailed, evidence-backed kit with intuition, formal definitions, worked examples, code, diagrams, edge cases, exam connections, flashcards, practice questions, and recommended videos.',
   }];
+
+  const depthLabel = pack?.depth === 'eli5' ? 'ELI5' : pack?.depth === 'deep' ? 'Deep dive' : 'Standard';
+  const codeExamples = pack?.codeExamples || [];
+  const diagrams = pack?.diagrams || [];
+  const cheatSheet = pack?.cheatSheet || [];
+  const pyqs = pack?.pyqs || [];
 
   return (
     <>
       <button className="back-link" onClick={onBack}>← Back to study plan</button>
       <div className="lesson-header">
         <div>
-          <p className="eyebrow">{topic.module.toUpperCase()} · TUTORIAL</p>
+          <p className="eyebrow">{topic.module.toUpperCase()} · TUTORIAL {position + 1} OF {order.length}</p>
           <h1>{pack?.title || topic.title}</h1>
           <p className="lesson-subtitle">{topic.description}</p>
-          <div className="lesson-tags"><span>◷ {topic.minutes} minutes</span><span>◈ Evidence-backed</span><span>⌘ Examples + code</span></div>
+          <div className="lesson-tags">
+            <span>◷ {pack?.readingMinutes || topic.minutes} minutes</span>
+            <span>◈ {pack ? depthLabel : 'Not generated'}</span>
+            <span>⌘ Examples + code + diagrams</span>
+            {isComplete && <span className="complete-tag">✓ Completed</span>}
+          </div>
         </div>
         <Avatar size="large" />
       </div>
+
+      {celebrate && (
+        <section className="celebrate-banner" role="status">
+          <span className="confetti"><i /><i /><i /><i /><i /><i /><i /><i /></span>
+          <div><b>Topic complete — superb work. +40 XP banked.</b><small>Keep the streak alive: review flashcards or take the next tutorial.</small></div>
+        </section>
+      )}
 
       {job && <JobCard job={job} />}
 
@@ -61,9 +115,16 @@ export function Lesson({ topic, pack, job, onStart, onBack, onCards, onPractice 
           <div>
             <p className="label">LEARNING TEAM</p>
             <h2>Generate the complete study kit.</h2>
-            <p>Detailed notes, worked examples, video recommendations, flashcards, and practice will be generated and saved automatically.</p>
+            <p>Detailed notes, worked examples, code, diagrams, videos, flashcards, and practice — generated and saved automatically.</p>
+            <div className="depth-picker" role="radiogroup" aria-label="Explanation depth">
+              {DEPTHS.map((d) => (
+                <button key={d.id} type="button" className={`depth-option ${depth === d.id ? 'active' : ''}`} onClick={() => setDepth(d.id)}>
+                  <b>{d.label}</b><small>{d.hint}</small>
+                </button>
+              ))}
+            </div>
           </div>
-          <button onClick={() => onStart(topic)}>Start learning →</button>
+          <button onClick={() => onStart(topic, depth)}>Start learning →</button>
         </section>
       )}
 
@@ -72,11 +133,11 @@ export function Lesson({ topic, pack, job, onStart, onBack, onCards, onPractice 
           <article className="lesson-article">
             <div className="verified-line">
               <span className="verified-chip">
-                {pack?.verification?.status === 'fallback' ? '◌ PREVIEW / FALLBACK' : pack ? '✓ SAVED VERIFIED LESSON' : 'READY TO GENERATE'}
+                {pack?.verification?.status === 'fallback' ? '◌ LOCAL STUDY KIT' : pack ? '✓ SAVED VERIFIED LESSON' : 'READY TO GENERATE'}
               </span>
               <span>
                 {pack?.verification?.status === 'fallback'
-                  ? 'Generated locally while the AI team was unavailable; verify before relying on it.'
+                  ? `Generated locally with bank questions + worked examples · ${sections.length} sections · verify before relying on it.`
                   : pack ? `${pack.verification.claimsChecked} claims · ${pack.verification.sources.length} sources`
                     : 'Start to unlock the full explanation'}
               </span>
@@ -86,15 +147,56 @@ export function Lesson({ topic, pack, job, onStart, onBack, onCards, onPractice 
                 <span className="section-number">{String(i + 1).padStart(2, '0')}</span>
                 <div>
                   <h2>{s.heading}</h2>
-                  {String(s.body).split('\n\n').map((p, j) => <p key={j}>{p}</p>)}
+                  <RichText text={String(s.body)} />
                 </div>
               </section>
             ))}
             {pack && (
               <>
-                <section className="code-section">
-                  <div className="code-heading"><b>worked-example.js</b><small>Study the invariant before the syntax</small></div>
-                  <pre><code>{'// Translate the definition into a checkable invariant\nfunction solve(input) {\n  // 1. Validate preconditions\n  // 2. Preserve the invariant after each step\n  // 3. Return the result with complexity stated\n  return input;\n}'}</code></pre>
+                {codeExamples.length > 0 && (
+                  <section className="code-collection">
+                    <p className="label">WORKED CODE · READ THE INVARIANT BEFORE THE SYNTAX</p>
+                    {codeExamples.map((c: any, i: number) => (
+                      <div className="code-section" key={c.title || i}>
+                        <div className="code-heading"><b>{c.title || `example.${c.language || 'js'}`}</b><small>{c.language || ''}</small></div>
+                        <pre><code>{c.code}</code></pre>
+                        {c.explanation && <p className="muted">{c.explanation}</p>}
+                      </div>
+                    ))}
+                  </section>
+                )}
+                {diagrams.length > 0 && (
+                  <section className="diagram-collection">
+                    <p className="label">VISUAL MAPS · REDRAW THESE FROM MEMORY</p>
+                    {diagrams.map((d: any, i: number) => (
+                      <figure className="diagram-card card" key={d.title || i}>
+                        <figcaption><b>{d.title}</b>{d.caption && <small>{d.caption}</small>}</figcaption>
+                        <Mermaid chart={d.mermaid} chartId={`${topic.id}-${i}`} />
+                      </figure>
+                    ))}
+                  </section>
+                )}
+                {cheatSheet.length > 0 && (
+                  <section className="cheatsheet card">
+                    <p className="label">CHEAT SHEET · MEMORIZE THIS</p>
+                    <ul>{cheatSheet.map((line: string, i: number) => <li key={i}>{line}</li>)}</ul>
+                  </section>
+                )}
+                {pyqs.length > 0 && (
+                  <section className="pyq-strip">
+                    <p className="label">EXAM PATTERNS IN THIS KIT</p>
+                    {pyqs.slice(0, 4).map((q: any, i: number) => (
+                      <p key={i}><b>{q.year ? `${q.year} · ` : ''}</b>{q.question}</p>
+                    ))}
+                  </section>
+                )}
+                <section className="notes-box card">
+                  <p className="label">YOUR NOTES · SAVED TO THIS TOPIC</p>
+                  <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} placeholder="Summarize the core idea in your own words — retrieval beats re-reading." />
+                  <div className="notes-actions">
+                    <small>{notesSaved ? '✓ Saved' : 'Private to you'}</small>
+                    <button className="secondary-button" onClick={() => void saveNotes()}>Save notes</button>
+                  </div>
                 </section>
                 <section className="doubt-box card">
                   <p className="label">STUCK ON THIS LESSON? ASK NOW</p>
@@ -127,19 +229,49 @@ export function Lesson({ topic, pack, job, onStart, onBack, onCards, onPractice 
               <p className="label">IN THIS TUTORIAL</p>
               {sections.map((s: any, i: number) => <a href={`#section-${i}`} key={s.heading}>{String(i + 1).padStart(2, '0')} {s.heading}</a>)}
             </div>
+            {pack && (
+              <div className="rail-card">
+                <p className="label">REGENERATE</p>
+                <div className="depth-picker vertical" role="radiogroup" aria-label="Explanation depth">
+                  {DEPTHS.map((d) => (
+                    <button key={d.id} type="button" className={`depth-option ${depth === d.id ? 'active' : ''}`} onClick={() => setDepth(d.id)}>
+                      <b>{d.label}</b><small>{d.hint}</small>
+                    </button>
+                  ))}
+                </div>
+                <button className="secondary-button regen-button" onClick={() => onStart(topic, depth)}>↻ Regenerate this kit</button>
+              </div>
+            )}
           </aside>
         </div>
       )}
 
       {!job && pack && (
-        <div className="lesson-footer-actions">
-          <button className="secondary-button" onClick={onCards}>Review saved flashcards →</button>
-          <button onClick={onPractice}>Take saved practice quiz →</button>
-        </div>
+        <>
+          <div className="lesson-footer-actions">
+            <button className="secondary-button" onClick={onCards}>Review saved flashcards →</button>
+            <button className="secondary-button" onClick={() => onNavigate('rooms')}>Discuss in study rooms →</button>
+            <button onClick={onPractice}>Take saved practice quiz →</button>
+          </div>
+          <nav className="lesson-pager" aria-label="Tutorial navigation">
+            {prev ? (
+              <button className="pager-button" onClick={() => onOpen(prev)}><small>← PREVIOUS</small><b>{prev.title}</b></button>
+            ) : <span />}
+            {!isComplete ? (
+              <button className="complete-button" onClick={complete}>✓ Mark complete · +40 XP</button>
+            ) : (
+              <span className="complete-done">✓ Completed</span>
+            )}
+            {next ? (
+              <button className="pager-button next" onClick={() => onOpen(next)}><small>NEXT →</small><b>{next.title}</b></button>
+            ) : <span />}
+          </nav>
+        </>
       )}
     </>
   );
 }
+
 
 // ------------------------------------------------------- SRS flashcards
 
