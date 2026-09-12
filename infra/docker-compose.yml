@@ -35,6 +35,12 @@ services:
       ALLOW_LOCAL_FALLBACK: 'false'
       MONGODB_URI: mongodb://mongo:27017/eduswarm
       REDIS_URL: redis://redis:6379
+      # Same key as the runtime: the API calls the model directly whenever the
+      # runtime is down, so specialists never degrade to canned guidance.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
+      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free}
+      OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
     depends_on:
       mongo: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -50,7 +56,9 @@ services:
       PORT: 8000
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: eduswarm_knowledge
-      OPENROUTER_MODEL: openrouter/free
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
+      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free}
       OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
       EDUSWARM_STATE_DIR: /tmp/eduswarm-state
     volumes: ["runtime-state:/tmp/eduswarm-state"]
