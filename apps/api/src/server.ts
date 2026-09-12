@@ -13,7 +13,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createStore, StoredUser } from './store.js';
-import { getCatalog, getTopic, catalogCounts } from './curriculum.js';
+import { getCatalog, getTopic, catalogCounts, catalogs } from './curriculum.js';
 import {
   QUESTION_BANK,
   filterQuestions,
@@ -39,6 +39,10 @@ import {
 } from './intelligence.js';
 import { runJavaScript, type RunCase } from './codeRunner.js';
 import { CODE_CHALLENGES, challengeById, publicChallenges } from './challenges.js';
+import { listRooms, createRoom, joinRoom, postMessage, roomMessages } from './rooms.js';
+import { buildInterview, evaluateAnswer, buildReport, type InterviewTrack } from './interview.js';
+import { TRACK_META } from './interviewBank.js';
+import { buildLocalPack, type PackDepth } from './localPack.js';
 
 // ------------------------------------------------------------------ setup
 
@@ -440,15 +444,16 @@ app.post('/api/jobs', async (req: Request, res: Response) => {
   if (!user) return;
   const topicId = req.body?.topicId || 'gate-cs-algorithms-time-and-space-complexity';
   if (!getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' });
+  const depth = (['eli5', 'standard', 'deep'] as const).includes(req.body?.depth) ? req.body.depth : 'standard';
   const id = randomUUID();
   const job = {
-    id, ownerId: user.id, topicId, status: 'queued', stage: 'Dean',
+    id, ownerId: user.id, topicId, depth, status: 'queued', stage: 'Dean',
     message: 'Queued for the learning team', package: null, createdAt: now(), updatedAt: now(),
   };
   await store.saveJob(job);
   metrics.jobsCreated += 1;
   res.status(202).json(job);
-  void dispatchJob(id, topicId);
+  void dispatchJob(id, topicId, depth);
 });
 
 app.get('/api/content/:jobId', async (req: Request, res: Response) => {
@@ -1281,6 +1286,171 @@ app.get('/api/achievements', async (req: Request, res: Response) => {
   res.json({ achievements, unlocked: achievements.filter((a) => a.unlocked).length, total: achievements.length, xp, level: levelForXp(xp) });
 });
 
+// ----------------------------------------------- universes, lesson nav, daily
+
+app.get('/api/universes', (_req: Request, res: Response) => {
+  const universes = Object.entries(catalogs).map(([goal, topics]) => ({
+    goal,
+    title: { 'gate-cs': 'GATE CSE', 'web-dev': 'Full-stack Engineering', 'ai-ml': 'AI / ML Engineering' }[goal] || goal,
+    topics: topics.length,
+    modules: new Set(topics.map((t) => t.module)).size,
+  }));
+  res.json({ universes });
+});
+
+app.get('/api/lesson/:goal/:topicId/nav', (req: Request, res: Response) => {
+  const topics = getCatalog(param(req.params.goal));
+  const index = topics.findIndex((t) => t.id === param(req.params.topicId));
+  if (index < 0) return res.status(404).json({ error: 'Unknown topic' });
+  res.json({
+    index,
+    prev: index > 0 ? { topicId: topics[index - 1].id, title: topics[index - 1].title } : null,
+    next: index < topics.length - 1 ? { topicId: topics[index + 1].id, title: topics[index + 1].title } : null,
+  });
+});
+
+function topicIdForQuestion(goal: string, topicTitle: string): string {
+  const catalog = getCatalog(goal);
+  const needle = topicTitle.toLowerCase();
+  const match = catalog.find((t) => {
+    const title = t.title.toLowerCase();
+    return title === needle || title.includes(needle) || needle.includes(title.split(' ')[0]);
+  });
+  return (match || catalog[0])?.id || `${goal}-fallback`;
+}
+
+app.get('/api/challenge/daily', (req: Request, res: Response) => {
+  const goal = String(req.query.goal || 'gate-cs');
+  const seed = `${goal}:${dateKey()}`;
+  const pool = filterQuestions({ course: goal });
+  const question = seededShuffle(pool, `${seed}:question`)[0];
+  const code = seededShuffle(CODE_CHALLENGES, `${seed}:code`)[0];
+  if (!question || !code) return res.status(404).json({ error: 'No daily challenge available for this goal.' });
+  res.json({
+    date: dateKey(),
+    topicId: topicIdForQuestion(goal, question.topic),
+    question: stripAnswers([question])[0],
+    code: { id: code.id, title: code.title, difficulty: code.difficulty },
+  });
+});
+
+// -------------------------------------------------------------------- notes
+
+app.get('/api/notes/:topicId', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const note = await store.getNote(user.id, param(req.params.topicId));
+  if (!note) return res.status(404).json({ error: 'No notes for this topic yet' });
+  res.json({ text: note.text, updatedAt: note.updatedAt });
+});
+
+app.put('/api/notes/:topicId', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const topicId = param(req.params.topicId);
+  const text = String(req.body?.text || '').slice(0, 20_000);
+  const note = await store.saveNote({ id: `${user.id}:${topicId}`, ownerId: user.id, topicId, text, updatedAt: now() });
+  res.json({ text: note.text, updatedAt: note.updatedAt });
+});
+
+// --------------------------------------------------------------- study rooms
+
+app.get('/api/rooms', (_req: Request, res: Response) => res.json({ rooms: listRooms() }));
+
+app.post('/api/rooms', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const name = String(req.body?.name || '').trim();
+  if (!name) return res.status(400).json({ error: 'Room name is required' });
+  try {
+    const room = createRoom(name, String(req.body?.goal || 'gate-cs'), String(req.body?.topic || ''), user.id, user.name || 'Learner');
+    res.status(201).json({ id: room.id, name: room.name, goal: room.goal, topic: room.topic, ownerId: room.ownerId, createdAt: room.createdAt });
+  } catch (error: any) {
+    res.status(429).json({ error: error?.message || 'Could not create room' });
+  }
+});
+
+app.post('/api/rooms/:id/join', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  try {
+    const members = joinRoom(param(req.params.id), user.id, user.name || 'Learner');
+    res.json({ members });
+  } catch {
+    res.status(404).json({ error: 'Room not found' });
+  }
+});
+
+app.post('/api/rooms/:id/messages', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  try {
+    const message = postMessage(param(req.params.id), user.id, user.name || 'Learner', String(req.body?.text || ''), req.body?.share || null);
+    res.status(201).json(message);
+  } catch (error: any) {
+    res.status(400).json({ error: error?.message || 'Could not post message' });
+  }
+});
+
+app.get('/api/rooms/:id/messages', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  try {
+    const since = Number(String(req.query.since || 0));
+    res.json(roomMessages(param(req.params.id), Number.isFinite(since) ? since : 0));
+  } catch {
+    res.status(404).json({ error: 'Room not found' });
+  }
+});
+
+// ------------------------------------------------------------ interview sim
+
+app.get('/api/interviews/meta', (_req: Request, res: Response) => {
+  const tracks = (Object.keys(TRACK_META) as InterviewTrack[]).map((track) => ({
+    track, title: TRACK_META[track].title, rounds: TRACK_META[track].rounds,
+  }));
+  res.json({ tracks });
+});
+
+const interviewSessions = new Map<string, { track: InterviewTrack; interviewId: string; evals: Array<ReturnType<typeof evaluateAnswer>> }>();
+
+app.post('/api/interviews', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const track = String(req.body?.track || '') as InterviewTrack;
+  if (!(track in TRACK_META)) return res.status(400).json({ error: 'Unknown interview track' });
+  const interviewId = randomUUID();
+  const flow = buildInterview(track, interviewId);
+  interviewSessions.set(interviewId, { track, interviewId, evals: [] });
+  void logActivity(user.id, 'interview', { track, interviewId });
+  res.status(201).json(flow);
+});
+
+app.post('/api/interviews/:id/answer', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const session = interviewSessions.get(param(req.params.id));
+  if (!session) return res.status(404).json({ error: 'Interview not found' });
+  try {
+    const evaluation = evaluateAnswer(session.track, session.interviewId, String(req.body?.itemId || ''), {
+      selected: req.body?.selected, explanation: req.body?.explanation, code: req.body?.code, answerText: req.body?.answerText,
+    });
+    session.evals.push(evaluation);
+    res.json({ evaluation });
+  } catch (error: any) {
+    res.status(400).json({ error: error?.message || 'Could not evaluate answer' });
+  }
+});
+
+app.post('/api/interviews/:id/complete', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const session = interviewSessions.get(param(req.params.id));
+  if (!session) return res.status(404).json({ error: 'Interview not found' });
+  const report = buildReport(session.track, session.interviewId, session.evals);
+  res.json(report);
+});
+
 // ================================================== runtime job orchestration
 
 async function updateJob(id: string, patch: Record<string, unknown>) {
@@ -1289,11 +1459,17 @@ async function updateJob(id: string, patch: Record<string, unknown>) {
   return job;
 }
 
-async function dispatchJob(id: string, topicId: string) {
+async function dispatchJob(id: string, topicId: string, depth: string = 'standard') {
   try {
+    const job = await store.getJob(id);
+    const learner = await store.getUser(job?.ownerId || '');
     const response = await fetch(`${runtime}/v1/topic-jobs`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ job_id: id, topic_id: topicId }),
+      body: JSON.stringify({
+        job_id: id, topic_id: topicId, depth,
+        learner_level: learner?.skillLevel || 'beginner',
+        daily_minutes: learner?.dailyMinutes || 60,
+      }),
       signal: AbortSignal.timeout(runtimeTimeoutMs),
     });
     if (!response.ok) throw new Error(`runtime ${response.status}`);
@@ -1339,9 +1515,13 @@ async function syncRuntimeJob(id: string) {
 }
 
 async function runLocalFallback(id: string, topicId: string) {
+  const job = await store.getJob(id);
+  const rawDepth = job?.depth;
+  const depth = (['eli5', 'standard', 'deep'] as const).includes(rawDepth) ? rawDepth as PackDepth : 'standard';
   const topic = getTopic(topicId) || {
     title: topicId.replace(/^(gate-cs|web-dev|ai-ml)-/, '').replaceAll('-', ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()),
     description: 'A complete tutorial with definitions, examples, edge cases, and practice.',
+    module: 'Self-study',
   };
   const stages = [
     ['Dean', 'Selecting topic'], ['Researcher', 'Grounding sources'], ['Notes Author', 'Writing detailed notes'],
@@ -1352,40 +1532,7 @@ async function runLocalFallback(id: string, topicId: string) {
     await updateJob(id, { stage, message });
     await new Promise((resolve) => setTimeout(resolve, 120));
   }
-  const title = topic.title;
-  const section = (heading: string, body: string) => ({ heading, body });
-  const packageData: any = {
-    topicId, title,
-    verification: {
-      status: 'fallback', evidenceMode: 'local-fallback', provider: 'local-template',
-      fallbackReason: 'Agent runtime or provider was unavailable',
-      sources: ['MIT OpenCourseWare', 'NPTEL', 'MDN Web Docs'], claimsChecked: 0,
-    },
-    notes: {
-      sections: [
-        section('Start with the intuition', `${title} becomes easier when you connect the definition to a small concrete example. Name the input, the transformation, and the result. Then ask what must remain true after every step. This mental model is more useful than memorising a one-line definition.\n\nTest the idea with an edge case and explain it in your own words before reaching for notation or code.`),
-        section('Formal definition and vocabulary', `${topic.description} In a formal solution, define each variable, state assumptions, and distinguish the general rule from a special case. Translate the problem into these terms before choosing an algorithm; that prevents most avoidable mistakes.\n\nBe explicit about preconditions, bounds, and whether the behaviour depends on input order.`),
-        section('Worked example, step by step', 'Take a small input and write down the state after every operation. At each step identify the invariant: the fact that remains true and guarantees progress. Increase the input and check that the same reasoning scales. Keep implementation close to the proof and state time and extra-space complexity beside it.'),
-        section('Common mistakes and edge cases', 'Check empty input, a single element, duplicates, sorted and reverse-sorted data, maximum values, and invalid states. Compare alternative approaches by invariant, worst case, memory use, and failure modes rather than only by happy-path output.'),
-        section('Exam and real-world connection', 'In an exam, classify the pattern, then eliminate options that violate the invariant or complexity constraint. In production, the same idea appears in APIs, data pipelines, caching, and observability. Finish by writing a two-sentence summary and one open question.'),
-      ],
-    },
-    videos: [
-      { title: `${title} — NPTEL lecture`, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${title} NPTEL lecture`)}`, timestamp: '00:00' },
-      { title: `${title} — tutorial walkthrough`, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${title} tutorial`)}`, timestamp: '00:00' },
-    ],
-    flashcards: [
-      { question: `What is the core idea behind ${title}?`, answer: 'State the input, invariant, transformation, and result; verify the rule with a small example and its edge cases.' },
-      { question: 'How should you analyse a solution?', answer: 'Check preconditions, correctness invariant, time complexity, extra space, and boundary cases.' },
-      { question: 'What is a common failure mode?', answer: 'Using a valid rule without checking its assumptions, especially on empty, duplicate, maximum, or adversarial inputs.' },
-      { question: 'How do you turn this into exam readiness?', answer: 'Classify the pattern, solve untimed, explain every distractor, then repeat under a time limit.' },
-    ],
-    quiz: [
-      { question: `Which is the strongest first step when solving ${title}?`, options: ['Memorise a template', 'Identify input, invariant, and preconditions', 'Skip edge cases', 'Optimise before proving'], answer: 1, explanation: 'A clear model and explicit assumptions guide both proof and implementation.' },
-      { question: 'What should a high-quality explanation include?', options: ['Only final answer', 'Definition, example, mistakes, trade-offs, and practice', 'Only a formula', 'Unverified links'], answer: 1, explanation: 'Learning sticks when concepts connect to intuition, formal language, examples, and retrieval.' },
-    ],
-    pyqs: [{ year: 2024, question: `Apply the invariant and complexity analysis to a ${title} problem.`, difficulty: 'medium' }],
-  };
+  const packageData = buildLocalPack(topicId, topic, depth);
   const completed = await updateJob(id, { status: 'completed', package: packageData });
   if (completed) {
     await store.saveContent({ id: completed.id, ownerId: completed.ownerId, topicId, package: packageData, savedAt: now() });

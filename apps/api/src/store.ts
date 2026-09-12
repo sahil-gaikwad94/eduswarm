@@ -8,6 +8,7 @@ export type StoredUser = {
 };
 export type StoredJob = Record<string, any> & { id: string };
 export type StoredContent = Record<string, any> & { id: string; ownerId: string; topicId: string };
+export type StoredNote = { id: string; ownerId: string; topicId: string; text: string; updatedAt: string };
 export type StoredProgress = Record<string, any> & { id: string; ownerId: string; topicId: string };
 export type StoredAgentSession = Record<string, any> & { id: string; ownerId: string; agentId: string };
 export type StoredMistake = Record<string, any> & { id: string; ownerId: string; questionId: string };
@@ -36,6 +37,8 @@ export interface Store {
   saveContent(content: StoredContent): Promise<StoredContent>;
   getContent(ownerId: string, topicId: string): Promise<StoredContent | null>;
   listContent(ownerId: string): Promise<StoredContent[]>;
+  saveNote(note: StoredNote): Promise<StoredNote>;
+  getNote(ownerId: string, topicId: string): Promise<StoredNote | null>;
   saveProgress(progress: StoredProgress): Promise<StoredProgress>;
   getProgress(ownerId: string, topicId: string): Promise<StoredProgress | null>;
   listProgress(ownerId: string): Promise<StoredProgress[]>;
@@ -63,6 +66,7 @@ class MemoryStore implements Store {
   private jobs = new Map<string, StoredJob>();
   private sessions = new Map<string, Session>();
   private contents = new Map<string, StoredContent>();
+  private notes = new Map<string, StoredNote>();
   private progress = new Map<string, StoredProgress>();
   private agentSessions = new Map<string, StoredAgentSession>();
   private mistakes = new Map<string, StoredMistake>();
@@ -97,6 +101,8 @@ class MemoryStore implements Store {
   async saveContent(c: StoredContent) { this.contents.set(`${c.ownerId}:${c.topicId}`, c); return c; }
   async getContent(o: string, t: string) { return this.contents.get(`${o}:${t}`) || null; }
   async listContent(o: string) { return [...this.contents.values()].filter((c) => c.ownerId === o); }
+  async saveNote(n: StoredNote) { this.notes.set(`${n.ownerId}:${n.topicId}`, n); return n; }
+  async getNote(o: string, t: string) { return this.notes.get(`${o}:${t}`) || null; }
   async saveProgress(p: StoredProgress) { this.progress.set(`${p.ownerId}:${p.topicId}`, p); return p; }
   async getProgress(o: string, t: string) { return this.progress.get(`${o}:${t}`) || null; }
   async listProgress(o: string) { return [...this.progress.values()].filter((p) => p.ownerId === o); }
@@ -138,6 +144,7 @@ class MongoRedisStore implements Store {
     await this.database.collection('sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     await this.database.collection('users').createIndex({ provider: 1, providerSubject: 1 }, { unique: true, sparse: true });
     await this.database.collection('contents').createIndex({ ownerId: 1, topicId: 1 }, { unique: true });
+    await this.database.collection('notes').createIndex({ ownerId: 1, topicId: 1 }, { unique: true });
     await this.database.collection('progress').createIndex({ ownerId: 1, topicId: 1 }, { unique: true });
     await this.database.collection('mistakes').createIndex({ ownerId: 1, createdAt: -1 });
     await this.database.collection('reviews').createIndex({ ownerId: 1, cardKey: 1 }, { unique: true });
@@ -165,6 +172,8 @@ class MongoRedisStore implements Store {
   async saveContent(c: StoredContent) { await this.database.collection<StoredContent>('contents').replaceOne({ ownerId: c.ownerId, topicId: c.topicId }, c, { upsert: true }); return c; }
   async getContent(o: string, t: string) { return await this.database.collection<StoredContent>('contents').findOne({ ownerId: o, topicId: t }, { projection: { _id: 0 } }); }
   async listContent(o: string) { return await this.database.collection<StoredContent>('contents').find({ ownerId: o }, { projection: { _id: 0 } }).toArray(); }
+  async saveNote(n: StoredNote) { await this.database.collection<StoredNote>('notes').replaceOne({ ownerId: n.ownerId, topicId: n.topicId }, n, { upsert: true }); return n; }
+  async getNote(o: string, t: string) { return await this.database.collection<StoredNote>('notes').findOne({ ownerId: o, topicId: t }, { projection: { _id: 0 } }); }
   async saveProgress(p: StoredProgress) { await this.database.collection<StoredProgress>('progress').replaceOne({ ownerId: p.ownerId, topicId: p.topicId }, p, { upsert: true }); return p; }
   async getProgress(o: string, t: string) { return await this.database.collection<StoredProgress>('progress').findOne({ ownerId: o, topicId: t }, { projection: { _id: 0 } }); }
   async listProgress(o: string) { return await this.database.collection<StoredProgress>('progress').find({ ownerId: o }, { projection: { _id: 0 } }).toArray(); }

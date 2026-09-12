@@ -343,7 +343,7 @@ test('interview simulator runs warm-up to report', async () => {
   assert.equal(typeof report.body.verdict, 'string');
 });
 test('interview flows are deterministic per interview id', async () => {
-  const { buildInterview } = await import('./interviews.js');
+  const { buildInterview } = await import('./interview.js');
   const a = buildInterview('gate', 'fixed-id');
   const b = buildInterview('gate', 'fixed-id');
   assert.deepEqual(a.items.map((i) => i.id), b.items.map((i) => i.id));
