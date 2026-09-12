@@ -231,7 +231,18 @@ export function AgentChat({ session, onClose, onUpdate }: { session: any; onClos
         <p className="eyebrow">LIVE SPECIALIST SESSION</p>
         <h2>{session.agent.name}</h2>
         <div className="chat-messages">
-          {session.messages.map((m: any, i: number) => <p className={m.role} key={i}>{m.text}</p>)}
+          {session.messages.map((m: any, i: number) => (
+            <div className={`chat-bubble ${m.role}`} key={i}>
+              <p>{m.text}</p>
+              {m.role === 'assistant' && m.provider && m.provider !== 'system' && (
+                <small className={`chat-source ${m.provider === 'local' ? 'offline' : 'ai'}`}>
+                  {m.provider === 'local'
+                    ? `⚠ Offline guidance${m.note ? ` — ${m.note}` : ''}`
+                    : `✦ AI model · ${m.model || 'eduswarm'}`}
+                </small>
+              )}
+            </div>
+          ))}
           {sending && <p className="assistant">Thinking…</p>}
           {failed && !sending && (
             <button className="secondary-button retry-button" onClick={() => void deliver(failed, session)}>↻ Retry sending</button>

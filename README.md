@@ -18,8 +18,9 @@ without the LLM runtime online.
 | **Adaptive practice** | IRT-lite ranking repairs repeated misses first, tuned to the learner's level |
 | **Mock exams** | Timed papers with GATE negative marking (−⅓), question palette, flags, auto-filed mistakes, per-question review |
 | **Code lab** | Sandboxed JS runner (`node:vm`, timeout-guarded) with hidden tests + AI/static code review |
-| **Specialist agents** | Socratic Tutor, PYQ Coach, Doubt Solver, Code Reviewer, Mock Examiner, Revision Planner, Career Mentor — RAG-grounded with graceful local guidance offline |
+| **Specialist agents** | Socratic Tutor, PYQ Coach, Doubt Solver, Code Reviewer, Mock Examiner, Revision Planner, Career Mentor — three-tier answer path (runtime RAG → direct model → curriculum), every reply labelled with the brain that produced it |
 | **Study OS** | Multi-goal tracking, diagnostic calibration, global search (Ctrl+K), achievements, weekly analytics, streaks |
+| **Clubs** | Three public halls plus private, invite-link-only clubs you create yourself |
 
 ## Architecture
 
@@ -32,9 +33,10 @@ flowchart LR
   API -.->|outage?| Fallback[Local fallback kits<br/>same contract]
 ```
 
-- `apps/web`: modular React app (`lib/`, `components/`, `pages/`, `App`) — dashboard,
-  syllabus, lessons, SRS flashcards, PYQ lab, mocks, code lab, agents, progress,
-  mistakes, profile, onboarding, command palette.
+- `apps/web`: modular React app (`lib/`, `components/`, `pages/`, `App`) — home
+  (universe switcher + full syllabus + XP strip), lessons, SRS flashcards, PYQ lab,
+  mocks, code lab, agents, clubs, progress, mistakes, profile, onboarding,
+  command palette.
 - `apps/api`: Express API — Google OAuth + signed sessions, curriculum, **78-question
   bank**, jobs + SSE, content/progress, **dashboard, study plans, SRS, mocks, code
   runner, doubts, diagnostics, analytics, achievements**, goals, agent sessions.
@@ -80,6 +82,15 @@ Local development defaults to `AUTH_MODE=demo`. Production requires
 `AUTH_MODE=google`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
 `OAUTH_REDIRECT_URI`, and `SESSION_SECRET`.
 
+**Sign-in is token-based, not cookie-based.** The web app and the API live on
+different domains, so the session cookie is a *third-party* cookie that Safari,
+Firefox and Chrome block — which used to bounce new phones back to Google in a
+loop. The OAuth callback now redirects to the web app with a single-use
+`loginCode`; the app exchanges it at `POST /api/auth/exchange` for a 30-day
+signed Bearer token held in localStorage and sent as an `Authorization` header.
+Cookies remain a same-origin fallback. `EventSource` cannot send headers, so the
+job stream accepts the same token as `?token=`.
+
 Optional full stack (Mongo + Redis + Qdrant + runtime):
 
 ```bash
@@ -98,9 +109,12 @@ Default URLs: `https://eduswarm-web.onrender.com`,
 Keep `CORS_ORIGINS`, `VITE_API_URL`, `AGENT_RUNTIME_URL`, `PUBLIC_API_URL`,
 `WEB_URL`, and `OAUTH_REDIRECT_URI` in sync for custom domains.
 
-The agent runtime uses `OPENROUTER_API_KEY`,
-`OPENROUTER_BASE_URL=https://openrouter.ai/api/v1`, and `OPENROUTER_MODEL`
-(default `openrouter/free`). Bring your own key — the repo ships none.
+**Set `OPENROUTER_API_KEY` on both the API and the agent runtime.** The runtime
+adds Qdrant retrieval and is the preferred brain, but it is a separate service:
+when it is asleep or erroring, the API calls the model directly so specialists
+still answer with a real model instead of degrading silently. Model ids are a
+comma-separated chain (`OPENROUTER_MODEL`, then `OPENROUTER_FALLBACK_MODELS`);
+the first model that answers wins. Bring your own key — the repo ships none.
 
 ## API surface
 
@@ -115,6 +129,8 @@ The agent runtime uses `OPENROUTER_API_KEY`,
 | Exams | `POST/GET /api/mock-exams`, `GET /api/mock-exams/:id`, `POST /api/mock-exams/:id/submit` |
 | Code | `GET /api/code/challenges`, `POST /api/code/run`, `POST /api/code/review` |
 | Growth | `POST /api/doubt`, `GET/POST /api/diagnostic`, `GET /api/analytics/weekly`, `GET /api/achievements`, goals CRUD |
+| Clubs | `GET/POST /api/rooms`, `POST /api/rooms/:id/join`, `POST /api/rooms/join-by-invite`, `POST /api/rooms/:id/invite`, `GET/POST /api/rooms/:id/messages` |
+| Auth | `POST /api/auth/exchange` (login code → Bearer token), `GET /api/auth/status`, `GET /api/agents/status` |
 | Ops | `GET /health`, `GET /ready`, `GET /api/metrics` |
 
 Runtime: `POST /v1/topic-jobs`, `GET /v1/topic-jobs/:id`, `/trace`, `/resume`,
@@ -125,10 +141,10 @@ Runtime: `POST /v1/topic-jobs`, `GET /v1/topic-jobs/:id`, `/trace`, `/resume`,
 ## Quality gates
 
 ```bash
-npm test                                   # 30 API tests (jobs, SRS, mocks, code, intelligence)
+npm test                                   # 46 API tests (jobs, SRS, mocks, code, auth, clubs, agents)
 npm run build                              # API + web production builds
 npm run lint                               # strict TypeScript everywhere
-cd services/agent-runtime && python -m pytest test_main.py   # 11 runtime tests
+cd services/agent-runtime && python -m pytest test_main.py   # 14 runtime tests
 node scripts/api-smoke.mjs                 # end-to-end API smoke (uses dist/)
 docker compose -f infra/docker-compose.yml config            # topology check
 ```

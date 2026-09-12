@@ -4,7 +4,7 @@ import { createClient, RedisClientType } from 'redis';
 export type StoredUser = {
   id: string; provider?: string; providerSubject?: string; email?: string; name: string;
   skillLevel: string; dailyMinutes: number; targetDate?: string | null; avatar: Record<string, string>;
-  goals: Array<Record<string, unknown>>; createdAt: string; updatedAt: string;
+  goals: Array<Record<string, unknown>>; activeGoal?: string; createdAt: string; updatedAt: string;
 };
 export type StoredJob = Record<string, any> & { id: string };
 export type StoredContent = Record<string, any> & { id: string; ownerId: string; topicId: string };

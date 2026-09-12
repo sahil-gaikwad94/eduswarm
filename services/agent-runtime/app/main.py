@@ -236,10 +236,35 @@ class AgentChatRequest(BaseModel):
     agent_name: str = "Specialist Tutor"
     agent_role: str = "Learning specialist"
     topic_id: str | None = None
+    topic_title: str | None = None
+    goal: str = "gate-cs"
+    system: str = Field(default="", max_length=12000)
     messages: list[dict[str, str]] = Field(default_factory=list)
 
 @app.post("/v1/agent-chat")
 def agent_chat(request: AgentChatRequest):
+    """Specialist chat: API-supplied system prompt + retrieved evidence."""
+    question = ""
+    for message in reversed(request.messages):
+        text = str(message.get("content", message.get("text", ""))).strip()
+        if message.get("role", "user") != "assistant" and text:
+            question = text
+            break
+    if not question:
+        raise HTTPException(422, "A learner message is required")
+
+    topic = resolve_topic(request.topic_id or "") if request.topic_id else None
+    topic_label = request.topic_title or (topic["title"] if topic else "a computer science topic")
+
+    # Ground the answer in indexed knowledge when the topic has evidence.
+    evidence: list[EvidenceChunk] = []
+    if request.topic_id:
+        try:
+            evidence = OpenRouterRag().retrieve(f"{topic_label}: {question}", request.topic_id, limit=3)
+        except Exception:
+            evidence = []
+    grounding = "\n\n".join(chunk.as_prompt() for chunk in evidence[:3])
+
     persona = {
         "socratic-tutor": "Guide with questions, expose assumptions, use small counterexamples, and never skip the learner's reasoning.",
         "pyq-coach": "Act as an exam strategist. Classify the question, identify the invariant, compare distractors, and teach time management.",
@@ -249,11 +274,27 @@ def agent_chat(request: AgentChatRequest):
         "revision-planner": "Design a realistic spaced-repetition plan based on confidence, errors, time budget, and the next measurable action.",
         "career-mentor": "Connect learning to careers. Map skills to roles, projects, and interview stories with a concrete ladder.",
     }.get(request.agent_id, "Teach clearly with examples and checks for understanding.")
+
+    default_system = (
+        f"You are {request.agent_name}, EduSwarm's {request.agent_role}. {persona}\n"
+        f"The learner is studying \"{topic_label}\" in the {request.goal} universe.\n"
+        "Answer the message they actually sent: quote the concept, option, or line of code they mentioned.\n"
+        "Structure: Answer (1-2 sentences) / Why / Worked example or code / Trap / Next step.\n"
+        "Never answer a concrete question with generic study advice. Under 300 words. No preamble."
+    )
+    system = request.system.strip() or default_system
+    # Always re-anchor the lesson, even when the caller supplied its own prompt.
+    if request.topic_id or request.topic_title:
+        system += f'\n\nLesson anchor: "{topic_label}" in the {request.goal} universe.'
+    if grounding:
+        system += f"\n\nRetrieved evidence (cite it only when it actually answers the question):\n{grounding}"
+
     try:
-        reply = OpenRouterRag().chat(request.messages[-12:], f"You are {request.agent_name}, EduSwarm's {request.agent_role}. {persona} The learner is studying {request.topic_id or 'a computer science topic'}. Give a precise, actionable response. Start with a direct diagnosis or answer, then use a short structured format: concept, worked example or code, edge case, and next action. Tailor the advice to the specialist role and the learner topic. Never give generic study advice when the learner supplied a concrete question. If code is supplied, identify the bug, explain why it fails, provide corrected code, and state complexity. If an exam question is supplied, eliminate each option and justify the correct one. Do not mention hidden chain-of-thought or claim to have performed actions you did not perform.")
-        return {"reply": reply, "provider": "openrouter"}
+        reply, model = OpenRouterRag().chat_with_model(request.messages[-12:], system)
+        return {"reply": reply, "provider": "openrouter", "model": model, "sources": sorted({chunk.title for chunk in evidence})}
     except Exception as exc:
         raise HTTPException(503, f"Agent provider unavailable: {exc}")
+
 
 class DoubtSolveRequest(BaseModel):
     topic_id: str | None = None
@@ -403,7 +444,14 @@ async def launch_agent(state: JobState):
     await asyncio.to_thread(lambda: asyncio.run(AgentGraph(state).execute()))
 
 @app.get("/health")
-def health(): return {"ok": True, "service": "agent-runtime", "mode": "langgraph-openrouter-qdrant", "providerConfigured": bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"))}
+def health():
+    rag = OpenRouterRag()
+    return {
+        "ok": True, "service": "agent-runtime", "mode": "langgraph-openrouter-qdrant",
+        "providerConfigured": bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")),
+        "model": getattr(getattr(rag, "settings", None), "model", ""),
+        "models": (rag.model_chain()[:4] if hasattr(rag, "model_chain") else []),
+    }
 @app.get("/ready")
 def ready():
     if not (os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")): raise HTTPException(503, "OPENROUTER_API_KEY is not configured")
