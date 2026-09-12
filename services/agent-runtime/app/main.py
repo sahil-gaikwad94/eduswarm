@@ -82,6 +82,7 @@ class JobState:
     topic_id: str
     learner_level: str = "beginner"
     daily_minutes: int = 60
+    depth: str = "standard"
     force_research: bool = False
     status: str = "queued"
     current_node: str = "dean"
@@ -132,6 +133,7 @@ class TopicJob(BaseModel):
     topic_id: str
     learner_level: str = Field(default="beginner", pattern="^(beginner|intermediate|advanced)$")
     daily_minutes: int = Field(default=60, ge=15, le=240)
+    depth: str = Field(default="standard", pattern="^(eli5|standard|deep)$")
     force_research: bool = False
     @field_validator("job_id")
     @classmethod
@@ -181,8 +183,14 @@ class AgentGraph:
         return output
     def dean(self):
         topic = resolve_topic(self.state.topic_id)
-        depth = "foundational examples" if self.state.learner_level == "beginner" else "exam-style tradeoffs"
-        self.state.context = {"topic": topic, "plan": ["ground evidence", "compose", "practice", "verify", "publish"], "depth": depth, "daily_minutes": self.state.daily_minutes}; self.run_agent("Dean", "Plan the topic package", "Adapt scope to learner profile and time budget.", lambda: {"depth": depth, "minutes": self.state.daily_minutes}); self.state.current_node = "research"
+        depth = self.state.depth if self.state.depth in {"eli5", "standard", "deep"} else "standard"
+        plans = {
+            "eli5": {"sections": 8, "tone": "a friendly story-first explainer for a complete beginner: everyday analogies before vocabulary, tiny examples, zero jargon without a definition"},
+            "standard": {"sections": 11, "tone": "a rigorous exam-grade tutor: intuition, formalism, worked examples, code, visuals, complexity analysis, traps, and exam strategy"},
+            "deep": {"sections": 15, "tone": "a demanding senior mentor: everything in standard plus proof sketches, advanced variations, production-system usage, and challenge drills"},
+        }
+        plan = plans[depth]
+        self.state.context = {"topic": topic, "plan": ["ground evidence", "compose", "practice", "verify", "publish"], "depth": depth, "section_target": plan["sections"], "tone": plan["tone"], "daily_minutes": self.state.daily_minutes}; self.run_agent("Dean", "Plan the topic package", "Adapt scope to learner profile and time budget.", lambda: {"depth": depth, "minutes": self.state.daily_minutes}); self.state.current_node = "research"
     def research(self):
         if self.rag is None: self.rag = OpenRouterRag()
         query = f"{self.state.context['topic']['title']}: {self.state.context['topic']['description']}"
@@ -196,18 +204,18 @@ class AgentGraph:
         self.state.current_node = "compose"
     def compose(self):
         evidence = self.state.context["evidence"]
-        prompt = f'''You are the EduSwarm lesson author. Return JSON only with {{"notes":{{"sections":[{{"heading":str,"body":str,"claimIds":[int]}}]}},"claims":[{{"text":str,"evidenceIds":[str,str]}}]}}. Write a detailed {self.state.learner_level} tutorial for {self.state.context['topic']['title']}, not a short summary. Produce 5-7 substantial sections: intuition, formal definition, a worked example, common mistakes, complexity or trade-offs, and an exam/application connection. Use concrete examples, small code or pseudocode snippets, and explain each step in prose. Each section body should be 2-4 paragraphs separated by newlines. Every factual claim must cite exactly two distinct chunk IDs from this evidence. Do not use facts outside it.\n\nEVIDENCE:\n''' + "\n\n".join(f"[chunk_id={item['chunk_id']}; source={item['title']}]\n{item['text']}" for item in evidence)
+        prompt = f'''You are the EduSwarm lesson author, {self.state.context['tone']}. Return JSON only with {{"notes":{{"sections":[{{"heading":str,"body":str,"claimIds":[int]}}]}},"claims":[{{"text":str,"evidenceIds":[str,str]}}]}}. Write a long, detailed {self.state.learner_level} tutorial for {self.state.context['topic']['title']} — never a short summary. Produce exactly {self.state.context['section_target']} substantial sections in this order: the core story/intuition, formal definition and vocabulary, a fully worked step-by-step example, a code walkthrough, a visual/diagram description, complexity and trade-offs with a comparison table, common mistakes and edge cases, exam and interview patterns, where the topic fits in the syllabus, a cheat sheet, and a practice plan. For the deep plan also add: proof sketch, advanced variations, production-system usage, and a challenge drill. For the eli5 plan, lead every section with an everyday analogy and keep formalism minimal. Each section body must be 3-5 paragraphs separated by blank lines, with concrete numbers, worked traces, fenced code blocks tagged with a language, at least one markdown comparison table, and at least one ```mermaid diagram block where the idea is structural (flows, states, hierarchies, pipelines). Every factual claim must cite exactly two distinct chunk IDs from this evidence. Do not use facts outside it.\n\nEVIDENCE:\n''' + "\n\n".join(f"[chunk_id={item['chunk_id']}; source={item['title']}]\n{item['text']}" for item in evidence)
         generated = self.run_agent("Notes Author", "Generate grounded notes with the language model", "Generate only from retrieved chunks and require claim-level citations.", lambda: self.rag.structured_generate(prompt), "structured_generate")
         if not generated.get("notes", {}).get("sections") or not generated.get("claims"): raise RuntimeError("The language model returned an invalid lesson schema")
         self.state.artifacts.update({"notes": generated["notes"], "claims": generated["claims"]}); self.state.current_node = "practice"
     def practice(self):
-        prompt = f'''Return JSON only with {{"flashcards":[{{"question":str,"answer":str,"claimIds":[int]}}],"quiz":[{{"question":str,"options":[str,str,str,str],"answer":int,"explanation":str,"claimIds":[int]}}],"pyqs":[{{"year":int,"question":str,"difficulty":str,"claimIds":[int]}}]}}. Build active-recall practice only from these verified claims: {json.dumps(self.state.artifacts['claims'])}. Every item needs claimIds.'''
+        prompt = f'''Return JSON only with {{"flashcards":[{{"question":str,"answer":str,"claimIds":[int]}}],"quiz":[{{"question":str,"options":[str,str,str,str],"answer":int,"explanation":str,"claimIds":[int]}}],"pyqs":[{{"year":int,"question":str,"difficulty":str,"claimIds":[int]}}]}}. Build active-recall practice only from these verified claims: {json.dumps(self.state.artifacts['claims'])}. Produce exactly 8 flashcards, 6 quiz questions (each explanation must justify the right answer AND eliminate every distractor), and 4 exam-style pyqs across easy/medium/hard. Every item needs claimIds.'''
         generated = self.run_agent("Practice Team", "Generate grounded practice with the language model", "Derive practice only from verified claims.", lambda: self.rag.structured_generate(prompt), "structured_generate")
         self.state.artifacts.update(generated); self.state.current_node = "verify"
     def verify(self):
         result = self.run_agent("Fact-Checker", "Verify package", "Fail closed on incomplete evidence.", lambda: TOOLS.validate_package(self.state.artifacts, self.state.context["evidence"]), "validate_package"); self.state.verification = result; self.state.current_node = "publish" if result["status"] == "approved" else "failed"; self.state.error = "; ".join(result["errors"]) if result["status"] != "approved" else None
     def publish(self):
-        self.state.artifacts.update({"topicId": self.state.topic_id, "title": self.state.context["topic"]["title"], "videos": [{"title": f"Trusted lecture search: {self.state.context['topic']['title']}", "url": "https://www.youtube.com/results?search_query=" + self.state.topic_id, "timestamp": "00:00"}], "verification": self.state.verification}); self.run_agent("Publisher", "Publish verified package", "Only approved packages are visible.", lambda: {"published": True}); self.state.current_node = "complete"
+        self.state.artifacts.update({"topicId": self.state.topic_id, "title": self.state.context["topic"]["title"], "depth": self.state.context.get("depth", "standard"), "videos": [{"title": f"Trusted lecture search: {self.state.context['topic']['title']}", "url": "https://www.youtube.com/results?search_query=" + self.state.topic_id, "timestamp": "00:00"}], "verification": self.state.verification}); self.run_agent("Publisher", "Publish verified package", "Only approved packages are visible.", lambda: {"published": True}); self.state.current_node = "complete"
     def build_graph(self):
         graph = StateGraph(GraphState)
         for name in ("dean", "research", "compose", "practice", "verify", "publish"):
