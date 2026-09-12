@@ -1,6 +1,63 @@
-import React from 'react';
-import { greeting, type Page, type Topic } from '../lib/api';
+import React, { useEffect, useState } from 'react';
+import { apiGet, apiPost, greeting, type Page, type Topic } from '../lib/api';
 import { Avatar } from '../components/ui';
+
+export function DailyChallenge({ goal, onCode }: { goal: string; onCode: () => void }) {
+  const [daily, setDaily] = useState<any>(null);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [result, setResult] = useState<any>(null);
+
+  useEffect(() => {
+    setDaily(null); setSelected(null); setResult(null);
+    apiGet(`/api/challenge/daily?goal=${encodeURIComponent(goal)}`).then(setDaily).catch(() => {});
+  }, [goal]);
+
+  if (!daily) return null;
+  const q = daily.question;
+  const answer = async (i: number) => {
+    if (selected !== null) return;
+    setSelected(i);
+    try {
+      const saved = await apiPost('/api/practice/attempts', {
+        topicId: daily.topicId, questionId: q.id, selectedAnswer: q.options[i],
+      });
+      setResult(saved.attempt);
+    } catch {
+      setResult({ correct: null });
+    }
+  };
+
+  return (
+    <section className="card dash-card daily-card">
+      <p className="label">⚡ DAILY CHALLENGE · {daily.date}</p>
+      <b className="daily-question">{q.question}</b>
+      <small className="muted">{q.subject} · {q.topic} · {q.difficulty}</small>
+      <div className="daily-options">
+        {q.options.map((o: string, i: number) => (
+          <button
+            key={o}
+            disabled={selected !== null}
+            onClick={() => void answer(i)}
+            className={`daily-option ${selected === i ? (result?.correct ? 'correct' : result?.correct === false ? 'incorrect' : '') : ''}`}
+          >
+            <span>{String.fromCharCode(65 + i)}</span>{o}
+          </button>
+        ))}
+      </div>
+      {result && result.correct !== null && (
+        <p className={`daily-feedback ${result.correct ? 'good' : 'needs-work'}`}>
+          <b>{result.correct ? 'Correct — XP banked, streak fed.' : 'Not quite — logged to your mistake notebook.'}</b>
+          {result.solution?.whyItWorks && <span>{result.solution.whyItWorks}</span>}
+        </p>
+      )}
+      {daily.code && (
+        <button className="daily-code-teaser" onClick={onCode}>
+          <span>⌨</span><span><b>+ {daily.code.title}</b><small>{daily.code.difficulty} · solve in Code Lab for +20 XP</small></span><span>→</span>
+        </button>
+      )}
+    </section>
+  );
+}
 
 const GOAL_LABELS: Record<string, string> = {
   'gate-cs': 'GATE CSE', 'web-dev': 'Full-stack', 'ai-ml': 'AI / ML',
@@ -81,7 +138,8 @@ export function Dashboard({ user, goal, data, plan, onNavigate }: {
           )}
         </div>
 
-        <div className="dash-side">
+                <div className="dash-side">
+          <DailyChallenge goal={goal} onCode={() => onNavigate('codelab')} />
           <section className="card dash-card">
             <p className="label">MASTERY MAP</p>
             {data.mastery.slice(0, 8).map((m: any) => (
