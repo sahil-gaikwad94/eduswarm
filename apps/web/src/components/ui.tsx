@@ -113,31 +113,115 @@ export function SearchPalette({ goal, onClose, onNavigate }: { goal: string; onC
   );
 }
 
+// -------------------------------------------------------- rich text + diagrams
+
+function Inline({ text }: { text: string }) {
+  const parts = String(text).split(/(\*\*[^*]+\*\*|`[^`]+`)/g);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>;
+        if (part.startsWith('`') && part.endsWith('`')) return <code key={i} className="inline-code">{part.slice(1, -1)}</code>;
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+/** Minimal renderer for lesson bodies: paragraphs, bullets, tables, fences. */
+export function RichText({ text }: { text: string }) {
+  const blocks = String(text || '').split('\n\n');
+  return (
+    <>
+      {blocks.map((block, i) => {
+        const trimmed = block.trim();
+        if (/^```/.test(trimmed)) {
+          const code = trimmed.replace(/^```\w*\n?/, '').replace(/```$/, '');
+          return <pre key={i} className="rich-code"><code>{code}</code></pre>;
+        }
+        if (trimmed.split('\n').every((line) => /^\s*\|.*\|\s*$/.test(line))) {
+          const rows = trimmed.split('\n').map((line) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
+          const body = rows.filter((r) => !r.every((c) => /^:?-{2,}:?$/.test(c)));
+          return (
+            <div key={i} className="rich-table-wrap">
+              <table className="rich-table">
+                <thead><tr>{body[0].map((c, j) => <th key={j}><Inline text={c} /></th>)}</tr></thead>
+                <tbody>{body.slice(1).map((r, ri) => <tr key={ri}>{r.map((c, j) => <td key={j}><Inline text={c} /></td>)}</tr>)}</tbody>
+              </table>
+            </div>
+          );
+        }
+        if (trimmed.split('\n').every((line) => /^\s*[•\-*]\s+/.test(line))) {
+          return (
+            <ul key={i} className="rich-list">
+              {trimmed.split('\n').map((line, j) => <li key={j}><Inline text={line.replace(/^\s*[•\-*]\s+/, '')} /></li>)}
+            </ul>
+          );
+        }
+        return <p key={i}><Inline text={trimmed} /></p>;
+      })}
+    </>
+  );
+}
+
+export function Mermaid({ chart, chartId }: { chart: string; chartId: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFailed(false);
+    import('mermaid')
+      .then(({ default: mermaid }) => {
+        if (cancelled) return;
+        mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict' });
+        return mermaid.render(`mmd-${chartId}`, chart).then(({ svg }) => {
+          if (!cancelled && ref.current) ref.current.innerHTML = svg;
+        });
+      })
+      .catch(() => { if (!cancelled) setFailed(true); });
+    return () => { cancelled = true; };
+  }, [chart, chartId]);
+
+  if (failed) return <pre className="rich-code"><code>{chart}</code></pre>;
+  return <div className="mermaid-chart" ref={ref} role="img" aria-label="Concept diagram" />;
+}
+
 // -------------------------------------------------------------- agent chat
 
 export function AgentChat({ session, onClose, onUpdate }: { session: any; onClose: () => void; onUpdate: (s: any) => void }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [session.messages.length]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [session.messages.length, failed]);
+
+  const deliver = async (outgoing: string, base: any) => {
+    setSending(true);
+    setFailed(null);
+    try {
+      const updated = await apiPost(`/api/agents/sessions/${session.id}/messages`, { text: outgoing });
+      onUpdate(updated);
+    } catch (e: any) {
+      const reason = e?.status === 401
+        ? 'Your session expired — please sign in again, then retry.'
+        : (e?.message || 'The specialist did not respond.');
+      setFailed(outgoing);
+      onUpdate({ ...base, messages: [...base.messages, { role: 'assistant', text: `⚠ ${reason} Your message is saved above — tap Retry to resend it.` }] });
+    } finally {
+      setSending(false);
+    }
+  };
 
   const send = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!text.trim() || sending) return;
     const outgoing = text.trim();
     setText('');
-    setSending(true);
     const optimistic = { ...session, messages: [...session.messages, { role: 'user', text: outgoing }] };
     onUpdate(optimistic);
-    try {
-      const updated = await apiPost(`/api/agents/sessions/${session.id}/messages`, { text: outgoing });
-      onUpdate(updated);
-    } catch {
-      onUpdate({ ...optimistic, messages: [...optimistic.messages, { role: 'assistant', text: 'The specialist is temporarily unavailable. Please try again.' }] });
-    } finally {
-      setSending(false);
-    }
+    await deliver(outgoing, optimistic);
   };
 
   return (
@@ -149,6 +233,9 @@ export function AgentChat({ session, onClose, onUpdate }: { session: any; onClos
         <div className="chat-messages">
           {session.messages.map((m: any, i: number) => <p className={m.role} key={i}>{m.text}</p>)}
           {sending && <p className="assistant">Thinking…</p>}
+          {failed && !sending && (
+            <button className="secondary-button retry-button" onClick={() => void deliver(failed, session)}>↻ Retry sending</button>
+          )}
           <div ref={bottomRef} />
         </div>
         <form onSubmit={send}>
