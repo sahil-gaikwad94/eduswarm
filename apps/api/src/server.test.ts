@@ -8,6 +8,7 @@ function request(path: string, options: any = {}) { return new Promise<{status:n
 test('health endpoint is available', async () => { const result = await request('/health'); assert.equal(result.status, 200); assert.equal(result.body.ok, true); });
 test('demo session returns the isolated learner identity', async () => { const result = await request('/api/session', { headers: { 'x-demo-user': 'session-user' } }); assert.equal(result.status, 200); assert.equal(result.body.authenticated, true); assert.equal(result.body.user.id, 'session-user'); });
 test('onboarding creates an independent goal', async () => { const result = await request('/api/onboarding', { method: 'POST', body: { name: 'Ada', goal: 'gate-cs', dailyMinutes: 30 } }); assert.equal(result.status, 201); assert.equal(result.body.goals.length, 1); assert.equal(result.body.dailyMinutes, 30); });
+
 	test('curriculum exposes prerequisite-aware topics', async () => { const result = await request('/api/curriculum/gate-cs'); assert.equal(result.status, 200); assert.equal(result.body.topics[0].status, 'available'); assert.equal(result.body.topics[1].prerequisites.length, 1); });
 test('curriculum includes the full GATE, full-stack, and AI/ML catalogs', async () => { const gate = await request('/api/curriculum/gate-cs'); const web = await request('/api/curriculum/web-dev'); const ai = await request('/api/curriculum/ai-ml'); assert.equal(gate.body.topics.length >= 40, true); assert.equal(web.body.topics.length >= 30, true); assert.equal(ai.body.topics.length >= 35, true); assert.equal(ai.body.topics.some((topic: any) => topic.title === 'RAG Systems'), true); });
 test('quiz catalog is available without a study prerequisite and supports subject/topic filters', async () => {
@@ -264,4 +265,121 @@ test('metrics expose platform counters', async () => {
   const result = await request('/api/metrics');
   assert.equal(result.body.ok, true);
   assert.equal(typeof result.body.jobsCreated, 'number');
+});
+
+test('universes expose all learning worlds with counts', async () => {
+  const result = await request('/api/universes');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.universes.length, 3);
+  for (const u of result.body.universes) {
+    assert.equal(typeof u.goal, 'string');
+    assert.equal(u.topics > 0, true);
+    assert.equal(u.modules > 0, true);
+  }
+});
+test('lesson nav links prev/next within a universe', async () => {
+  const catalog = await request('/api/curriculum/gate-cs');
+  const first = catalog.body.topics[0];
+  const nav = await request(`/api/lesson/gate-cs/${first.id}/nav`);
+  assert.equal(nav.status, 200);
+  assert.equal(nav.body.index, 0);
+  assert.equal(nav.body.prev, null);
+  assert.equal(typeof nav.body.next.topicId, 'string');
+  const missing = await request('/api/lesson/gate-cs/nope/nav');
+  assert.equal(missing.status, 404);
+});
+test('daily challenge is deterministic within a day', async () => {
+  const a = await request('/api/challenge/daily?goal=gate-cs');
+  const b = await request('/api/challenge/daily?goal=gate-cs');
+  assert.equal(a.status, 200);
+  assert.equal(a.body.question.id, b.body.question.id);
+  assert.equal(a.body.question.answer, undefined);
+  assert.equal(typeof a.body.topicId, 'string');
+  assert.equal(typeof a.body.code.id, 'string');
+});
+test('notes round-trip per learner and topic', async () => {
+  const headers = { 'x-demo-user': 'notes-learner' };
+  const saved = await request('/api/notes/algo-complexity', { method: 'PUT', headers, body: { text: 'invariant first' } });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.text, 'invariant first');
+  const loaded = await request('/api/notes/algo-complexity', { headers });
+  assert.equal(loaded.body.text, 'invariant first');
+  const missing = await request('/api/notes/nope', { headers });
+  assert.equal(missing.status, 404);
+});
+test('study rooms support create, join, and chat', async () => {
+  const headers = { 'x-demo-user': 'room-learner' };
+  const listed = await request('/api/rooms', { headers });
+  assert.equal(listed.status, 200);
+  assert.equal(listed.body.rooms.length >= 3, true);
+  const created = await request('/api/rooms', { method: 'POST', headers, body: { name: 'Test Room', goal: 'gate-cs', topic: 'OS' } });
+  assert.equal(created.status, 201);
+  const joined = await request(`/api/rooms/${created.body.id}/join`, { method: 'POST', headers });
+  assert.equal(joined.body.members.length >= 1, true);
+  const posted = await request(`/api/rooms/${created.body.id}/messages`, { method: 'POST', headers, body: { text: 'hello room' } });
+  assert.equal(posted.status, 201);
+  const messages = await request(`/api/rooms/${created.body.id}/messages?since=0`, { headers });
+  assert.equal(messages.body.messages.some((m: any) => m.text === 'hello room'), true);
+});
+test('interview simulator runs warm-up to report', async () => {
+  const headers = { 'x-demo-user': 'interview-learner' };
+  const meta = await request('/api/interviews/meta', { headers });
+  assert.equal(meta.body.tracks.length, 3);
+  const started = await request('/api/interviews', { method: 'POST', headers, body: { track: 'sde' } });
+  assert.equal(started.status, 201);
+  assert.equal(started.body.items.length, 8);
+  const concept = started.body.items.find((i: any) => i.kind === 'concept');
+  const bank = (await import('./questionBank.js')).questionById(concept.payload.questionId);
+  const answered = await request(`/api/interviews/${started.body.interviewId}/answer`, {
+    method: 'POST', headers,
+    body: { itemId: concept.id, selected: bank!.answer, explanation: `${bank!.explanation} For example, consider the standard case.` },
+  });
+  assert.equal(answered.status, 200);
+  assert.equal(answered.body.evaluation.score >= 7, true);
+  assert.equal(typeof answered.body.evaluation.followUp, 'string');
+  const report = await request(`/api/interviews/${started.body.interviewId}/complete`, { method: 'POST', headers });
+  assert.equal(report.status, 200);
+  assert.equal(report.body.dimensions.length, 4);
+  assert.equal(typeof report.body.verdict, 'string');
+});
+test('interview flows are deterministic per interview id', async () => {
+  const { buildInterview } = await import('./interviews.js');
+  const a = buildInterview('gate', 'fixed-id');
+  const b = buildInterview('gate', 'fixed-id');
+  assert.deepEqual(a.items.map((i) => i.id), b.items.map((i) => i.id));
+});
+test('local study kits are deep and topic-aware', async () => {
+  const { buildLocalPack } = await import('./localPack.js');
+  const { getTopic } = await import('./curriculum.js');
+  const topic = getTopic('algo-complexity')!;
+  const pack = buildLocalPack('algo-complexity', topic, 'standard');
+  assert.equal(pack.notes.sections.length >= 10, true);
+  assert.equal(pack.quiz.length >= 4, true);
+  assert.equal(pack.codeExamples.length >= 1, true);
+  assert.equal(pack.diagrams.length >= 1, true);
+  assert.equal(pack.verification.evidenceMode, 'local-fallback');
+  assert.equal(pack.verification.sources.length >= 2, true);
+  assert.equal(pack.readingMinutes > 0, true);
+  const deep = buildLocalPack('algo-complexity', topic, 'deep');
+  assert.equal(deep.notes.sections.length > pack.notes.sections.length, true);
+});
+test('token auth round-trips and login codes are single-use', async () => {
+  const { issueToken, verifyToken, issueLoginCode, redeemLoginCode, bearerFromHeader } = await import('./auth.js');
+  const token = issueToken('user-1');
+  assert.equal(verifyToken(token), 'user-1');
+  assert.equal(verifyToken('bogus'), null);
+  assert.equal(bearerFromHeader('Bearer abc123'), 'abc123');
+  assert.equal(bearerFromHeader(undefined), null);
+  const code = issueLoginCode('user-1');
+  assert.equal(redeemLoginCode(code), 'user-1');
+  assert.equal(redeemLoginCode(code), null);
+});
+test('topic jobs accept an explanation depth', async () => {
+  const headers = { 'x-demo-user': 'depth-learner' };
+  const created = await request('/api/jobs', { method: 'POST', headers, body: { topicId: 'algo-complexity', depth: 'eli5' } });
+  assert.equal(created.status, 202);
+  let result: any;
+  for (let attempt = 0; attempt < 20; attempt += 1) { await new Promise((r) => setTimeout(r, 100)); result = await request(`/api/jobs/${created.body.id}`, { headers }); if (result.body.status === 'completed') break; }
+  assert.equal(result.body.status, 'completed');
+  assert.equal(result.body.package.depth, 'eli5');
 });
