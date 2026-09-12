@@ -185,7 +185,7 @@ export const BEHAVIORAL_PROMPTS: BehavioralPrompt[] = [
   {
     id: 'behav-ambiguity', track: 'all', title: 'Working through ambiguity',
     prompt: 'Describe a time you had to deliver with unclear requirements. How did you decide what to build?',
-    rubric: ['Clarifying questions asked early', 'Smallest shippable slice first', 'Feedback loop with stakeholders', 'Result tied to their actions', 'Reflection on leadership style'],
+    rubric: ['Clarifying questions asked early', 'Smallest shippable slice first', 'Feedback loop with stakeholders', 'Result tied to their actions', 'Handled a wrong guess well'],
   },
   {
     id: 'behav-leadership', track: 'all', title: 'Leading without authority',
