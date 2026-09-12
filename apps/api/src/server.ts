@@ -39,10 +39,13 @@ import {
 } from './intelligence.js';
 import { runJavaScript, type RunCase } from './codeRunner.js';
 import { CODE_CHALLENGES, challengeById, publicChallenges } from './challenges.js';
-import { listRooms, createRoom, joinRoom, postMessage, roomMessages } from './rooms.js';
+import { listRooms, createRoom, joinRoom, joinByInvite, rotateInvite, postMessage, roomMessages, roomSummaryFor, RoomAccessError } from './rooms.js';
 import { buildInterview, evaluateAnswer, buildReport, type InterviewTrack } from './interview.js';
 import { TRACK_META } from './interviewBank.js';
 import { buildLocalPack, type PackDepth } from './localPack.js';
+import { issueToken, verifyToken, issueLoginCode, redeemLoginCode, bearerFromHeader } from './auth.js';
+import { buildSystemPrompt, localSpecialistReply, type AgentContext } from './agentBrain.js';
+import { completeChat, llmConfigured, modelChain, type ChatMessage } from './llm.js';
 
 // ------------------------------------------------------------------ setup
 
@@ -161,6 +164,14 @@ function publicWebUrl() {
   return process.env.WEB_URL || [...allowedOrigins][0] || 'http://localhost:5173';
 }
 function now() { return new Date().toISOString(); }
+/** Shareable club invite link, rooted at the web app the learner is using. */
+function inviteLink(req: Request, code: string): string {
+  let origin = '';
+  const referer = String(req.headers.referer || req.headers.origin || '');
+  try { origin = referer ? new URL(referer).origin : ''; } catch { origin = ''; }
+  const root = (origin || publicWebUrl()).replace(/\/$/, '');
+  return `${root}/?invite=${encodeURIComponent(code)}`;
+}
 function defaultUser(id: string, overrides: Partial<StoredUser> = {}): StoredUser {
   return {
     id, name: 'Demo Learner', skillLevel: 'beginner', dailyMinutes: 60,
@@ -170,7 +181,23 @@ function defaultUser(id: string, overrides: Partial<StoredUser> = {}): StoredUse
 }
 
 async function ready() { await store.connect(); }
+
+/**
+ * Resolve the learner for a request.
+ *
+ * Order: Bearer token → session cookie → demo header.
+ * The Bearer path is what makes cross-origin deployments work: the web app is
+ * served from a different domain than the API, so its session cookie is a
+ * third-party cookie that Safari (ITP), Firefox and Chrome now block. Without
+ * the token path a brand-new phone could sign in with Google, lose the cookie,
+ * and bounce back to Google forever.
+ */
 async function userFor(req: Request) {
+  const token = bearerFromHeader(req.headers.authorization) || sseToken(req);
+  if (token) {
+    const tokenUser = await store.getUser(verifyToken(token) || '');
+    if (tokenUser) return tokenUser;
+  }
   if (authMode === 'demo') {
     const id = String(req.headers['x-demo-user'] || 'demo-user');
     let user = await store.getUser(id);
@@ -181,6 +208,19 @@ async function userFor(req: Request) {
   const session = sessionId ? await store.getSession(sessionId) : null;
   return session ? store.getUser(session.userId) : null;
 }
+
+/**
+ * EventSource cannot send an Authorization header, so the job stream accepts
+ * the same signed token as a query parameter. It is scoped to GET requests on
+ * the stream route only, and the token is never logged.
+ */
+function sseToken(req: Request): string | null {
+  if (req.method !== 'GET' || !/\/events$/.test(req.path)) return null;
+  const value = req.query.token;
+  const raw = Array.isArray(value) ? value[0] : value;
+  return typeof raw === 'string' && raw.length > 8 ? raw : null;
+}
+
 async function requireUser(req: Request, res: Response) {
   const user = await userFor(req);
   if (!user) { res.status(401).json({ error: 'Authentication required' }); return null; }
@@ -261,7 +301,13 @@ app.get('/auth/google/callback', async (req: Request, res: Response) => {
     const sessionId = randomBytes(32).toString('base64url');
     await store.createSession({ id: sessionId, userId: user.id, expiresAt: new Date(Date.now() + sessionTtlMs) });
     setCookie(res, sessionCookie, sessionId, sessionTtlMs);
-    res.redirect(publicWebUrl());
+    // The cookie above is best-effort: on a different domain from the web app
+    // browsers treat it as third-party and drop it. Hand the SPA a single-use
+    // login code instead — it exchanges the code for a Bearer token, which is
+    // what ends the "sign in with Google again" loop on new devices.
+    const target = new URL(publicWebUrl());
+    target.searchParams.set('loginCode', issueLoginCode(user.id));
+    res.redirect(target.toString());
   } catch (error) {
     console.error('OAuth callback failed', error);
     res.status(502).send('Unable to sign in with Google');
@@ -273,6 +319,32 @@ app.post('/auth/logout', async (req: Request, res: Response) => {
   if (id) await store.deleteSession(id);
   clearCookie(res, sessionCookie);
   res.status(204).end();
+});
+
+/**
+ * Exchange the single-use code from the OAuth redirect for a long-lived Bearer
+ * token. This is the step the web app calls on arrival; without it a browser
+ * that blocks third-party cookies has no way to hold a session.
+ */
+app.post('/api/auth/exchange', async (req: Request, res: Response) => {
+  const userId = redeemLoginCode(String(req.body?.code || ''));
+  if (!userId) return res.status(401).json({ error: 'This sign-in link was already used or has expired — please sign in again.' });
+  const user = await store.getUser(userId);
+  if (!user) return res.status(401).json({ error: 'Account not found — please sign in again.' });
+  res.json({ token: issueToken(user.id), user });
+});
+
+/** Diagnostic for the web app: which auth path is live, and is the AI brain up? */
+app.get('/api/auth/status', (_req: Request, res: Response) => {
+  res.json({
+    mode: authMode,
+    tokenAuth: true,
+    ai: {
+      runtimeUrl: runtime,
+      runtimeKeyConfigured: Boolean(process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY),
+      models: modelChain().slice(0, 4),
+    },
+  });
 });
 
 // ------------------------------------------------------------- me + goals
@@ -292,6 +364,20 @@ app.patch('/api/me', async (req: Request, res: Response) => {
   if (Number.isFinite(Number(body.dailyMinutes))) patch.dailyMinutes = Math.max(15, Math.min(240, Number(body.dailyMinutes)));
   if (body.targetDate === null || /^\d{4}-\d{2}-\d{2}$/.test(String(body.targetDate || ''))) patch.targetDate = body.targetDate || null;
   if (body.avatar && typeof body.avatar === 'object') patch.avatar = body.avatar;
+  // Active learning universe: switching it must survive reloads and devices.
+  const activeGoal = String(body.activeGoal || '');
+  if (activeGoal) {
+    if (!catalogs[activeGoal as keyof typeof catalogs]) {
+      return res.status(400).json({ error: 'Unknown learning universe' });
+    }
+    patch.activeGoal = activeGoal;
+    // Keep the goal list in sync so Profile and the switcher agree.
+    const goals = [...user.goals];
+    if (!goals.some((g) => g.type === activeGoal)) {
+      goals.push({ id: randomUUID(), type: activeGoal, title: GOAL_TITLES[activeGoal], progress: 0, paused: false });
+    }
+    patch.goals = goals.map((g) => ({ ...g, paused: g.type === activeGoal ? false : g.paused }));
+  }
   res.json(await store.upsertUser({ ...user, ...patch }));
 });
 
@@ -307,6 +393,7 @@ app.post('/api/onboarding', async (req: Request, res: Response) => {
     targetDate: body.targetDate || null,
     avatar: body.avatar || user.avatar,
     goals: [{ id: randomUUID(), type: body.goal || 'gate-cs', title: body.goalTitle || 'Clear GATE CS', progress: 0, paused: false }],
+    activeGoal: catalogs[String(body.goal || 'gate-cs') as keyof typeof catalogs] ? String(body.goal) : 'gate-cs',
     updatedAt: now(),
   });
   void logActivity(user.id, 'onboarding', {});
@@ -622,9 +709,13 @@ app.post('/api/agents/:agentId/sessions', async (req: Request, res: Response) =>
   if (!user) return;
   const agent = AGENT_CATALOG.find((item) => item.id === param(req.params.agentId));
   if (!agent) return res.status(404).json({ error: 'Unknown agent' });
+  const goal = String(req.body?.goal || user.activeGoal || user.goals?.[0]?.type || 'gate-cs');
   const session = await store.saveAgentSession({
-    id: randomUUID(), ownerId: user.id, agentId: agent.id, agent, topicId: req.body?.topicId || null,
-    messages: [{ role: 'assistant', text: `I am ${agent.name}. Tell me what you are studying, where you are stuck, and what outcome you want. I will guide you step by step.` }],
+    id: randomUUID(), ownerId: user.id, agentId: agent.id, agent, goal, topicId: req.body?.topicId || null,
+    messages: [{
+      role: 'assistant', provider: 'system', model: 'eduswarm',
+      text: `I am ${agent.name} — ${agent.role.toLowerCase()} for ${GOAL_TITLES[goal] || goal}. Paste the exact question, option list, or code you are stuck on and I will work it with you.`,
+    }],
     createdAt: now(), updatedAt: now(),
   });
   res.status(201).json(session);
@@ -640,49 +731,112 @@ app.post('/api/agents/sessions/:id/messages', async (req: Request, res: Response
   if (!user) return;
   const session = await store.getAgentSession(user.id, param(req.params.id));
   if (!session) return res.status(404).json({ error: 'Session not found' });
-  const text = String(req.body?.text || '').trim();
+  const text = String(req.body?.text || '').trim().slice(0, 8000);
   if (!text) return res.status(400).json({ error: 'Message required' });
+
+  const goal = String(session.goal || user.activeGoal || user.goals?.[0]?.type || 'gate-cs');
+  const topic = session.topicId ? getTopic(String(session.topicId)) || null : null;
+  const mistakes = await store.listMistakes(user.id).catch(() => [] as any[]);
+  const weakTopics = [...new Set(mistakes.map((m: any) => String(m.topic || '')))].filter(Boolean);
+  const context: AgentContext = {
+    agentId: session.agentId,
+    agentName: session.agent?.name || 'Specialist Tutor',
+    agentRole: session.agent?.role || 'Learning specialist',
+    learnerName: user.name,
+    skillLevel: user.skillLevel,
+    dailyMinutes: user.dailyMinutes,
+    goal,
+    goalTitle: GOAL_TITLES[goal] || goal,
+    topic,
+    weakTopics,
+  };
+  const system = buildSystemPrompt(context);
+  const history = (session.messages || []).slice(-12);
+  const failures: string[] = [];
+
   let reply = '';
+  let provider = 'local';
+  let model = 'curriculum-fallback';
+  let note = '';
+
+  // 1. Agent runtime — preferred: it adds Qdrant retrieval to the same prompt.
   try {
     const ai = await fetch(`${runtime}/v1/agent-chat`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        agent_id: session.agentId, agent_name: session.agent?.name, agent_role: session.agent?.role,
-        topic_id: session.topicId, messages: session.messages.concat({ role: 'user', text }),
+        agent_id: context.agentId, agent_name: context.agentName, agent_role: context.agentRole,
+        topic_id: session.topicId || null, topic_title: topic?.title || null, goal,
+        system, messages: history.concat({ role: 'user', text }),
       }),
-      signal: AbortSignal.timeout(agentChatTimeoutMs),
+      signal: AbortSignal.timeout(Math.min(agentChatTimeoutMs, 120_000)),
     });
-    if (ai.ok) reply = String((await ai.json()).reply || '');
-  } catch { /* local specialist guidance below */ }
-  if (!reply) reply = specialistFallback(session.agentId, text);
-  session.messages = [...(session.messages || []), { role: 'user', text }, { role: 'assistant', text: reply }];
+    if (ai.ok) {
+      const data = (await ai.json()) as any;
+      if (typeof data?.reply === 'string' && data.reply.trim().length > 40) {
+        reply = data.reply.trim();
+        provider = 'runtime';
+        model = String(data.model || 'agent-runtime');
+      } else failures.push('runtime returned an empty reply');
+    } else {
+      failures.push(`runtime HTTP ${ai.status}: ${(await ai.text().catch(() => '')).slice(0, 160)}`);
+    }
+  } catch (error: any) {
+    failures.push(`runtime unreachable (${error?.message || error})`.slice(0, 200));
+  }
+
+  // 2. Direct LLM from the API — keeps the specialists real when the runtime is
+  //    asleep, cold-starting, or misconfigured.
+  if (!reply) {
+    try {
+      const messages: ChatMessage[] = [
+        { role: 'system', content: system },
+        ...history.map((m: any) => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: String(m.text || '') })),
+        { role: 'user', content: text },
+      ];
+      const result = await completeChat(messages);
+      reply = result.text;
+      provider = 'openrouter';
+      model = result.model;
+    } catch (error: any) {
+      failures.push(String(error?.message || error).slice(0, 240));
+    }
+  }
+
+  // 3. Curriculum-grounded local answer — never the same paragraph twice.
+  if (!reply) {
+    reply = localSpecialistReply(context, text);
+    provider = 'local';
+    model = 'curriculum-fallback';
+    note = failures[0] || 'The AI brain did not answer, so this came from your curriculum.';
+    if (llmConfigured()) console.warn('[agents] fell back to local guidance:', failures.join(' | '));
+  }
+
+  session.messages = [
+    ...(session.messages || []),
+    { role: 'user', text },
+    { role: 'assistant', text: reply, provider, model, note },
+  ];
   session.updatedAt = now();
-  await store.saveAgentSession(session);
-  res.json(session);
+  const saved = await store.saveAgentSession(session);
+  res.json({ ...saved, meta: { provider, model, note, failures: failures.slice(0, 3) } });
 });
 
-function specialistFallback(agentId: string, text: string): string {
-  const subject = text.length > 80 ? 'the exact problem you described' : 'this topic';
-  if (agentId === 'socratic-tutor') {
-    return `Let us solve ${subject} instead of jumping to a conclusion. First, restate the goal and list the facts you know. Then choose the smallest concrete example and predict the result. Next, name the definition or invariant that must remain true after each step. Check one boundary case and explain why the result still follows. Your next action: write those facts and the smallest example; I will challenge the next assumption.`;
-  }
-  if (agentId === 'pyq-coach') {
-    return `Here is an exam-ready approach for ${subject}: (1) classify the question by concept, (2) write the governing definition or invariant, (3) estimate the expected complexity or constraint, (4) eliminate every distractor by a specific contradiction, and (5) verify with a small edge case. Do one untimed attempt first, record the trap you fell into, then repeat it in 90 seconds. Send the question and options if you want a complete option-by-option solution.`;
-  }
-  if (agentId === 'doubt-solver') {
-    return `Let us debug ${subject} with hints before answers. Hint 1: name the single concept being tested and its definition. Hint 2: work the smallest concrete example by hand. Hint 3: check which option violates the invariant or an edge case. If you are still stuck, tell me your current guess and why — I will pinpoint the exact failed assumption and then walk the full solution.`;
-  }
-  if (agentId === 'code-reviewer') {
-    return `I will review ${subject} as production code, not just style. Start by stating the contract: inputs, outputs, errors, and side effects. Then test empty, singleton, duplicate, maximum, invalid, and adversarial inputs. Check the invariant after every mutation, prove termination, and calculate worst-case time and extra space. Finally separate correctness fixes from refactors. Paste the code, expected behavior, actual behavior, and one failing case; I will return line-level findings with a corrected implementation and tests.`;
-  }
-  if (agentId === 'mock-examiner') {
-    return `For ${subject}, train temperament like the exam: attempt easy questions first, park hard ones for round two, and never let one question consume more than its marks deserve. Track three numbers per mock — accuracy, negative marks leaked, and skips converted. Send your last mock score split and I will prescribe the exact subject order and time budget for your next attempt.`;
-  }
-  if (agentId === 'career-mentor') {
-    return `For ${subject}, connect learning to proof of work: one concept → one built artifact → one interview story. Pick the role you want, list its three most-tested skills, and ship a small project demonstrating each. Tell me your target role and timeline; I will map a project ladder and the questions you must be able to answer cold.`;
-  }
-  return `For ${subject}, use a revision loop: recall the definition without notes, solve one representative problem, compare your reasoning with the expected invariant, log the exact error category, and schedule reviews at 1 day, 3 days, 7 days, and 14 days. Your next session should have one weak concept, two timed questions, and one explanation written from memory.`;
-}
+/** Live capability check so the UI can say whether the AI brain is answering. */
+app.get('/api/agents/status', async (_req: Request, res: Response) => {
+  let runtimeOk = false;
+  let runtimeModel = '';
+  try {
+    const health = await fetch(`${runtime}/health`, { signal: AbortSignal.timeout(4000) });
+    runtimeOk = health.ok;
+    if (health.ok) runtimeModel = String(((await health.json()) as any)?.model || '');
+  } catch { /* runtime is asleep or unconfigured */ }
+  res.json({
+    runtime: { online: runtimeOk, model: runtimeModel, url: runtime },
+    directLlm: llmConfigured(),
+    models: modelChain().slice(0, 4),
+    answerPath: runtimeOk ? 'runtime' : llmConfigured() ? 'direct-llm' : 'curriculum-fallback',
+  });
+});
 
 // ============================================================ INTELLIGENCE
 
@@ -1170,23 +1324,38 @@ app.post('/api/doubt', async (req: Request, res: Response) => {
       const data = await response.json();
       return res.json({ answer: data.reply, provider: 'agent', topicId, related: [] });
     }
-  } catch { /* local guide below */ }
+  } catch { /* direct model below */ }
+
+  // Direct model when the runtime is unavailable — doubts deserve a real answer.
+  try {
+    const doubtContext: AgentContext = {
+      agentId: 'doubt-solver', agentName: 'Doubt Solver', agentRole: 'Concept debugger',
+      learnerName: user.name, skillLevel: user.skillLevel,
+      goal: String(user.activeGoal || user.goals?.[0]?.type || 'gate-cs'),
+      goalTitle: GOAL_TITLES[String(user.activeGoal || user.goals?.[0]?.type || 'gate-cs')] || 'your syllabus',
+      topic,
+    };
+    const system = `${buildSystemPrompt(doubtContext)}${lessonContext ? `\n\nLesson context:\n${lessonContext.slice(0, 3000)}` : ''}`;
+    const result = await completeChat([{ role: 'system', content: system }, { role: 'user', content: question }]);
+    return res.json({ answer: result.text, provider: 'direct-model', model: result.model, topicId, related: [] });
+  } catch { /* curriculum guide below */ }
+
   const related = QUESTION_BANK
     .map((item) => ({ ...item, _score: searchScore(question, `${item.question} ${item.subject} ${item.topic}`) + (topic ? searchScore(topic.title, `${item.subject} ${item.topic}`) : 0) }))
     .filter((item) => item._score > 0)
     .sort((a, b) => b._score - a._score)
     .slice(0, 3)
     .map(({ answer: _a, _score: _s, ...rest }) => rest);
-  const answer = [
-    `Here is a reliable way to attack this${topic ? ` in ${topic.title}` : ''}:`,
-    '1) Restate the question in one sentence and list the given facts.',
-    '2) Name the governing definition or invariant — most doubts collapse once it is written down.',
-    '3) Work the smallest concrete example by hand before touching the options.',
-    '4) Eliminate each option with a specific contradiction, not a feeling.',
-    related.length
-      ? `Related solved patterns: ${related.map((r) => `“${r.question.slice(0, 60)}…”`).join(' ')} Study their explanations, then retry your question.`
-      : 'If you are still stuck, paste the exact question text and your current guess — the Doubt Solver agent will pinpoint the failed assumption.',
-  ].join('\n');
+  const doubtFallback = localSpecialistReply({
+    agentId: 'doubt-solver', agentName: 'Doubt Solver', agentRole: 'Concept debugger',
+    learnerName: user.name, skillLevel: user.skillLevel,
+    goal: String(user.activeGoal || user.goals?.[0]?.type || 'gate-cs'),
+    goalTitle: GOAL_TITLES[String(user.activeGoal || user.goals?.[0]?.type || 'gate-cs')] || 'your syllabus',
+    topic,
+  }, question);
+  const answer = related.length
+    ? `${doubtFallback}\n\nRelated solved patterns in your bank: ${related.map((r) => `“${r.question.slice(0, 60)}…”`).join(' ')}`
+    : doubtFallback;
   res.json({ answer, provider: 'local-guide', topicId, related });
 });
 
@@ -1355,18 +1524,56 @@ app.put('/api/notes/:topicId', async (req: Request, res: Response) => {
 
 // --------------------------------------------------------------- study rooms
 
-app.get('/api/rooms', (_req: Request, res: Response) => res.json({ rooms: listRooms() }));
+// Clubs: three public halls ship with the product; anything a learner creates
+// is private and only reachable through its invite link.
+app.get('/api/rooms', async (req: Request, res: Response) => {
+  const user = await userFor(req);
+  res.json({ rooms: listRooms(user?.id || null) });
+});
 
 app.post('/api/rooms', async (req: Request, res: Response) => {
   const user = await requireUser(req, res);
   if (!user) return;
   const name = String(req.body?.name || '').trim();
-  if (!name) return res.status(400).json({ error: 'Room name is required' });
+  if (!name) return res.status(400).json({ error: 'Club name is required' });
   try {
-    const room = createRoom(name, String(req.body?.goal || 'gate-cs'), String(req.body?.topic || ''), user.id, user.name || 'Learner');
-    res.status(201).json({ id: room.id, name: room.name, goal: room.goal, topic: room.topic, ownerId: room.ownerId, createdAt: room.createdAt });
+    const room = createRoom(
+      name, String(req.body?.goal || 'gate-cs'), String(req.body?.topic || ''),
+      user.id, user.name || 'Learner', { isPrivate: req.body?.isPrivate !== false },
+    );
+    res.status(201).json({
+      id: room.id, name: room.name, goal: room.goal, topic: room.topic,
+      ownerId: room.ownerId, ownerName: room.ownerName, isPrivate: room.isPrivate,
+      inviteCode: room.inviteCode, createdAt: room.createdAt,
+    });
   } catch (error: any) {
-    res.status(429).json({ error: error?.message || 'Could not create room' });
+    res.status(429).json({ error: error?.message || 'Could not create club' });
+  }
+});
+
+/** Owner-only: rotate the invite link (the old link stops working). */
+app.post('/api/rooms/:id/invite', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  try {
+    const inviteCode = rotateInvite(param(req.params.id), user.id);
+    res.json({ inviteCode, link: inviteLink(req, inviteCode) });
+  } catch (error: any) {
+    res.status(error instanceof RoomAccessError ? 403 : 404).json({ error: error?.message || 'Club not found' });
+  }
+});
+
+/** Redeem an invite link. */
+app.post('/api/rooms/join-by-invite', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const code = String(req.body?.code || '').trim();
+  if (!code) return res.status(400).json({ error: 'Invite code is required' });
+  try {
+    const room = joinByInvite(code, user.id, user.name || 'Learner');
+    res.json(roomSummaryFor(room.id, user.id));
+  } catch (error: any) {
+    res.status(error instanceof RoomAccessError ? 404 : 400).json({ error: error?.message || 'Invite link is not valid' });
   }
 });
 
@@ -1374,10 +1581,10 @@ app.post('/api/rooms/:id/join', async (req: Request, res: Response) => {
   const user = await requireUser(req, res);
   if (!user) return;
   try {
-    const members = joinRoom(param(req.params.id), user.id, user.name || 'Learner');
+    const members = joinRoom(param(req.params.id), user.id, user.name || 'Learner', String(req.body?.inviteCode || ''));
     res.json({ members });
-  } catch {
-    res.status(404).json({ error: 'Room not found' });
+  } catch (error: any) {
+    res.status(error instanceof RoomAccessError ? 403 : 404).json({ error: error?.message || 'Club not found' });
   }
 });
 
@@ -1388,7 +1595,7 @@ app.post('/api/rooms/:id/messages', async (req: Request, res: Response) => {
     const message = postMessage(param(req.params.id), user.id, user.name || 'Learner', String(req.body?.text || ''), req.body?.share || null);
     res.status(201).json(message);
   } catch (error: any) {
-    res.status(400).json({ error: error?.message || 'Could not post message' });
+    res.status(error instanceof RoomAccessError ? 403 : 400).json({ error: error?.message || 'Could not post message' });
   }
 });
 
@@ -1397,9 +1604,9 @@ app.get('/api/rooms/:id/messages', async (req: Request, res: Response) => {
   if (!user) return;
   try {
     const since = Number(String(req.query.since || 0));
-    res.json(roomMessages(param(req.params.id), Number.isFinite(since) ? since : 0));
-  } catch {
-    res.status(404).json({ error: 'Room not found' });
+    res.json(roomMessages(param(req.params.id), user.id, Number.isFinite(since) ? since : 0));
+  } catch (error: any) {
+    res.status(error instanceof RoomAccessError ? 403 : 404).json({ error: error?.message || 'Club not found' });
   }
 });
 

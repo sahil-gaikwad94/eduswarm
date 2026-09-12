@@ -121,8 +121,15 @@ class FakeSpecialistRag(FakeProviderRag):
         return self.retrieve(query, topic_id or "algo-complexity", limit)[:limit]
 
     def chat(self, messages, system):
+        return self.chat_with_model(messages, system)[0]
+
+    def chat_with_model(self, messages, system):
         latest = messages[-1].get("content", messages[-1].get("text", "")) if messages else ""
-        return f"Grounded answer to: {latest[:60]}"
+        FakeSpecialistRag.last_system = system
+        return f"Grounded answer to: {latest[:60]}", "fake-model:free"
+
+    def model_chain(self):
+        return ["fake-model:free"]
 
 
 def test_doubt_solve_returns_grounded_answer(monkeypatch):
@@ -180,3 +187,41 @@ def test_knowledge_search_lists_chunks(monkeypatch):
     response = client.get("/v1/knowledge/search", params={"q": "binary search", "topic_id": "algo-complexity"})
     assert response.status_code == 200
     assert len(response.json()["chunks"]) == 2
+
+
+def test_agent_chat_uses_the_api_supplied_system_prompt_and_reports_its_model(monkeypatch):
+    monkeypatch.setattr("app.main.OpenRouterRag", FakeSpecialistRag)
+    response = client.post("/v1/agent-chat", json={
+        "agent_id": "pyq-coach",
+        "agent_name": "PYQ Coach",
+        "agent_role": "Exam strategist",
+        "topic_id": "algo-complexity",
+        "topic_title": "Time and Space Complexity",
+        "goal": "gate-cs",
+        "system": "You are PYQ Coach. Answer the option list they pasted and eliminate each wrong option.",
+        "messages": [{"role": "user", "text": "Worst case of binary search on a sorted array?"}],
+    })
+    assert response.status_code == 200
+    body = response.json()
+    assert "binary search" in body["reply"].lower()
+    assert body["model"] == "fake-model:free"
+    assert body["provider"] == "openrouter"
+    assert "eliminate each wrong option" in FakeSpecialistRag.last_system
+    assert "Time and Space Complexity" in FakeSpecialistRag.last_system
+    assert body["sources"]
+
+
+def test_agent_chat_requires_a_learner_message():
+    response = client.post("/v1/agent-chat", json={"agent_id": "doubt-solver", "messages": [{"role": "assistant", "text": "Hello"}]})
+    assert response.status_code == 422
+
+
+def test_agent_chat_falls_back_to_its_own_prompt_without_a_system(monkeypatch):
+    monkeypatch.setattr("app.main.OpenRouterRag", FakeSpecialistRag)
+    response = client.post("/v1/agent-chat", json={
+        "agent_id": "socratic-tutor", "agent_name": "Socratic Tutor", "agent_role": "Concept guide",
+        "messages": [{"role": "user", "text": "Why does my recursion blow up?"}],
+    })
+    assert response.status_code == 200
+    assert "Socratic Tutor" in FakeSpecialistRag.last_system
+    assert "generic study advice" in FakeSpecialistRag.last_system

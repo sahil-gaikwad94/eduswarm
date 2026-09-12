@@ -35,6 +35,18 @@ services:
         sync: false
       - key: REDIS_URL
         sync: false
+      # Specialist agents call this directly when the agent runtime is asleep,
+      # so the API needs its own key (same value as the agent service).
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: OPENROUTER_MODEL
+        value: meta-llama/llama-3.3-70b-instruct:free
+      - key: OPENROUTER_FALLBACK_MODELS
+        value: deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
+      - key: LLM_TIMEOUT_MS
+        value: '90000'
   - type: web
     name: eduswarm-agent
     runtime: python
@@ -52,7 +64,9 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: openrouter/free
+        value: meta-llama/llama-3.3-70b-instruct:free
+      - key: OPENROUTER_FALLBACK_MODELS
+        value: deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
       - key: OPENROUTER_REQUEST_TIMEOUT_SECONDS
         value: 300
       - key: OPENROUTER_BASE_URL

@@ -27,6 +27,17 @@ from qdrant_client import QdrantClient, models
 
 EMBEDDING_SIZE = 3072
 
+# Free-tier model ids change often, so generation walks a chain instead of
+# betting on one id. `OPENROUTER_MODEL` / `OPENROUTER_FALLBACK_MODELS`
+# (comma separated) are tried first, then these.
+DEFAULT_FALLBACK_MODELS = [
+    "deepseek/deepseek-chat-v3-0324:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "mistralai/mistral-small-3.2-24b-instruct:free",
+    "openrouter/free",
+]
+
 STOPWORDS = frozenset(
     "a an the and or but of to in on for with is are was were be been being "
     "this that these those it its as at by from into over after before between "
@@ -220,18 +231,48 @@ class OpenRouterRag:
         raise RuntimeError(f"OpenAI-compatible provider request failed: {last_error}") from last_error
 
     def chat(self, messages: list[dict[str, str]], system: str) -> str:
+        return self.chat_with_model(messages, system)[0]
+
+    def model_chain(self) -> list[str]:
+        """Model ids to try in order — free-tier ids churn, so fall back."""
+        configured = [m.strip() for m in f"{os.getenv('OPENROUTER_MODEL', '')},{os.getenv('OPENROUTER_FALLBACK_MODELS', '')}".split(",") if m.strip()]
+        chain = list(dict.fromkeys([*configured, *DEFAULT_FALLBACK_MODELS]))
+        return chain
+
+    def chat_with_model(self, messages: list[dict[str, str]], system: str) -> tuple[str, str]:
+        """Complete a chat, falling back across models. Returns (text, model)."""
         self._require_key()
         normalized = [{"role": str(message.get("role", "user")), "content": str(message.get("content", message.get("text", "")))} for message in messages if message.get("text") or message.get("content")]
         latest = normalized[-1]["content"] if normalized else ""
         reinforced_system = system + f"\n\nThe latest learner message is exactly: <learner_message>{latest}</learner_message>\nYou must answer that message directly. Do not ask the learner to provide the message again when it is present."
-        payload = json.dumps({"model": self.settings.model, "messages": [{"role": "system", "content": reinforced_system}, *normalized], "temperature": 0.35}).encode("utf-8")
-        request = urllib.request.Request(f"{self.settings.base_url}/chat/completions", data=payload, headers={"Authorization": f"Bearer {self.settings.api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://eduswarm-web.onrender.com", "X-Title": "EduSwarm"}, method="POST")
-        with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
-            body = json.loads(response.read().decode("utf-8"))
-        content = body["choices"][0]["message"]["content"]
-        if isinstance(content, list):
-            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
-        return str(content).strip()
+        payload = json.dumps({
+            "messages": [{"role": "system", "content": reinforced_system}, *normalized],
+            "temperature": 0.35,
+            "max_tokens": int(os.getenv("OPENROUTER_MAX_TOKENS", "1400")),
+        }).encode("utf-8")
+        headers = {"Authorization": f"Bearer {self.settings.api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://eduswarm-web.onrender.com", "X-Title": "EduSwarm"}
+        errors: list[str] = []
+        for model in self.model_chain():
+            body_payload = json.dumps({**json.loads(payload), "model": model}).encode("utf-8")
+            request = urllib.request.Request(f"{self.settings.base_url}/chat/completions", data=body_payload, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
+                    body = json.loads(response.read().decode("utf-8"))
+                content = body["choices"][0]["message"]["content"]
+                if isinstance(content, list):
+                    content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+                text = str(content).strip()
+                if len(text) >= 40:
+                    return text, model
+                errors.append(f"{model} returned an empty reply")
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:300]
+                errors.append(f"{model} HTTP {exc.code}: {detail}")
+                if exc.code in (401, 402, 403):
+                    break
+            except Exception as exc:  # URLError, timeout, malformed body
+                errors.append(f"{model} {type(exc).__name__}: {exc}")
+        raise RuntimeError("every configured model failed — " + " | ".join(errors[:3]))
 
 
 RagProvider = OpenRouterRag

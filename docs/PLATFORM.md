@@ -45,9 +45,27 @@ Dean → Researcher → Notes Author → Practice Team → Fact-Checker → Publ
 
 ### Specialist sessions (stateful chat)
 
-Seven persistent personas share one RAG-grounded chat endpoint with per-agent
-system prompts and local fallback playbooks: Socratic Tutor, PYQ Coach, Doubt
-Solver, Code Reviewer, Mock Examiner, Revision Planner, Career Mentor.
+Seven persistent personas share one grounded chat endpoint: Socratic Tutor, PYQ
+Coach, Doubt Solver, Code Reviewer, Mock Examiner, Revision Planner, Career
+Mentor.
+
+**Three-tier answer path.** `POST /api/agents/sessions/:id/messages` builds one
+system prompt in `apps/api/src/agentBrain.ts` — persona, open lesson, universe,
+learner level, and their weak topics — then tries, in order:
+
+1. **Agent runtime** (`/v1/agent-chat`): the same prompt plus Qdrant retrieval.
+2. **Direct model from the API** (`apps/api/src/llm.ts`): walks the
+   `OPENROUTER_MODEL` → `OPENROUTER_FALLBACK_MODELS` chain, so an asleep or
+   misconfigured runtime cannot silently downgrade the learner's answers.
+3. **Curriculum brain** (`localSpecialistReply`): not a canned paragraph — a
+   pasted PYQ is matched against the question bank and answered with its real
+   explanation and option eliminations, pasted code gets a structural review,
+   and common stuck-points (recursion blow-up, Master theorem, Belady, BCNF,
+   self-attention, stale closures…) get their actual mechanism.
+
+Every assistant message is stored with `provider` and `model`, and the chat UI
+prints that label — so a learner can always tell whether a model answered or the
+offline curriculum did. `GET /api/agents/status` reports the live path.
 
 ### Intelligence endpoints (structured JSON)
 
@@ -101,6 +119,29 @@ feed the same XP/mastery model as quizzes.
 mistakes · reviews · mocks · activities` — all owner-scoped; Redis pub/sub
 (`eduswarm:job:*`) streams job events to SSE. MemoryStore mirrors the full
 interface so tests and demos run dependency-free.
+
+## 7b. Sessions, clubs, and switching universes
+
+**Token sessions.** The web app and API are on different domains, so a session
+cookie is third-party and gets blocked by Safari/Firefox/Chrome — the cause of
+the repeated "sign in with Google" loop. `apps/api/src/auth.ts` signs a
+single-use login code at the end of OAuth; the SPA exchanges it for a 30-day
+HMAC Bearer token and sends it as an `Authorization` header. Cookies stay as a
+same-origin fallback, and the SSE job stream takes the token as `?token=`
+because `EventSource` cannot set headers.
+
+**Clubs.** Three public halls ship with the product. `POST /api/rooms` creates a
+**private** club by default: it is hidden from `GET /api/rooms` for everyone but
+the owner and existing members, reads and writes are membership-checked
+(403 otherwise), and entry is by invite code
+(`POST /api/rooms/join-by-invite`, link `?invite=<code>`). Owners can rotate the
+link, which invalidates the old one.
+
+**Active universe.** `PATCH /api/me { activeGoal }` persists the learner's
+universe on the account (and adds the matching goal), so switching from GATE CSE
+to AI/ML survives reloads and devices. Home renders that universe's complete
+syllabus; everything else — today's mission, daily challenge, insights, weekly
+XP — lives on the Today's mission page.
 
 ## 8. Roadmap
 

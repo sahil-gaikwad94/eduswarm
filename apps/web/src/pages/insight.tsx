@@ -5,13 +5,30 @@ const opts = { credentials: 'include' as const };
 
 // ------------------------------------------------------------------ agents
 
-export function Agents({ agents, onOpen }: { agents: Agent[]; onOpen: (a: Agent) => void }) {
+function BrainStatus({ status }: { status: any }) {
+  if (!status) return null;
+  const live = status.answerPath !== 'curriculum-fallback';
+  const label = status.answerPath === 'runtime'
+    ? `AI live · agent runtime${status.runtime?.model ? ` · ${status.runtime.model}` : ''}`
+    : status.answerPath === 'direct-llm'
+      ? `AI live · direct model${status.models?.[0] ? ` · ${status.models[0]}` : ''}`
+      : 'Offline guidance · no model reachable';
+  return (
+    <p className={`brain-status ${live ? 'live' : 'offline'}`}>
+      <span className="brain-dot" />{label}
+      {!live && <small>Set OPENROUTER_API_KEY on the API or agent service to switch the specialists to a real model.</small>}
+    </p>
+  );
+}
+
+export function Agents({ agents, status, onOpen }: { agents: Agent[]; status?: any; onOpen: (a: Agent) => void }) {
   return (
     <>
       <div className="compact-heading"><div>
         <p className="eyebrow">YOUR SPECIALIST TEAM</p>
         <h1>Guidance that actually starts.</h1>
-        <p className="lead">Each specialist opens a saved session with context, a first prompt, and a working conversation.</p>
+        <p className="lead">Paste the exact question, option list, or code. Every reply is labelled with the brain that produced it — AI model or offline curriculum guidance.</p>
+        <BrainStatus status={status} />
       </div></div>
       <div className="agent-directory">
         {agents.map((a) => (
@@ -198,7 +215,9 @@ const GOAL_TYPES = [
   { id: 'ai-ml', label: 'AI / ML' }, { id: 'other', label: 'Custom' },
 ];
 
-export function Profile({ user, onSave }: { user: any; onSave: (u: any) => void }) {
+export function Profile({ user, goal, onSave, onSwitch }: {
+  user: any; goal: string; onSave: (u: any) => void; onSwitch?: (goal: string) => void;
+}) {
   const [dailyMinutes, setDailyMinutes] = useState(user.dailyMinutes || 60);
   const [skillLevel, setSkillLevel] = useState(user.skillLevel || 'beginner');
   const [targetDate, setTargetDate] = useState(user.targetDate || '');
@@ -254,12 +273,15 @@ export function Profile({ user, onSave }: { user: any; onSave: (u: any) => void 
         </div>
       </section>
 
-      <div className="section-title" style={{ marginTop: 26 }}><div><p className="eyebrow">MULTI-GOAL LEARNER</p><h2>Your goals</h2></div></div>
+      <div className="section-title" style={{ marginTop: 26 }}><div><p className="eyebrow">MULTI-GOAL LEARNER</p><h2>Your learning universes</h2></div></div>
       <div className="goal-list">
         {(user.goals || []).map((g: any) => (
           <div className="goal-row card" key={g.id}>
-            <span><b>{g.title}</b><small>{g.type}{g.paused ? ' · paused' : ''}</small></span>
+            <span><b>{g.title}</b><small>{g.type}{g.paused ? ' · paused' : ''}{g.type === goal ? ' · active' : ''}</small></span>
             <span className="goal-actions">
+              {g.type !== goal && g.type !== 'other' && onSwitch && (
+                <button onClick={() => void onSwitch(g.type)}>Make active →</button>
+              )}
               <button className="secondary-button" onClick={() => void toggleGoal(g)}>{g.paused ? 'Resume' : 'Pause'}</button>
               <button className="secondary-button" onClick={() => void removeGoal(g.id)}>Remove</button>
             </span>

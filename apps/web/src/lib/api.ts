@@ -1,6 +1,12 @@
 /** Typed EduSwarm API client with timeouts and consistent errors. */
 
-export const API = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+/**
+ * API origin. In the Vite dev server we stay same-origin so the proxy in
+ * vite.config.ts forwards /api to the local Express server — that keeps
+ * browser previews (and anyone running the repo) working without env setup.
+ * Production builds get an explicit VITE_API_URL.
+ */
+export const API = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? '' : 'http://localhost:4000');
 
 export type Page =
   | 'dashboard' | 'plan' | 'syllabus' | 'lesson' | 'flashcards' | 'practice'

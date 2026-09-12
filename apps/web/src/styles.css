@@ -280,3 +280,68 @@
 .study-links{display:flex;flex-wrap:wrap;gap:10px}
 .retry-button{margin-top:10px}
 @media(max-width:900px){.track-grid,.report-grid,.report-cols,.rooms-layout{grid-template-columns:1fr}.lesson-pager{grid-template-columns:1fr}.room-thread{min-height:60vh}}
+
+/* ===== Home: universe switcher + full syllabus + XP strip ===== */
+.universe-switch{margin-bottom:26px}
+.universe-switch-head{display:flex;justify-content:space-between;align-items:center}
+.universe-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:9px}
+.universe-card{background:var(--white);border:1px solid var(--line);border-radius:18px;padding:18px;text-align:left;display:grid;gap:6px;transition:.18s}
+.universe-card:hover{border-color:var(--violet);transform:translateY(-2px)}
+.universe-card.active{border-color:var(--ink);box-shadow:4px 4px 0 var(--ink)}
+.universe-flag{font-size:10px;letter-spacing:.12em;font-weight:700;color:var(--muted)}
+.universe-card.active .universe-flag{color:var(--violet)}
+.universe-card b{font-family:'Space Grotesk';font-size:19px;line-height:1.15}
+.universe-card small{color:var(--muted);font-size:12px}
+.universe-meta{font-size:11px;font-weight:700;color:var(--ink)}
+.syllabus-head{display:flex;justify-content:space-between;gap:20px;align-items:center;padding:22px;margin-bottom:22px}
+.syllabus-head h2{margin:0 0 4px;font-size:24px}
+.syllabus-head-actions{display:grid;gap:9px;min-width:230px}
+.syllabus-filter{width:100%}
+.continue-button{background:var(--ink);color:#fff;border-radius:11px;padding:11px 14px;font-weight:700}
+.continue-button:hover{background:var(--violet)}
+.syllabus-module-head{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.syllabus-module-head h2{margin:0}
+.syllabus-module-meta{display:flex;align-items:center;gap:10px;font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap}
+.mastery-bar.wide{height:6px;margin:10px 0 4px}
+.mastery-dot.done{color:#2f9e44}
+.module-collapsed{margin:10px 0 0;font-size:12px}
+.xp-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:34px}
+.xp-strip-card{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:18px}
+.xp-strip-card span{display:block;font-size:10px;letter-spacing:.13em;font-weight:700;color:var(--muted)}
+.xp-strip-card b{display:block;font:700 27px 'Space Grotesk';margin:9px 0 6px}
+.xp-strip-card small{display:block;font-size:11px;color:var(--muted)}
+.xp-strip-card.week{grid-column:span 2}
+.home-shortcuts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-top:16px}
+.home-shortcuts button{background:var(--white);border:1px solid var(--line);border-radius:16px;padding:16px;text-align:left;display:grid;gap:3px}
+.home-shortcuts button:hover{border-color:var(--violet)}
+.home-shortcuts b{font-family:'Space Grotesk';font-size:15px}
+.home-shortcuts small{color:var(--muted);font-size:11px}
+
+/* ===== Agent brain transparency ===== */
+.brain-status{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;margin:14px 0 0;color:var(--muted)}
+.brain-status.live{color:#2f6b3f}
+.brain-status.offline{color:#a8491f}
+.brain-dot{width:9px;height:9px;border-radius:50%;background:currentColor;box-shadow:0 0 0 4px rgba(47,107,63,.14)}
+.brain-status.offline .brain-dot{box-shadow:0 0 0 4px rgba(168,73,31,.14)}
+.brain-status small{font-weight:500;color:var(--muted)}
+.chat-bubble{display:grid;gap:4px;max-width:88%}
+.chat-bubble.user{justify-self:end}
+.chat-bubble p{margin:0;padding:13px 15px;border-radius:14px;line-height:1.55;white-space:pre-wrap;max-width:100%}
+.chat-bubble.assistant p{background:#f0ece7}
+.chat-bubble.user p{background:var(--ink);color:#fff}
+.chat-source{font-size:10px;letter-spacing:.05em;font-weight:700;color:#4b6b52;padding:0 4px}
+.chat-source.offline{color:#a8491f}
+
+/* ===== Private clubs ===== */
+.notice-banner{background:#fff8d8;border:1px solid #ead98b;border-radius:12px;padding:12px 15px;font-size:13px;margin:0 0 18px}
+.privacy-toggle{display:flex!important;flex-direction:row;align-items:flex-start;gap:10px;grid-column:1/-1}
+.privacy-toggle input{width:18px;height:18px;margin-top:2px}
+.privacy-toggle b{display:block;font-size:13px}
+.privacy-toggle small{display:block;color:var(--muted);font-size:11px}
+.room-block{display:grid;gap:6px}
+.invite-actions{display:flex;gap:6px;padding:0 2px 4px}
+.invite-actions button{font-size:10px;padding:6px 8px}
+.invite-redeem{display:flex;gap:9px;margin:0 0 18px}
+.invite-redeem input{flex:1;min-width:0}
+@media(max-width:940px){.universe-cards,.xp-strip,.home-shortcuts{grid-template-columns:1fr 1fr}.xp-strip-card.week{grid-column:span 2}.syllabus-head{display:grid;gap:14px}}
+@media(max-width:680px){.universe-cards,.xp-strip,.home-shortcuts{grid-template-columns:1fr}.xp-strip-card.week{grid-column:span 1}.invite-redeem{flex-direction:column}.syllabus-module-head{display:grid;gap:8px}}

@@ -383,3 +383,119 @@ test('topic jobs accept an explanation depth', async () => {
   assert.equal(result.body.status, 'completed');
   assert.equal(result.body.package.depth, 'eli5');
 });
+
+// --------------------------------------------------- universe switching + auth
+
+test('login codes exchange for a bearer token that authenticates later requests', async () => {
+  const { issueLoginCode } = await import('./auth.js');
+  await request('/api/session', { headers: { 'x-demo-user': 'token-learner' } });
+  const code = issueLoginCode('token-learner');
+  const exchanged = await request('/api/auth/exchange', { method: 'POST', body: { code } });
+  assert.equal(exchanged.status, 200);
+  assert.equal(typeof exchanged.body.token, 'string');
+  const session = await request('/api/session', { headers: { authorization: `Bearer ${exchanged.body.token}` } });
+  assert.equal(session.body.user.id, 'token-learner');
+  const replay = await request('/api/auth/exchange', { method: 'POST', body: { code } });
+  assert.equal(replay.status, 401, 'a login code must only work once');
+});
+
+test('switching the learning universe persists on the account', async () => {
+  const headers = { 'x-demo-user': 'universe-learner' };
+  const switched = await request('/api/me', { method: 'PATCH', headers, body: { activeGoal: 'ai-ml' } });
+  assert.equal(switched.status, 200);
+  assert.equal(switched.body.activeGoal, 'ai-ml');
+  assert.equal(switched.body.goals.some((g: any) => g.type === 'ai-ml'), true);
+  const reloaded = await request('/api/me', { headers });
+  assert.equal(reloaded.body.activeGoal, 'ai-ml');
+  const invalid = await request('/api/me', { method: 'PATCH', headers, body: { activeGoal: 'astrology' } });
+  assert.equal(invalid.status, 400);
+});
+
+// --------------------------------------------------------- specialist answers
+
+test('specialist answers the question that was actually asked and labels its brain', async () => {
+  const headers = { 'x-demo-user': 'pyq-learner' };
+  const savedKey = process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_API_KEY; // force the deterministic local brain
+  try {
+    const created = await request('/api/agents/pyq-coach/sessions', { method: 'POST', headers, body: { topicId: 'algo-complexity', goal: 'gate-cs' } });
+    assert.equal(created.status, 201);
+    const reply = await request(`/api/agents/sessions/${created.body.id}/messages`, {
+      method: 'POST', headers,
+      body: { text: 'The worst-case time complexity of binary search on a sorted array is: O(1) O(log n) O(n) O(n log n)' },
+    });
+    assert.equal(reply.status, 200);
+    const last = reply.body.messages[reply.body.messages.length - 1];
+    assert.equal(last.provider, 'local');
+    assert.equal(reply.body.meta.provider, 'local');
+    assert.equal(last.text.includes('O(log n)'), true, 'must name the real answer');
+    assert.equal(last.text.includes('halves the remaining search interval'), true, 'must include the bank explanation');
+    assert.equal(last.text.includes('make a plan'), false, 'must not answer with generic advice');
+
+    const concept = await request(`/api/agents/sessions/${created.body.id}/messages`, {
+      method: 'POST', headers, body: { text: 'why does my recursive fibonacci blow up on n = 45?' },
+    });
+    const conceptReply = concept.body.messages[concept.body.messages.length - 1].text;
+    assert.equal(conceptReply.includes('Time and Space Complexity'), true, 'must stay anchored to the open lesson');
+    assert.equal(conceptReply.includes('Offline guidance'), true, 'must be honest that no model answered');
+  } finally {
+    if (savedKey !== undefined) process.env.OPENROUTER_API_KEY = savedKey;
+  }
+});
+
+test('agent status reports which brain will answer', async () => {
+  const result = await request('/api/agents/status');
+  assert.equal(result.status, 200);
+  assert.equal(typeof result.body.runtime.online, 'boolean');
+  assert.equal(['runtime', 'direct-llm', 'curriculum-fallback'].includes(result.body.answerPath), true);
+  assert.equal(result.body.models.length > 0, true);
+});
+
+// ----------------------------------------------------------- private clubs
+
+test('learner-created clubs are private and only joinable by invite link', async () => {
+  const owner = { 'x-demo-user': 'club-owner' };
+  const stranger = { 'x-demo-user': 'club-stranger' };
+  const created = await request('/api/rooms', { method: 'POST', headers: owner, body: { name: 'Night Owls', goal: 'gate-cs', topic: 'OS revision' } });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.isPrivate, true, 'new clubs default to private');
+  assert.equal(typeof created.body.inviteCode, 'string');
+
+  const listed = await request('/api/rooms', { headers: stranger });
+  assert.equal(listed.body.rooms.some((r: any) => r.id === created.body.id), false, 'private clubs stay off the public list');
+  assert.equal(listed.body.rooms.length >= 3, true, 'public halls are still listed');
+
+  const peek = await request(`/api/rooms/${created.body.id}/messages?since=0`, { headers: stranger });
+  assert.equal(peek.status, 403, 'non-members cannot read a private club');
+  const badJoin = await request(`/api/rooms/${created.body.id}/join`, { method: 'POST', headers: stranger, body: { inviteCode: 'nope' } });
+  assert.equal(badJoin.status, 403);
+
+  const joined = await request('/api/rooms/join-by-invite', { method: 'POST', headers: stranger, body: { code: created.body.inviteCode } });
+  assert.equal(joined.status, 200);
+  assert.equal(joined.body.isMember, true);
+  const readable = await request(`/api/rooms/${created.body.id}/messages?since=0`, { headers: stranger });
+  assert.equal(readable.status, 200);
+
+  const rotated = await request(`/api/rooms/${created.body.id}/invite`, { method: 'POST', headers: owner });
+  assert.equal(rotated.status, 200);
+  assert.notEqual(rotated.body.inviteCode, created.body.inviteCode);
+  const foreign = await request(`/api/rooms/${created.body.id}/invite`, { method: 'POST', headers: stranger });
+  assert.equal(foreign.status, 403, 'only the owner can rotate the invite link');
+});
+
+test('doubts answer the concept asked instead of a similar-looking PYQ', async () => {
+  const savedKey = process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  try {
+    const result = await request('/api/doubt', {
+      method: 'POST', headers: { 'x-demo-user': 'doubt-concept' },
+      body: { question: 'Why does binary search need sorted input?' },
+    });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.provider, 'local-guide');
+    assert.match(result.body.answer, /total order|discards half/i, 'must explain the actual concept');
+    assert.equal(result.body.answer.includes('Option by option'), false, 'must not answer a different question');
+  } finally {
+    if (savedKey !== undefined) process.env.OPENROUTER_API_KEY = savedKey;
+  }
+});
