@@ -4,7 +4,8 @@ export const API = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
 
 export type Page =
   | 'dashboard' | 'plan' | 'syllabus' | 'lesson' | 'flashcards' | 'practice'
-  | 'quiz' | 'mocks' | 'codelab' | 'agents' | 'progress' | 'mistakes' | 'profile';
+  | 'quiz' | 'mocks' | 'codelab' | 'agents' | 'progress' | 'mistakes' | 'profile'
+  | 'rooms' | 'interview';
 
 export type Topic = {
   id: string; module: string; title: string; description: string;
@@ -12,22 +13,42 @@ export type Topic = {
 };
 
 export type Pack = {
-  topicId: string; title: string; verification: any;
+  topicId: string; title: string; verification: any; depth?: string;
+  readingMinutes?: number; generatedAt?: string;
   notes: { sections: any[] }; videos: any[]; flashcards: any[]; quiz: any[]; pyqs: any[];
+  codeExamples?: any[]; diagrams?: any[]; cheatSheet?: string[];
 };
 
 export type Agent = {
   id: string; name: string; role: string; description: string; bestFor: string; icon: string;
 };
 
+const TOKEN_KEY = 'eduswarm.token';
+
+export function getToken(): string | null {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+
+export function setToken(token: string | null): void {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch { /* private mode */ }
+}
+
 async function request(path: string, init: RequestInit = {}, timeoutMs = 20000): Promise<any> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${API}${path}`, { credentials: 'include', ...init, signal: controller.signal });
+    const headers: Record<string, string> = { ...(init.headers as Record<string, string> | undefined) };
+    const token = getToken();
+    if (token && !headers.Authorization && !headers.authorization) headers.Authorization = `Bearer ${token}`;
+    const response = await fetch(`${API}${path}`, { credentials: 'include', ...init, headers, signal: controller.signal });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(String((data as any)?.error || (data as any)?.message || `Request failed (${response.status})`));
+      const error = new Error(String((data as any)?.error || (data as any)?.message || `Request failed (${response.status})`));
+      (error as any).status = response.status;
+      throw error;
     }
     return data;
   } catch (error: any) {
@@ -41,6 +62,8 @@ async function request(path: string, init: RequestInit = {}, timeoutMs = 20000):
 export const apiGet = (path: string) => request(path);
 export const apiPost = (path: string, body?: unknown) =>
   request(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
+export const apiPut = (path: string, body?: unknown) =>
+  request(path, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
 export const apiPatch = (path: string, body?: unknown) =>
   request(path, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
 export const apiDelete = (path: string) => request(path, { method: 'DELETE' });
