@@ -466,3 +466,48 @@
 
 @media(max-width:680px){.loader-stage{width:240px;height:220px}.loader-stage .doodle-body{width:128px;height:142px}}
 @media(prefers-reduced-motion:reduce){.loader-screen *{animation-duration:6s!important}}
+
+/* ---------- Landing character: silly moods ---------- */
+.character-stage .doodle-character{position:relative}
+.character-stage .doodle-arm{position:absolute;top:120px;width:52px;height:7px;background:var(--ink);border-radius:7px;z-index:0}
+.character-stage .arm-left{left:-34px;transform-origin:right center;transform:rotate(26deg)}
+.character-stage .arm-right{right:-34px;transform-origin:left center;transform:rotate(-26deg)}
+.character-stage .cheek{position:absolute;top:104px;width:20px;height:12px;border-radius:50%;background:#ff9d8a;opacity:.7}
+.character-stage .cheek-left{left:40px}
+.character-stage .cheek-right{right:40px}
+.character-stage .doodle-feet i{transform-origin:center}
+.character-stage .juggle-ball{position:absolute;z-index:0;width:26px;height:26px;border-radius:50%;border:3px solid var(--ink);top:110px;left:50%;margin-left:-13px;opacity:0;transition:opacity .4s}
+.character-stage .ball-1{background:var(--violet)}
+.character-stage .ball-2{background:var(--lime)}
+.character-stage .ball-3{background:var(--peach)}
+
+/* dancing */
+.character-stage.is-dancing .doodle-character{animation:danceBob .62s ease-in-out infinite}
+.character-stage.is-dancing .doodle-body{animation:danceWobble .62s ease-in-out infinite}
+.character-stage.is-dancing .arm-left{animation:armWaveL .62s ease-in-out infinite}
+.character-stage.is-dancing .arm-right{animation:armWaveR .62s ease-in-out infinite}
+.character-stage.is-dancing .note-one{animation:noteFloat 1.6s ease-in-out infinite}
+.character-stage.is-dancing .note-two{animation:noteFloat 1.6s ease-in-out .5s infinite}
+
+/* walking across the stage */
+.character-stage.is-walking .doodle-character{animation:landWalk 3.6s ease-in-out infinite}
+.character-stage.is-walking .doodle-body{animation:walkBob .5s ease-in-out infinite}
+.character-stage.is-walking .foot-left,.character-stage.is-walking .arm-right{animation:stepL .5s ease-in-out infinite}
+.character-stage.is-walking .foot-right,.character-stage.is-walking .arm-left{animation:stepR .5s ease-in-out infinite}
+@keyframes landWalk{0%,100%{transform:translateX(-90px) scaleX(1)}49.99%{transform:translateX(90px) scaleX(1)}50%{transform:translateX(90px) scaleX(-1)}99.99%{transform:translateX(-90px) scaleX(-1)}}
+
+/* juggling */
+.character-stage.is-juggling .doodle-character{animation:juggleLean 1s ease-in-out infinite}
+.character-stage.is-juggling .arm-left{transform:rotate(-52deg)}
+.character-stage.is-juggling .arm-right{transform:rotate(52deg)}
+.character-stage.is-juggling .juggle-ball{opacity:1}
+.character-stage.is-juggling .ball-1{animation:juggle1 .9s ease-in-out infinite}
+.character-stage.is-juggling .ball-2{animation:juggle2 .9s ease-in-out infinite}
+.character-stage.is-juggling .ball-3{animation:juggle3 .9s ease-in-out infinite}
+
+/* cartwheel / silly spin */
+.character-stage.is-cartwheel .doodle-character{animation:spinSilly 1.7s ease-in-out infinite}
+.character-stage.is-cartwheel .arm-left{animation:armWaveL .4s ease-in-out infinite}
+.character-stage.is-cartwheel .arm-right{animation:armWaveR .4s ease-in-out infinite}
+
+@media(prefers-reduced-motion:reduce){.character-stage *{animation-duration:6s!important}}
