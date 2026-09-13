@@ -725,3 +725,11 @@ p.l2-eyebrow{margin-bottom:14px}
 .l2-orbit-a,.l2-orbit-b{animation:none}
 .l2-chip,.l2-scroll-cue,.l2-eyebrow-dot{animation:none!important}
 }
+
+/* landing v2 — interactive Doddly */
+.l2-doddly{position:relative}
+.l2-doddly-hit{cursor:pointer;outline:none;border-radius:40px}
+.l2-doddly-hit:focus-visible{outline:3px solid var(--violet);outline-offset:6px}
+.l2-bubble{position:absolute;top:-26px;left:50%;transform:translateX(-50%);z-index:6;background:var(--white);border:1.6px solid var(--ink);border-radius:16px;padding:10px 16px;font-size:13.5px;font-weight:800;white-space:nowrap;box-shadow:4px 5px 0 rgba(30,27,46,.14)}
+.l2-bubble:after{content:'';position:absolute;bottom:-7px;left:50%;margin-left:-7px;width:12px;height:12px;background:var(--white);border-right:1.6px solid var(--ink);border-bottom:1.6px solid var(--ink);transform:rotate(45deg)}
+.l2-minibee{position:absolute;top:16%;left:6%;z-index:3;filter:drop-shadow(0 8px 8px rgba(30,27,46,.14));pointer-events:none}

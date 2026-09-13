@@ -3,6 +3,7 @@ import {
   AnimatePresence, animate, motion, useInView, useMotionValue, useReducedMotion,
   useScroll, useSpring, useTransform,
 } from 'framer-motion';
+import confetti from 'canvas-confetti';
 import { Brand } from '../components/ui';
 import { Mascot, Sparkles, type MascotMood } from '../components/Mascot';
 import { apiGet } from '../lib/api';
@@ -112,6 +113,39 @@ function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+const DODDLY_CHEERS = [
+  'Let’s learn! ✦',
+  'You + me = momentum.',
+  'Buzz buzz — syllabus, beware!',
+  'One topic at a time!',
+  'I believe in you. Obviously.',
+  'That’s the spirit! Again!',
+];
+
+/** A button that leans toward the cursor, like it wants to be clicked. */
+function Magnetic({ children, strength = 12 }: { children: React.ReactNode; strength?: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const sx = useSpring(x, { stiffness: 240, damping: 16 });
+  const sy = useSpring(y, { stiffness: 240, damping: 16 });
+  return (
+    <motion.div
+      ref={ref}
+      style={{ x: sx, y: sy, display: 'inline-block' }}
+      onMouseMove={(e) => {
+        const r = ref.current?.getBoundingClientRect();
+        if (!r) return;
+        x.set(((e.clientX - r.left) / r.width - 0.5) * strength);
+        y.set(((e.clientY - r.top) / r.height - 0.5) * strength);
+      }}
+      onMouseLeave={() => { x.set(0); y.set(0); }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 // ------------------------------------------------------------------- data
 
 const MARQUEE = [
@@ -194,6 +228,33 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
       .catch(() => {});
   }, []);
 
+  // Doddly is alive: poke him and he dances, cheers, and rains confetti.
+  const [doddlyMood, setDoddlyMood] = useState<'idle' | 'dance' | 'cheer'>('idle');
+  const [bubble, setBubble] = useState<string | null>(null);
+  const doddlyRef = useRef<HTMLDivElement>(null);
+  const moodTimer = useRef<number>(0);
+  const bubbleTimer = useRef<number>(0);
+  const pokeDoddly = () => {
+    setDoddlyMood((m) => (m === 'dance' ? 'cheer' : 'dance'));
+    setBubble(DODDLY_CHEERS[Math.floor(Math.random() * DODDLY_CHEERS.length)]);
+    const rect = doddlyRef.current?.getBoundingClientRect();
+    if (rect) {
+      confetti({
+        particleCount: 80, spread: 64, startVelocity: 26, gravity: 0.9, ticks: 160,
+        origin: {
+          x: (rect.left + rect.width / 2) / window.innerWidth,
+          y: (rect.top + rect.height * 0.35) / window.innerHeight,
+        },
+        colors: ['#7557f5', '#bdf47c', '#ffd8c2', '#ffe285', '#a78dff'],
+      });
+    }
+    window.clearTimeout(moodTimer.current);
+    window.clearTimeout(bubbleTimer.current);
+    moodTimer.current = window.setTimeout(() => setDoddlyMood('idle'), 2400);
+    bubbleTimer.current = window.setTimeout(() => setBubble(null), 2600);
+  };
+  useEffect(() => () => { window.clearTimeout(moodTimer.current); window.clearTimeout(bubbleTimer.current); }, []);
+
   const totalTutorials = Object.values(counts).reduce((sum, c) => sum + c.topics, 0);
   const totalModules = Object.values(counts).reduce((sum, c) => sum + c.modules, 0);
 
@@ -244,7 +305,9 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
             className="l2-cta-row"
             initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7, delay: 0.24, ease: EASE_OUT }}
           >
-            <button className="l2-cta primary" onClick={onSignIn}>Start learning free <span>↗</span></button>
+            <Magnetic>
+              <button className="l2-cta primary" onClick={onSignIn}>Start learning free <span>↗</span></button>
+            </Magnetic>
             <button className="l2-cta ghost" onClick={() => scrollToId('l2-how')}>Meet the swarm <span>↓</span></button>
           </motion.div>
           {error && <p className="error-copy l2-error">{error}</p>}
@@ -270,15 +333,46 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
             <motion.span className="l2-chip chip-d" animate={{ y: [0, -11, 0] }} transition={{ duration: 4.6, repeat: Infinity, ease: 'easeInOut', delay: 1.4 }}>Transformers ✦</motion.span>
           </motion.div>
           <motion.div
+            className="l2-minibee"
+            aria-hidden
+            animate={{ x: [0, 130, 50, -100, -30, 0], y: [0, -70, -130, -60, -20, 0], rotate: [0, 12, -8, 10, -6, 0] }}
+            transition={{ duration: 13, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <Mascot size={52} mood="wave" />
+          </motion.div>
+          <motion.div
             className="l2-doddly"
             initial={{ opacity: 0, scale: 0.86, y: 30 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             transition={{ type: 'spring', stiffness: 130, damping: 16, delay: 0.15 }}
           >
-            <Mascot size={360} mood="idle" eyesFollow />
+            <AnimatePresence>
+              {bubble && (
+                <motion.div
+                  className="l2-bubble"
+                  initial={{ opacity: 0, y: 12, scale: 0.85 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.9 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 24 }}
+                >
+                  {bubble}
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div
+              ref={doddlyRef}
+              className="l2-doddly-hit"
+              role="button"
+              tabIndex={0}
+              title="Click Doddly!"
+              onClick={pokeDoddly}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pokeDoddly(); } }}
+            >
+              <Mascot size={360} mood={doddlyMood} eyesFollow />
+            </div>
           </motion.div>
           <div className="l2-hive-note" aria-hidden>
-            <b>Psst… move your cursor.</b><small>Doddly is watching you learn.</small>
+            <b>Psst… click Doddly. Move your cursor.</b><small>He’s watching you learn — and he dances.</small>
           </div>
         </motion.div>
 
