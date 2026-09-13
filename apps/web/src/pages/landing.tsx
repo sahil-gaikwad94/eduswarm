@@ -75,16 +75,36 @@ function RotatingWord() {
   );
 }
 
-function Honeycomb({ id, className }: { id: string; className?: string }) {
+const EMBERS = [
+  { left: '6%', size: 5, dur: 12, delay: 0, color: '#f04e2c' },
+  { left: '14%', size: 3, dur: 10, delay: 3, color: '#ffe285' },
+  { left: '26%', size: 4, dur: 14, delay: 6, color: '#7557f5' },
+  { left: '38%', size: 3, dur: 9, delay: 1.5, color: '#f04e2c' },
+  { left: '52%', size: 5, dur: 13, delay: 4.5, color: '#bdf47c' },
+  { left: '63%', size: 3, dur: 10, delay: 7, color: '#f04e2c' },
+  { left: '74%', size: 4, dur: 12, delay: 2, color: '#ffe285' },
+  { left: '84%', size: 3, dur: 9.5, delay: 5.5, color: '#f04e2c' },
+  { left: '92%', size: 4, dur: 14, delay: 8.5, color: '#7557f5' },
+  { left: '31%', size: 2.5, dur: 11, delay: 9, color: '#bdf47c' },
+  { left: '58%', size: 3, dur: 12.5, delay: 1.2, color: '#ff9d76' },
+  { left: '88%', size: 2.5, dur: 10.5, delay: 6.8, color: '#ff9d76' },
+];
+
+/** Tiny embers drifting up through the hero — the flame's warmth, in motion. */
+function Embers() {
   return (
-    <svg className={className} aria-hidden>
-      <defs>
-        <pattern id={id} width="28" height="49" patternUnits="userSpaceOnUse">
-          <path d="M13.99 9.25l13 7.5v15l-13 7.5L1 31.75v-15l12.99-7.5z" fill="none" stroke="currentColor" strokeWidth="1.1" />
-        </pattern>
-      </defs>
-      <rect width="100%" height="100%" fill={`url(#${id})`} />
-    </svg>
+    <div className="l2-embers" aria-hidden>
+      {EMBERS.map((e, i) => (
+        <span
+          key={i}
+          className="l2-ember"
+          style={{
+            left: e.left, width: e.size, height: e.size, background: e.color,
+            animationDuration: `${e.dur}s`, animationDelay: `-${e.delay}s`,
+          }}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -116,7 +136,7 @@ function scrollToId(id: string) {
 const DODDLY_CHEERS = [
   'Let’s learn! ✦',
   'You + me = momentum.',
-  'Buzz buzz — syllabus, beware!',
+  'Catch the spark — let’s go!',
   'One topic at a time!',
   'I believe in you. Obviously.',
   'That’s the spirit! Again!',
@@ -155,49 +175,49 @@ const MARQUEE = [
   'Compiler Design', 'Docker & CI/CD', 'Graph Algorithms',
 ];
 
-const FEATURES = [
+const FEATURES: Array<{ icon: string; span: string; tint: string; title: string; copy: string; chips: string[] }> = [
   {
-    icon: '✦', span: 'wide', title: 'Meet your learning swarm',
+    icon: '✦', span: 'wide', tint: 'violet', title: 'Meet your learning swarm',
     copy: 'A Dean-led team of AI agents — Researcher, Notes Author, Practice Team, Fact-Checker and Publisher — builds every study kit before you see it.',
     chips: ['Dean', 'Researcher', 'Notes', 'Practice', 'Fact-check', 'Publisher'],
   },
   {
-    icon: '✓', span: '', title: 'Evidence-gated lessons',
+    icon: '✓', span: '', tint: 'lime', title: 'Evidence-gated lessons',
     copy: 'Nothing ships without cited claims. Every kit carries its sources and a verification stamp you can actually check.',
     chips: [],
   },
   {
-    icon: '▤', span: '', title: 'Spaced repetition',
+    icon: '▤', span: '', tint: 'gold', title: 'Spaced repetition',
     copy: 'Flashcards scheduled by SM-2 — grade Again, Hard, Good or Easy and the scheduler remembers so you don’t have to.',
     chips: [],
   },
   {
-    icon: '◷', span: '', title: 'Mocks with real marking',
+    icon: '◷', span: '', tint: 'peach', title: 'Mocks with real marking',
     copy: 'Timed papers with GATE negative marking, a question palette, flags, and a mistake notebook that files every error for you.',
     chips: [],
   },
   {
-    icon: '</>', span: '', title: 'A sandboxed code lab',
+    icon: '</>', span: '', tint: 'sky', title: 'A sandboxed code lab',
     copy: 'Run JavaScript against hidden tests with an AI code reviewer looking over your shoulder. Break things safely.',
     chips: [],
   },
   {
-    icon: '❖', span: 'wide', title: 'The Reading Room',
+    icon: '❖', span: 'wide', tint: 'violet', title: 'The Reading Room',
     copy: 'The internet’s most insightful free blogs — Lil’ Log, Josh Comeau, OSTEP and friends — curated per universe and matched to your syllabus.',
     chips: ['Lil’ Log', 'Josh Comeau', 'OSTEP', 'GATE Overflow'],
   },
 ];
 
-const STEPS: Array<{ n: string; title: string; copy: string; mood: MascotMood }> = [
-  { n: '01', title: 'Pick your universe', copy: 'GATE CSE, Full-stack Engineering or AI/ML — each with a complete, module-by-module syllabus.', mood: 'think' },
-  { n: '02', title: 'Follow today’s mission', copy: 'The Dean ranks your highest-impact next action. Do the top item and the day counts.', mood: 'wave' },
-  { n: '03', title: 'Watch momentum compound', copy: 'XP, streaks, mastery maps and spaced reviews turn small sessions into an unshakeable score.', mood: 'cheer' },
+const STEPS: Array<{ n: string; title: string; copy: string; mood: MascotMood; accent: string }> = [
+  { n: '01', title: 'Pick your universe', copy: 'GATE CSE, Full-stack Engineering or AI/ML — each with a complete, module-by-module syllabus.', mood: 'think', accent: 'violet' },
+  { n: '02', title: 'Follow today’s mission', copy: 'The Dean ranks your highest-impact next action. Do the top item and the day counts.', mood: 'wave', accent: 'gold' },
+  { n: '03', title: 'Watch momentum compound', copy: 'XP, streaks, mastery maps and spaced reviews turn small sessions into an unshakeable score.', mood: 'cheer', accent: 'lime' },
 ];
 
 const UNIVERSE_CARDS = [
-  { id: 'gate-cs', title: 'GATE CSE', tag: 'PYQ-first', blurb: 'Every official syllabus subject — math to networks — with PYQ marathons and full mocks.', tone: 'violet' },
-  { id: 'web-dev', title: 'Full-stack Engineering', tag: 'Build-ready', blurb: 'HTML to system design: TypeScript, React, Node, databases, testing and production.', tone: 'lime' },
-  { id: 'ai-ml', title: 'AI / ML Engineering', tag: 'Model-native', blurb: 'Python, classical ML, deep learning, LLM apps, RAG, and MLOps that survives contact with users.', tone: 'peach' },
+  { id: 'gate-cs', title: 'GATE CSE', tag: 'PYQ-first', glyph: '∑', blurb: 'Every official syllabus subject — math to networks — with PYQ marathons and full mocks.', tone: 'violet' },
+  { id: 'web-dev', title: 'Full-stack Engineering', tag: 'Build-ready', glyph: '</>', blurb: 'HTML to system design: TypeScript, React, Node, databases, testing and production.', tone: 'lime' },
+  { id: 'ai-ml', title: 'AI / ML Engineering', tag: 'Model-native', glyph: 'λ', blurb: 'Python, classical ML, deep learning, LLM apps, RAG, and MLOps that survives contact with users.', tone: 'peach' },
 ];
 
 const SHELF_TEASERS = [
@@ -229,7 +249,7 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
   }, []);
 
   // Doddly is alive: poke him and he dances, cheers, and rains confetti.
-  const [doddlyMood, setDoddlyMood] = useState<'idle' | 'dance' | 'cheer'>('idle');
+  const [doddlyMood, setDoddlyMood] = useState<'watching' | 'dance' | 'cheer'>('watching');
   const [bubble, setBubble] = useState<string | null>(null);
   const doddlyRef = useRef<HTMLDivElement>(null);
   const moodTimer = useRef<number>(0);
@@ -245,12 +265,12 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
           x: (rect.left + rect.width / 2) / window.innerWidth,
           y: (rect.top + rect.height * 0.35) / window.innerHeight,
         },
-        colors: ['#7557f5', '#bdf47c', '#ffd8c2', '#ffe285', '#a78dff'],
+        colors: ['#f04e2c', '#7557f5', '#bdf47c', '#ffd8c2', '#ffe285', '#a78dff'],
       });
     }
     window.clearTimeout(moodTimer.current);
     window.clearTimeout(bubbleTimer.current);
-    moodTimer.current = window.setTimeout(() => setDoddlyMood('idle'), 2400);
+    moodTimer.current = window.setTimeout(() => setDoddlyMood('watching'), 2400);
     bubbleTimer.current = window.setTimeout(() => setBubble(null), 2600);
   };
   useEffect(() => () => { window.clearTimeout(moodTimer.current); window.clearTimeout(bubbleTimer.current); }, []);
@@ -277,7 +297,7 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
       {/* ------------------------------------------------------------ hero */}
       <section className="l2-hero">
         <div className="l2-hero-bg" aria-hidden>
-          <Honeycomb id="l2-hex" className="l2-honeycomb" />
+          <Embers />
           <motion.span className="l2-glow l2-glow-a" style={{ opacity: glowOpacity }} />
           <motion.span className="l2-glow l2-glow-b" style={{ opacity: glowOpacity }} />
         </div>
@@ -333,7 +353,7 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
             <motion.span className="l2-chip chip-d" animate={{ y: [0, -11, 0] }} transition={{ duration: 4.6, repeat: Infinity, ease: 'easeInOut', delay: 1.4 }}>Transformers ✦</motion.span>
           </motion.div>
           <motion.div
-            className="l2-minibee"
+            className="l2-miniflame"
             aria-hidden
             animate={{ x: [0, 130, 50, -100, -30, 0], y: [0, -70, -130, -60, -20, 0], rotate: [0, 12, -8, 10, -6, 0] }}
             transition={{ duration: 13, repeat: Infinity, ease: 'easeInOut' }}
@@ -371,8 +391,8 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
               <Mascot size={360} mood={doddlyMood} eyesFollow />
             </div>
           </motion.div>
-          <div className="l2-hive-note" aria-hidden>
-            <b>Psst… click Doddly. Move your cursor.</b><small>He’s watching you learn — and he dances.</small>
+          <div className="l2-peek-note" aria-hidden>
+            <b>Psst… click Doddly. Move your cursor.</b><small>He’s watching you learn — and he loves a good spark.</small>
           </div>
         </motion.div>
 
@@ -398,13 +418,15 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
       {/* ----------------------------------------------------- feature bento */}
       <section className="l2-section" id="l2-why">
         <Reveal>
-          <p className="l2-eyebrow center">WHY LEARNERS STAY</p>
-          <h2 className="l2-h2">Everything a serious learner needs.<br /><em>Nothing that wastes a minute.</em></h2>
+          <div className="l2-head">
+            <p className="l2-eyebrow">WHY LEARNERS STAY</p>
+            <h2 className="l2-h2">Everything a serious learner needs.<br /><em>Nothing that wastes a minute.</em></h2>
+          </div>
         </Reveal>
         <div className="l2-bento">
           {FEATURES.map((f, i) => (
             <Reveal key={f.title} delay={Math.min(i * 0.07, 0.35)} className={f.span}>
-              <div className={`l2-card ${f.span}`}>
+              <div className={`l2-card ${f.span} tint-${f.tint}`}>
                 <span className="l2-card-icon" aria-hidden>{f.icon}</span>
                 <div>
                   <h3>{f.title}</h3>
@@ -427,38 +449,47 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
       </section>
 
       {/* ------------------------------------------------------ how it works */}
-      <section className="l2-section l2-how" id="l2-how">
-        <Reveal>
-          <p className="l2-eyebrow center">HOW IT WORKS</p>
-          <h2 className="l2-h2">Three moves. <em>Compounding momentum.</em></h2>
-        </Reveal>
-        <div className="l2-steps">
-          {STEPS.map((step, i) => (
-            <Reveal key={step.n} delay={i * 0.12}>
-              <div className="l2-step">
-                <div className="l2-step-mascot">
-                  <Mascot size={132} mood={step.mood} />
+      <div className="l2-band l2-band-how">
+        <section className="l2-section l2-how" id="l2-how">
+          <Reveal>
+            <div className="l2-head">
+              <p className="l2-eyebrow">HOW IT WORKS</p>
+              <h2 className="l2-h2">Three moves. <em>Compounding momentum.</em></h2>
+            </div>
+          </Reveal>
+          <div className="l2-steps">
+            {STEPS.map((step, i) => (
+              <Reveal key={step.n} delay={i * 0.12}>
+                <div className={`l2-step accent-${step.accent}`}>
+                  <div className="l2-step-mascot">
+                    <Mascot size={104} mood={step.mood} />
+                  </div>
+                  <span className="l2-step-n" aria-hidden>{step.n}</span>
+                  <h3>{step.title}</h3>
+                  <p>{step.copy}</p>
                 </div>
-                <span className="l2-step-n">{step.n}</span>
-                <h3>{step.title}</h3>
-                <p>{step.copy}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
+              </Reveal>
+            ))}
+          </div>
+        </section>
+      </div>
 
       {/* -------------------------------------------------------- universes */}
       <section className="l2-section" id="l2-universes">
         <Reveal>
-          <p className="l2-eyebrow center">CHOOSE YOUR UNIVERSE</p>
-          <h2 className="l2-h2">Complete syllabi. <em>Zero guesswork.</em></h2>
+          <div className="l2-head">
+            <p className="l2-eyebrow">CHOOSE YOUR UNIVERSE</p>
+            <h2 className="l2-h2">Complete syllabi. <em>Zero guesswork.</em></h2>
+          </div>
         </Reveal>
         <div className="l2-universes">
           {UNIVERSE_CARDS.map((u, i) => (
             <Reveal key={u.id} delay={i * 0.12}>
               <TiltCard className={`l2-universe tone-${u.tone}`}>
-                <span className="l2-universe-tag">{u.tag}</span>
+                <div className="l2-universe-top">
+                  <span className="l2-universe-tag">{u.tag}</span>
+                  <span className="l2-universe-glyph" aria-hidden>{u.glyph}</span>
+                </div>
                 <h3>{u.title}</h3>
                 <p>{u.blurb}</p>
                 <div className="l2-universe-meta">
@@ -473,28 +504,32 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
       </section>
 
       {/* ----------------------------------------------------- reading room */}
-      <section className="l2-section l2-reading" id="l2-reading">
-        <Reveal>
-          <p className="l2-eyebrow center">THE READING ROOM</p>
-          <h2 className="l2-h2">The internet’s best free blogs,<br /><em>already sorted onto your shelf.</em></h2>
-          <p className="l2-reading-lead">
-            54 genuinely insightful, completely free reads — curated per universe and matched to your
-            syllabus modules. The shelf restocks itself when you switch universes.
-          </p>
-        </Reveal>
-        <div className="l2-shelf">
-          {SHELF_TEASERS.map((r, i) => (
-            <Reveal key={r.title} delay={i * 0.1}>
-              <div className="l2-book">
-                <span className="l2-book-universe">{r.universe}</span>
-                <h3>{r.title}</h3>
-                <p className="l2-book-pub">{r.publisher}</p>
-                <p>{r.blurb}</p>
-              </div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
+      <div className="l2-band l2-band-reading">
+        <section className="l2-section l2-reading" id="l2-reading">
+          <Reveal>
+            <div className="l2-head">
+              <p className="l2-eyebrow">THE READING ROOM</p>
+              <h2 className="l2-h2">The internet’s best free blogs,<br /><em>already sorted onto your shelf.</em></h2>
+              <p className="l2-reading-lead">
+                54 genuinely insightful, completely free reads — curated per universe and matched to your
+                syllabus modules. The shelf restocks itself when you switch universes.
+              </p>
+            </div>
+          </Reveal>
+          <div className="l2-shelf">
+            {SHELF_TEASERS.map((r, i) => (
+              <Reveal key={r.title} delay={i * 0.1}>
+                <div className="l2-book">
+                  <span className="l2-book-universe">{r.universe}</span>
+                  <h3>{r.title}</h3>
+                  <p className="l2-book-pub">{r.publisher}</p>
+                  <p>{r.blurb}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </section>
+      </div>
 
       {/* ---------------------------------------------------------- finale */}
       <section className="l2-finale">

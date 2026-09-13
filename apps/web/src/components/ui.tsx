@@ -8,15 +8,15 @@ export function Brand() {
 
 const LOADING_QUIPS = [
   'Waking up your study buddy…',
-  'Doddly is buzzing through the syllabus…',
+  'Doddly is lighting the syllabus on fire…',
   'Doing a little victory dance…',
   'Untangling the syllabus…',
   'Sharpening the flashcards…',
-  'Gathering nectar from the best blogs…',
+  'Gathering sparks from the best blogs…',
   'Warming up the learning swarm…',
 ];
 
-const LOADER_MOODS: MascotMood[] = ['idle', 'wave', 'dance', 'cheer'];
+const LOADER_MOODS: MascotMood[] = ['watching', 'walk', 'wave', 'dance', 'cheer', 'gusto'];
 
 export function LoadingScreen({ label = 'Loading your learning universe…' }: { label?: string }) {
   const [quip, setQuip] = useState(0);

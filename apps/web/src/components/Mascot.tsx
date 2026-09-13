@@ -1,53 +1,182 @@
 import React, { useEffect, useId, useRef } from 'react';
-import { motion, useMotionValue, useSpring } from 'framer-motion';
+import { motion, useMotionValue, useSpring, type MotionValue } from 'framer-motion';
 
 /**
- * Doddly — the EduSwarm honey-bee mascot.
+ * Doddly — the EduSwarm flame mascot.
  *
- * Hand-built SVG, animated with framer-motion spring/keyframe variants so the
- * character has real weight: floating, blinking, wing flutter, waving arms.
+ * A little red-orange flame blob, hand-built as SVG and animated with
+ * framer-motion so the character has real weight: flame flicker, floating,
+ * blinking, raised arm nubs, marching feet and mood-driven faces —
+ * friendly, watching, sly, joy, confusion, gusto, angry, upset, walk.
  * Render it anywhere at any size; moods drive the performance.
  */
 
-export type MascotMood = 'idle' | 'wave' | 'dance' | 'think' | 'cheer';
+export type MascotMood =
+  | 'idle' | 'watching' | 'wave' | 'dance' | 'think' | 'cheer' | 'gusto' | 'angry' | 'upset' | 'walk';
 
-const INK = '#241d33';
+const BODY = '#f04e2c';
+const INK = '#241d2b';
+
+/* The flame silhouette, drawn to match the reference: two slim tips (left one
+   curling left, the tall main tip leaning right), a small right shoulder nub,
+   smooth egg-shaped cheeks and a scalloped bottom. Reused by the full mascot
+   and the avatar. */
+const FLAME =
+  'M76 198 C62 198 53 190 51 176 C49 160 49 144 50 128 C51 112 53 98 57 86 ' +
+  'C59 76 61 66 63 58 C64 44 66 30 69 20 C68 15 72 13 76 19 C78 26 79 33 81 40 ' +
+  'C83 44 85 46 88 46 C92 38 96 28 101 19 C105 11 112 8 116 14 C121 22 126 32 130 42 ' +
+  'C135 36 142 35 147 41 C152 47 155 57 157 68 C159 82 158 97 160 112 ' +
+  'C162 130 168 146 168 162 C168 181 158 196 144 198 C140 199 135 193 130 193 ' +
+  'C125 193 122 199 117 199 C112 199 105 193 100 193 C95 193 92 199 87 199 ' +
+  'C82 199 79 198 76 198 Z';
+
+const EYE_L = { cx: 86, cy: 118 };
+const EYE_R = { cx: 134, cy: 118 };
+const EYE_RR = 16;
+
+type LidStyle = 'none' | 'sly' | 'flat' | 'angry' | 'sad';
+
+/** Per-mood face, mapped from the reference sheet:
+ *  idle → friendly · watching → watching · wave → sly · dance/cheer → joy
+ *  think → confusion · gusto → gusto · angry → angry · upset → upset · walk → walk */
+const FACES: Record<MascotMood, { lid: LidStyle; mouth: string; arms: 'none' | 'right' | 'both'; armAngle?: number }> = {
+  idle: { lid: 'none', mouth: 'M98 147 Q109 157 120 147', arms: 'none' },
+  watching: { lid: 'none', mouth: 'O', arms: 'none' },
+  wave: { lid: 'sly', mouth: 'M102 149 Q109 155 116 149', arms: 'right' },
+  dance: { lid: 'none', mouth: 'OPEN', arms: 'both', armAngle: 26 },
+  cheer: { lid: 'none', mouth: 'OPEN', arms: 'both', armAngle: 26 },
+  think: { lid: 'none', mouth: 'M100 150 L118 146', arms: 'none' },
+  gusto: { lid: 'flat', mouth: 'M97 148 Q103 153.5 109 148 Q115 153.5 121 148', arms: 'right' },
+  angry: { lid: 'angry', mouth: 'OPEN_WIDE', arms: 'none' },
+  upset: { lid: 'sad', mouth: 'M98 154 Q109 145 120 154', arms: 'none' },
+  walk: { lid: 'none', mouth: 'M100 148 Q109 155 118 148', arms: 'right', armAngle: 35 },
+};
+
+/* Lid line endpoints relative to eye centre: [x1, y1, x2, y2] */
+const LIDS: Record<Exclude<LidStyle, 'none'>, [number, number, number, number]> = {
+  sly: [-14, -6, 14, -5],
+  flat: [-14, -3, 14, -1],
+  angry: [-14, -9, 14, -2],
+  sad: [-14, 1, 14, -6],
+};
 
 const floatByMood: Record<MascotMood, any> = {
-  idle: { y: [0, -9, 0], rotate: [-1.5, 1.5, -1.5], transition: { duration: 2.9, repeat: Infinity, ease: 'easeInOut' } },
-  wave: { y: [0, -8, 0], rotate: [0, 1, 0], transition: { duration: 2.4, repeat: Infinity, ease: 'easeInOut' } },
-  dance: { y: [0, -15, 0], rotate: [-6, 6, -6], transition: { duration: 0.62, repeat: Infinity, ease: 'easeInOut' } },
-  think: { y: [0, -5, 0], rotate: [-3, -1, -3], transition: { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } },
-  cheer: { y: [0, -22, 0], rotate: [-3, 3, -3], transition: { duration: 0.55, repeat: Infinity, ease: 'easeInOut' } },
+  idle: { y: [0, -8, 0], rotate: [-1, 1, -1], transition: { duration: 3, repeat: Infinity, ease: 'easeInOut' } },
+  watching: { y: [0, -7, 0], rotate: [-1, 1, -1], transition: { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } },
+  wave: { y: [0, -7, 0], rotate: [0, 1.5, 0], transition: { duration: 2.6, repeat: Infinity, ease: 'easeInOut' } },
+  dance: { y: [0, -15, 0], rotate: [-4, 4, -4], transition: { duration: 0.5, repeat: Infinity, ease: 'easeInOut' } },
+  think: { y: [0, -5, 0], rotate: [-2.5, -0.5, -2.5], transition: { duration: 3.6, repeat: Infinity, ease: 'easeInOut' } },
+  cheer: { y: [0, -21, 0], rotate: [-3, 3, -3], transition: { duration: 0.55, repeat: Infinity, ease: 'easeInOut' } },
+  gusto: { y: [0, -9, 0], rotate: [0, 2, 0], transition: { duration: 2.2, repeat: Infinity, ease: 'easeInOut' } },
+  angry: { y: [0, -4, 0], transition: { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } },
+  upset: { y: [0, -3, 0], transition: { duration: 4, repeat: Infinity, ease: 'easeInOut' } },
+  walk: {
+    x: [0, 22, 0, -22, 0], y: [0, -7, 0, -7, 0], rotate: [-3, 3, -3, 3, 0],
+    transition: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' },
+  },
+};
+
+/** Flame flicker — the tips sway around a bottom anchor, like a real flame. */
+const flickByMood: Record<MascotMood, any> = {
+  idle: { skewX: [-1.4, 1.4, -1.4], scaleY: [1, 1.02, 1], transition: { duration: 1.7, repeat: Infinity, ease: 'easeInOut' } },
+  watching: { skewX: [-1.2, 1.2, -1.2], scaleY: [1, 1.02, 1], transition: { duration: 1.9, repeat: Infinity, ease: 'easeInOut' } },
+  wave: { skewX: [-1.6, 1.6, -1.6], scaleY: [1, 1.025, 1], transition: { duration: 1.5, repeat: Infinity, ease: 'easeInOut' } },
+  dance: { skewX: [-3, 3, -3], scaleY: [1, 1.05, 1], transition: { duration: 0.5, repeat: Infinity, ease: 'easeInOut' } },
+  think: { skewX: [-0.7, 0.7, -0.7], scaleY: [1, 1.01, 1], transition: { duration: 2.8, repeat: Infinity, ease: 'easeInOut' } },
+  cheer: { skewX: [-2.4, 2.4, -2.4], scaleY: [1, 1.04, 1], transition: { duration: 0.62, repeat: Infinity, ease: 'easeInOut' } },
+  gusto: { skewX: [-1.8, 1.8, -1.8], scaleY: [1, 1.03, 1], transition: { duration: 1.1, repeat: Infinity, ease: 'easeInOut' } },
+  angry: { skewX: [-2.6, 2.6, -2.6], scaleY: [1, 1.045, 1], transition: { duration: 0.8, repeat: Infinity, ease: 'easeInOut' } },
+  upset: { skewX: [-0.4, 0.4, -0.4], scaleY: [0.955, 0.975, 0.955], transition: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' } },
+  walk: { skewX: [-1.8, 1.8, -1.8], scaleY: [1, 1.03, 1], transition: { duration: 1, repeat: Infinity, ease: 'easeInOut' } },
 };
 
 const shadowByMood: Record<MascotMood, any> = {
-  idle: { scaleX: [1, 0.86, 1], transition: { duration: 2.9, repeat: Infinity, ease: 'easeInOut' } },
-  wave: { scaleX: [1, 0.88, 1], transition: { duration: 2.4, repeat: Infinity, ease: 'easeInOut' } },
-  dance: { scaleX: [1, 0.7, 1], transition: { duration: 0.62, repeat: Infinity, ease: 'easeInOut' } },
-  think: { scaleX: [1, 0.93, 1], transition: { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } },
-  cheer: { scaleX: [1, 0.6, 1], transition: { duration: 0.55, repeat: Infinity, ease: 'easeInOut' } },
-};
-
-const wingSpeed = (mood: MascotMood) => (mood === 'dance' || mood === 'cheer' ? 0.22 : mood === 'think' ? 0.9 : 0.5);
-
-const armLeftByMood: Record<MascotMood, any> = {
-  idle: { rotate: [18, 26, 18], transition: { duration: 2.9, repeat: Infinity, ease: 'easeInOut' } },
-  wave: { rotate: [18, 28, 18], transition: { duration: 2.4, repeat: Infinity, ease: 'easeInOut' } },
-  dance: { rotate: [30, -55, 30], transition: { duration: 0.62, repeat: Infinity, ease: 'easeInOut' } },
-  think: { rotate: [12, 16, 12], transition: { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } },
-  cheer: { rotate: [-60, -48, -60], transition: { duration: 0.55, repeat: Infinity, ease: 'easeInOut' } },
-};
-
-const armRightByMood: Record<MascotMood, any> = {
-  idle: { rotate: [-18, -26, -18], transition: { duration: 2.9, repeat: Infinity, ease: 'easeInOut' } },
-  wave: { rotate: [-35, 25, -35], transition: { duration: 0.9, repeat: Infinity, ease: 'easeInOut' } },
-  dance: { rotate: [-30, 55, -30], transition: { duration: 0.62, repeat: Infinity, ease: 'easeInOut', delay: 0.31 } },
-  think: { rotate: [-8, -12, -8], transition: { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } },
-  cheer: { rotate: [60, 48, 60], transition: { duration: 0.55, repeat: Infinity, ease: 'easeInOut' } },
+  idle: { scaleX: [1, 0.87, 1], transition: { duration: 3, repeat: Infinity, ease: 'easeInOut' } },
+  watching: { scaleX: [1, 0.88, 1], transition: { duration: 3.4, repeat: Infinity, ease: 'easeInOut' } },
+  wave: { scaleX: [1, 0.89, 1], transition: { duration: 2.6, repeat: Infinity, ease: 'easeInOut' } },
+  dance: { scaleX: [1, 0.7, 1], transition: { duration: 0.5, repeat: Infinity, ease: 'easeInOut' } },
+  think: { scaleX: [1, 0.94, 1], transition: { duration: 3.6, repeat: Infinity, ease: 'easeInOut' } },
+  cheer: { scaleX: [1, 0.62, 1], transition: { duration: 0.55, repeat: Infinity, ease: 'easeInOut' } },
+  gusto: { scaleX: [1, 0.88, 1], transition: { duration: 2.2, repeat: Infinity, ease: 'easeInOut' } },
+  angry: { scaleX: [1, 0.9, 1], transition: { duration: 1.4, repeat: Infinity, ease: 'easeInOut' } },
+  upset: { scaleX: [1, 0.95, 1], transition: { duration: 4, repeat: Infinity, ease: 'easeInOut' } },
+  walk: { scaleX: [1, 0.84, 1, 0.84, 1], transition: { duration: 3.2, repeat: Infinity, ease: 'easeInOut' } },
 };
 
 const fillBox = { transformBox: 'fill-box' as const };
+
+function Eye({ cx, cy, lid, left = true, px = 0, py = 0, clipId }: {
+  cx: number; cy: number; lid: LidStyle; left?: boolean; px?: number | MotionValue<number>; py?: number | MotionValue<number>; clipId: string;
+}) {
+  const lidSpec = lid === 'none' ? null : LIDS[lid];
+  const [x1, y1, x2, y2] = lidSpec
+    ? (lid === 'angry' || lid === 'sad') && !left
+      ? [lidSpec[2], lidSpec[3], lidSpec[0], lidSpec[1]]
+      : [lidSpec[0], lidSpec[1], lidSpec[2], lidSpec[3]]
+    : [0, 0, 0, 0];
+  const pupilY = lid === 'none' ? cy + 2.5 : cy + 5.5;
+  const pupilR = lid === 'none' ? 7 : 6.5;
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={EYE_RR} fill="#fff" />
+      <motion.g style={{ x: px, y: py }}>
+        <circle cx={cx + 1.5} cy={pupilY} r={pupilR} fill={INK} />
+      </motion.g>
+      {lidSpec && (
+        <g clipPath={`url(#${clipId})`}>
+          <polygon
+            points={`${cx - 17},${cy - 18} ${cx + 17},${cy - 18} ${cx + 17},${cy + y2} ${cx - 17},${cy + y1}`}
+            fill={BODY}
+          />
+          <line x1={cx + x1} y1={cy + y1} x2={cx + x2} y2={cy + y2} stroke={INK} strokeWidth="3.5" strokeLinecap="round" />
+        </g>
+      )}
+    </g>
+  );
+}
+
+function Mouth({ d, mood }: { d: string; mood: MascotMood }) {
+  const pop = { initial: { scale: 0.6, opacity: 0 }, animate: { scale: 1, opacity: 1 }, transition: { type: 'spring' as const, stiffness: 420, damping: 18 } };
+  if (d === 'O') return <motion.circle key={mood} cx="109" cy="150" r="3.4" fill={INK} style={{ ...fillBox, transformOrigin: 'center' }} {...pop} />;
+  if (d === 'OPEN') return <motion.ellipse key={mood} cx="109" cy="151" rx="11" ry="12" fill={INK} style={{ ...fillBox, transformOrigin: 'center' }} {...pop} />;
+  if (d === 'OPEN_WIDE') return (
+    <motion.path key={mood} d="M97 146 Q109 142 121 146 Q125 155 119 163 Q109 168 99 163 Q93 155 97 146 Z" fill={INK}
+      style={{ ...fillBox, transformOrigin: 'center' }} {...pop} />
+  );
+  return <motion.path key={mood} d={d} fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" style={{ ...fillBox, transformOrigin: 'center' }} {...pop} />;
+}
+
+function Arms({ kind, angle, mood }: { kind: 'none' | 'right' | 'both'; angle?: number; mood: MascotMood }) {
+  if (kind === 'none') return null;
+  const a = angle ?? (mood === 'dance' || mood === 'cheer' ? 26 : 40);
+  return (
+    <g>
+      {kind !== 'both' && <ellipse cx="172" cy="92" rx="10" ry="24" fill={BODY} transform={`rotate(${-a} 172 92)`} />}
+      {kind === 'both' && (
+        <>
+          <ellipse cx="172" cy="92" rx="10" ry="24" fill={BODY} transform={`rotate(${-a} 172 92)`} />
+          <ellipse cx="48" cy="92" rx="10" ry="24" fill={BODY} transform={`rotate(${a} 48 92)`} />
+        </>
+      )}
+    </g>
+  );
+}
+
+/** Marching feet — only visible while walking, alternating up and down. */
+function Feet() {
+  return (
+    <g>
+      <motion.ellipse
+        cx="95" cy="204" rx="8.5" ry="5" fill={BODY}
+        animate={{ y: [0, -8, 0, 0] }} transition={{ duration: 1.6, repeat: Infinity, times: [0, 0.25, 0.5, 1], ease: 'easeInOut' }}
+      />
+      <motion.ellipse
+        cx="125" cy="204" rx="8.5" ry="5" fill={BODY}
+        animate={{ y: [0, 0, 0, -8] }} transition={{ duration: 1.6, repeat: Infinity, times: [0, 0.25, 0.5, 1], ease: 'easeInOut' }}
+      />
+    </g>
+  );
+}
 
 export function Mascot({ size = 200, mood = 'idle', className = '', eyesFollow = false }: {
   size?: number; mood?: MascotMood; className?: string;
@@ -55,9 +184,8 @@ export function Mascot({ size = 200, mood = 'idle', className = '', eyesFollow =
   eyesFollow?: boolean;
 }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const body = `doddly-body-${uid}`;
-  const wing = `doddly-wing-${uid}`;
-  const clip = `doddly-clip-${uid}`;
+  const clipL = `flame-eye-l-${uid}`;
+  const clipR = `flame-eye-r-${uid}`;
   const svgRef = useRef<SVGSVGElement>(null);
   const pupilX = useMotionValue(0);
   const pupilY = useMotionValue(0);
@@ -72,19 +200,18 @@ export function Mascot({ size = 200, mood = 'idle', className = '', eyesFollow =
       const rect = el.getBoundingClientRect();
       const dx = (event.clientX - (rect.left + rect.width / 2)) / (rect.width / 2 || 1);
       const dy = (event.clientY - (rect.top + rect.height / 2)) / (rect.height / 2 || 1);
-      pupilX.set(Math.max(-1, Math.min(1, dx)) * 2.6);
-      pupilY.set(Math.max(-1, Math.min(1, dy)) * 2.1);
+      pupilX.set(Math.max(-1, Math.min(1, dx)) * 3.2);
+      pupilY.set(Math.max(-1, Math.min(1, dy)) * 2.8);
     };
     window.addEventListener('mousemove', onMove);
     return () => window.removeEventListener('mousemove', onMove);
   }, [eyesFollow, pupilX, pupilY]);
 
-  const excited = mood === 'cheer' || mood === 'dance';
-  const smilePath = excited
-    ? 'M93 122 Q110 146 127 122 Q110 132 93 122 Z'
-    : mood === 'think'
-      ? 'M102 128 Q110 132 118 128'
-      : 'M96 123 Q110 137 124 123';
+  const face = FACES[mood];
+  const blink = {
+    scaleY: [1, 1, 0.06, 1],
+    transition: { duration: mood === 'cheer' || mood === 'dance' ? 2.4 : 3.8, repeat: Infinity, times: [0, 0.9, 0.95, 1] },
+  };
 
   return (
     <motion.svg
@@ -92,135 +219,54 @@ export function Mascot({ size = 200, mood = 'idle', className = '', eyesFollow =
       width={size}
       height={size}
       viewBox="0 0 220 232"
-      className={`doddly doddly-${mood} ${className}`}
+      className={`doddly doddly-${mood} ${className}`.trim()}
       aria-hidden
       style={{ overflow: 'visible' }}
     >
       <defs>
-        <linearGradient id={body} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#ffd964" />
-          <stop offset="55%" stopColor="#ffbe33" />
-          <stop offset="100%" stopColor="#f59d10" />
-        </linearGradient>
-        <linearGradient id={wing} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#eaf7ff" />
-          <stop offset="100%" stopColor="#bfe4ff" />
-        </linearGradient>
-        <clipPath id={clip}>
-          <rect x="58" y="58" width="104" height="124" rx="52" />
-        </clipPath>
+        <clipPath id={clipL}><circle cx={EYE_L.cx} cy={EYE_L.cy} r={EYE_RR} /></clipPath>
+        <clipPath id={clipR}><circle cx={EYE_R.cx} cy={EYE_R.cy} r={EYE_RR} /></clipPath>
       </defs>
 
       {/* ground shadow */}
       <motion.ellipse
-        cx="110" cy="217" rx="46" ry="9" fill={INK} opacity="0.13"
+        cx="110" cy="216" rx="44" ry="8.5" fill={INK} opacity="0.12"
         animate={shadowByMood[mood]} style={{ ...fillBox, transformOrigin: 'center' }}
       />
 
       <motion.g animate={floatByMood[mood]} style={{ ...fillBox, transformOrigin: 'center' }}>
-        {/* wings */}
-        <motion.ellipse
-          cx="46" cy="86" rx="30" ry="40" fill={`url(#${wing})`} stroke="#a5d4f4" strokeWidth="3" opacity="0.92"
-          animate={{ rotate: [-14, 16, -14] }}
-          transition={{ duration: wingSpeed(mood), repeat: Infinity, ease: 'easeInOut' }}
-          style={{ ...fillBox, transformOrigin: '90% 70%' }}
-        />
-        <motion.ellipse
-          cx="174" cy="86" rx="30" ry="40" fill={`url(#${wing})`} stroke="#a5d4f4" strokeWidth="3" opacity="0.92"
-          animate={{ rotate: [14, -16, 14] }}
-          transition={{ duration: wingSpeed(mood), repeat: Infinity, ease: 'easeInOut' }}
-          style={{ ...fillBox, transformOrigin: '10% 70%' }}
-        />
+        <motion.g animate={flickByMood[mood]} style={{ ...fillBox, transformOrigin: '50% 100%' }}>
+          {/* arms (behind body) */}
+          <Arms kind={face.arms} angle={face.armAngle} mood={mood} />
 
-        {/* antennae */}
-        <motion.g
-          animate={{ rotate: [-6, 6, -6] }}
-          transition={{ duration: mood === 'dance' ? 0.62 : 2.6, repeat: Infinity, ease: 'easeInOut' }}
-          style={{ ...fillBox, transformOrigin: '50% 100%' }}
-        >
-          <path d="M96 62 C92 44 86 36 78 30" fill="none" stroke={INK} strokeWidth="5" strokeLinecap="round" />
-          <circle cx="76" cy="27" r="7" fill="#ffd964" stroke={INK} strokeWidth="4.5" />
-          <path d="M124 62 C128 44 134 36 142 30" fill="none" stroke={INK} strokeWidth="5" strokeLinecap="round" />
-          <circle cx="144" cy="27" r="7" fill="#ffd964" stroke={INK} strokeWidth="4.5" />
-        </motion.g>
+          {/* flame body */}
+          <path d={FLAME} fill={BODY} />
 
-        {/* arms (behind body) */}
-        <motion.path
-          d="M60 128 Q44 134 34 148" fill="none" stroke={INK} strokeWidth="10" strokeLinecap="round"
-          animate={armLeftByMood[mood]} style={{ ...fillBox, transformOrigin: '100% 0%' }}
-        />
-        <motion.path
-          d="M160 128 Q176 134 186 148" fill="none" stroke={INK} strokeWidth="10" strokeLinecap="round"
-          animate={armRightByMood[mood]} style={{ ...fillBox, transformOrigin: '0% 0%' }}
-        />
-
-        {/* body */}
-        <rect x="58" y="58" width="104" height="124" rx="52" fill={`url(#${body})`} stroke={INK} strokeWidth="5.5" />
-        <g clipPath={`url(#${clip})`}>
-          <rect x="52" y="140" width="116" height="15" fill="#6b4310" opacity="0.85" />
-          <rect x="52" y="163" width="116" height="15" fill="#6b4310" opacity="0.85" />
-          <ellipse cx="84" cy="74" rx="26" ry="14" fill="#fff" opacity="0.35" />
-        </g>
-
-        {/* feet */}
-        <ellipse cx="92" cy="185" rx="13" ry="7" fill="#b97b16" stroke={INK} strokeWidth="4.5" />
-        <ellipse cx="128" cy="185" rx="13" ry="7" fill="#b97b16" stroke={INK} strokeWidth="4.5" />
-
-        {/* face */}
-        <motion.g
-          animate={{ scaleY: [1, 1, 0.06, 1] }}
-          transition={{ duration: mood === 'cheer' ? 2.2 : 3.9, repeat: Infinity, times: [0, 0.9, 0.95, 1] }}
-          style={{ ...fillBox, transformOrigin: 'center' }}
-        >
-          <circle cx="88" cy="97" r="14" fill="#fff" stroke={INK} strokeWidth="4" />
-          <circle cx="132" cy="97" r="14" fill="#fff" stroke={INK} strokeWidth="4" />
-          <motion.g style={{ x: eyesFollow ? followX : 0, y: eyesFollow ? followY : 0 }}>
-            <circle cx={mood === 'think' ? 85 : 90} cy={mood === 'think' ? 94 : 99} r="6.3" fill={INK} />
-            <circle cx={mood === 'think' ? 129 : 134} cy={mood === 'think' ? 94 : 99} r="6.3" fill={INK} />
-            <circle cx={mood === 'think' ? 83 : 88} cy={mood === 'think' ? 92 : 96.5} r="2.1" fill="#fff" />
-            <circle cx={mood === 'think' ? 127 : 132} cy={mood === 'think' ? 92 : 96.5} r="2.1" fill="#fff" />
+          {/* face */}
+          <motion.g animate={blink} style={{ ...fillBox, transformOrigin: 'center' }}>
+            <Eye cx={EYE_L.cx} cy={EYE_L.cy} lid={face.lid} left px={eyesFollow ? followX : 0} py={eyesFollow ? followY : 0} clipId={clipL} />
+            <Eye cx={EYE_R.cx} cy={EYE_R.cy} lid={face.lid} left={false} px={eyesFollow ? followX : 0} py={eyesFollow ? followY : 0} clipId={clipR} />
           </motion.g>
+          <Mouth d={face.mouth} mood={mood} />
         </motion.g>
-        <ellipse cx="76" cy="116" rx="9" ry="5.5" fill="#ff9d8a" opacity="0.7" />
-        <ellipse cx="144" cy="116" rx="9" ry="5.5" fill="#ff9d8a" opacity="0.7" />
-        <motion.path
-          key={smilePath}
-          d={excited ? 'M93 122 Q110 144 127 122 Z' : smilePath}
-          fill={excited ? '#5b2b22' : 'none'}
-          stroke={INK} strokeWidth="4.5" strokeLinecap="round"
-          initial={{ scale: 0.7, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 18 }}
-          style={{ ...fillBox, transformOrigin: 'center' }}
-        />
+
+        {/* feet, only while walking */}
+        {mood === 'walk' && <Feet />}
       </motion.g>
     </motion.svg>
   );
 }
 
-/** Compact static Doddly face — used for avatars and small chrome. */
+/** Compact static flame face — used for avatars and small chrome. */
 export function MascotFace({ className = '' }: { className?: string }) {
-  const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
-  const g = `doddly-face-${uid}`;
   return (
-    <svg viewBox="0 0 64 64" className={className} style={{ width: '100%', height: '100%', display: 'block' }} aria-hidden>
-      <defs>
-        <linearGradient id={g} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#ffd964" />
-          <stop offset="100%" stopColor="#f59d10" />
-        </linearGradient>
-      </defs>
-      <path d="M26 12 C24 7 21 5 18 4" fill="none" stroke={INK} strokeWidth="3" strokeLinecap="round" />
-      <circle cx="17" cy="3" r="3.4" fill="#ffd964" stroke={INK} strokeWidth="2.4" />
-      <path d="M38 12 C40 7 43 5 46 4" fill="none" stroke={INK} strokeWidth="3" strokeLinecap="round" />
-      <circle cx="47" cy="3" r="3.4" fill="#ffd964" stroke={INK} strokeWidth="2.4" />
-      <rect x="10" y="10" width="44" height="48" rx="22" fill={`url(#${g})`} stroke={INK} strokeWidth="3.4" />
-      <circle cx="24" cy="30" r="7.4" fill="#fff" stroke={INK} strokeWidth="2.6" />
-      <circle cx="40" cy="30" r="7.4" fill="#fff" stroke={INK} strokeWidth="2.6" />
-      <circle cx="25.4" cy="31.4" r="3.2" fill={INK} />
-      <circle cx="41.4" cy="31.4" r="3.2" fill={INK} />
-      <ellipse cx="18" cy="40" rx="4.4" ry="2.6" fill="#ff9d8a" opacity="0.75" />
-      <ellipse cx="46" cy="40" rx="4.4" ry="2.6" fill="#ff9d8a" opacity="0.75" />
-      <path d="M26 43 Q32 50 38 43" fill="none" stroke={INK} strokeWidth="3" strokeLinecap="round" />
+    <svg viewBox="36 4 148 204" className={className} style={{ width: '100%', height: '100%', display: 'block' }} aria-hidden>
+      <path d={FLAME} fill={BODY} />
+      <circle cx={EYE_L.cx} cy={EYE_L.cy} r={EYE_RR} fill="#fff" />
+      <circle cx={EYE_R.cx} cy={EYE_R.cy} r={EYE_RR} fill="#fff" />
+      <circle cx={EYE_L.cx + 1.5} cy={EYE_L.cy + 2.5} r="7" fill={INK} />
+      <circle cx={EYE_R.cx + 1.5} cy={EYE_R.cy + 2.5} r="7" fill={INK} />
+      <path d="M98 147 Q109 157 120 147" fill="none" stroke={INK} strokeWidth="4.5" strokeLinecap="round" />
     </svg>
   );
 }
