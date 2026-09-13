@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { API, apiDelete, apiGet, apiPatch, apiPost, type Agent, type Topic } from '../lib/api';
+import { API, apiDelete, apiGet, apiPatch, apiPost, setToken, type Agent, type Topic } from '../lib/api';
 
 const opts = { credentials: 'include' as const };
 
@@ -265,7 +265,7 @@ export function Profile({ user, goal, onSave, onSwitch }: {
           <label>Level<select value={skillLevel} onChange={(e) => setSkillLevel(e.target.value)}>{LEVELS.map((l) => <option key={l}>{l}</option>)}</select></label>
           <label>Target date<input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} /></label>
         </div>
-        <div className="practice-actions"><button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save preferences'}</button></div>
+        <div className="practice-actions"><button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save preferences'}</button><button className="secondary-button" onClick={() => { setToken(null); window.location.assign('/'); }}>Log out</button></div>
         <div className="profile-fields">
           <div><span>GOALS</span><b>{user.goals?.length || 0} active learning universes</b></div>
           <div><span>TEAM STYLE</span><b>Evidence-first tutorials</b></div>
