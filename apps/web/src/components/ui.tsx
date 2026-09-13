@@ -2,9 +2,23 @@ import React, { useEffect, useRef, useState } from 'react';
 import { API, apiGet, apiPost, type Page, type Topic } from '../lib/api';
 
 export function Brand() {
-  return (
-    <span className="brand"><span className="brand-mark">✦</span> EduSwarm</span>
-  );
+  return <span className="brand"><span className="brand-mark">✦</span> EduSwarm</span>;
+}
+
+export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: string }) {
+  return <main className="landing">
+    <nav className="landing-nav"><Brand /><button className="landing-login" onClick={onSignIn}>Sign in <span>→</span></button></nav>
+    <section className="landing-hero">
+      <div className="landing-copy"><p className="eyebrow">A SMALLER, SMARTER WAY TO LEARN</p><h1>Meet your<br /><em>learning swarm.</em></h1>
+        <p className="landing-lead">EduSwarm turns big goals into clear next steps, with an AI team that teaches, quizzes, and keeps your momentum alive.</p>
+        <button className="landing-cta" onClick={onSignIn}>Start learning free <span>↗</span></button>
+        {error && <p className="error-copy">{error}</p>}
+        <div className="landing-proof"><span>✦</span><span><b>One calm place to grow</b><small>Lessons · practice · progress</small></span></div>
+      </div>
+      <div className="character-stage"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="doodle-character"><div className="doodle-antenna" /><div className="doodle-body"><i className="eye left" /><i className="eye right" /><span className="smile" /></div><div className="doodle-feet"><i /><i /></div></div><div className="float-note note-one">learn ✦</div><div className="float-note note-two">you’ve got this!</div></div>
+    </section>
+    <section className="landing-features"><div><span>01</span><b>Learn in layers</b><p>Simple explanations, deeper dives, and examples when you’re ready.</p></div><div><span>02</span><b>Practice that remembers</b><p>Quizzes and flashcards adapt to what you actually need.</p></div><div><span>03</span><b>See your momentum</b><p>Small wins become a plan you can keep showing up for.</p></div></section>
+  </main>;
 }
 
 export function Nav({ active, label, icon, onClick }: { active: boolean; label: string; icon: string; onClick: () => void }) {

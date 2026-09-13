@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { API, apiGet, apiPatch, apiPost, getToken, setToken, type Agent, type Page, type Pack, type Topic } from './lib/api';
-import { AgentChat, Avatar, Brand, Nav, Onboarding, SearchPalette } from './components/ui';
+import { AgentChat, Avatar, Brand, Landing, Nav, Onboarding, SearchPalette } from './components/ui';
 import { Home, Plan } from './pages/home';
 import { Flashcards, Lesson, Practice } from './pages/learn';
 import { CodeLab, Mocks, Quiz } from './pages/drills';
@@ -85,13 +85,8 @@ export function App() {
         setToken(null);
         // Auto-redirect to Google at most once per browser, then fall back to
         // an explicit button. This is what breaks the redirect loop.
-        const attemptedAt = Number(stored(REDIRECT_KEY, '0'));
-        const triedRecently = Date.now() - attemptedAt < 3 * 60 * 1000;
-        if (!triedRecently) {
-          remember(REDIRECT_KEY, String(Date.now()));
-          window.location.assign(`${API}/auth/google`);
-          return;
-        }
+        // Let the public landing page be the first touchpoint. The explicit
+        // CTA starts OAuth, avoiding an unexpected redirect for new visitors.
         setNeedsLogin(true);
         return;
       }
@@ -256,20 +251,7 @@ export function App() {
     window.location.assign(`${API}/auth/google`);
   };
 
-  if (needsLogin) {
-    return (
-      <main className="center">
-        <section className="onboard card">
-          <Brand />
-          <h1>Sign in to EduSwarm.</h1>
-          <p>Your progress, clubs, and interviews live in your account. Sign in once — this browser keeps a token for 30 days, so no repeated Google prompts.</p>
-          <button onClick={signIn}>Continue with Google →</button>
-          {error && <p className="error-copy">{error}</p>}
-          <p className="muted">Stuck in a loop? Your browser is blocking third-party cookies — that is fine, we use a token instead. Close this tab, reopen the link, and try once more.</p>
-        </section>
-      </main>
-    );
-  }
+  if (needsLogin) return <Landing onSignIn={signIn} error={error} />;
   if (error) {
     return (
       <main className="center">
