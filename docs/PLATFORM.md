@@ -120,7 +120,7 @@ mistakes · reviews · mocks · activities` — all owner-scoped; Redis pub/sub
 (`eduswarm:job:*`) streams job events to SSE. MemoryStore mirrors the full
 interface so tests and demos run dependency-free.
 
-## 7b. Sessions, clubs, and switching universes
+## 7b. Sessions, the Reading Room, and switching universes
 
 **Token sessions.** The web app and API are on different domains, so a session
 cookie is third-party and gets blocked by Safari/Firefox/Chrome — the cause of
@@ -130,12 +130,20 @@ HMAC Bearer token and sends it as an `Authorization` header. Cookies stay as a
 same-origin fallback, and the SSE job stream takes the token as `?token=`
 because `EventSource` cannot set headers.
 
-**Clubs.** Three public halls ship with the product. `POST /api/rooms` creates a
-**private** club by default: it is hidden from `GET /api/rooms` for everyone but
-the owner and existing members, reads and writes are membership-checked
-(403 otherwise), and entry is by invite code
-(`POST /api/rooms/join-by-invite`, link `?invite=<code>`). Owners can rotate the
-link, which invalidates the old one.
+**Reading Room.** The former Clubs section is now a curated library of popular,
+genuinely insightful *free* blogs and reading lists. `apps/api/src/resources.ts`
+stores a shelf per learning universe, each resource tagged with the exact
+syllabus modules of that universe, so `GET /api/resources?goal=&module=&q=`
+returns a list that changes when the learner switches universe — fully dynamic.
+
+**Topic regeneration.** A fresh topic may still fall back to the local kit when
+the agent runtime is offline, so learning never stops. But a **regeneration**
+(`POST /api/jobs` with `regenerate: true`) records that the learner already has
+a saved kit (`hadContent`); if the runtime or LLM is unreachable, the job
+*fails loudly* and keeps the existing kit byte-for-byte instead of overwriting
+it with another placeholder. When the AI team comes back, regenerating produces
+the full evidence-backed kit. The runtime also receives `force_research: true`
+on regeneration so it re-runs research rather than replaying a cached artifact.
 
 **Active universe.** `PATCH /api/me { activeGoal }` persists the learner's
 universe on the account (and adds the matching goal), so switching from GATE CSE

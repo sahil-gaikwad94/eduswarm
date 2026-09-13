@@ -39,10 +39,10 @@ import {
 } from './intelligence.js';
 import { runJavaScript, type RunCase } from './codeRunner.js';
 import { CODE_CHALLENGES, challengeById, publicChallenges } from './challenges.js';
-import { listRooms, createRoom, joinRoom, joinByInvite, rotateInvite, postMessage, roomMessages, roomSummaryFor, RoomAccessError } from './rooms.js';
 import { buildInterview, evaluateAnswer, buildReport, type InterviewTrack } from './interview.js';
 import { TRACK_META } from './interviewBank.js';
 import { buildLocalPack, type PackDepth } from './localPack.js';
+import { resourcesFor } from './resources.js';
 import { issueToken, verifyToken, issueLoginCode, redeemLoginCode, bearerFromHeader } from './auth.js';
 import { buildSystemPrompt, localSpecialistReply, type AgentContext } from './agentBrain.js';
 import { completeChat, llmConfigured, modelChain, type ChatMessage } from './llm.js';
@@ -164,14 +164,6 @@ function publicWebUrl() {
   return process.env.WEB_URL || [...allowedOrigins][0] || 'http://localhost:5173';
 }
 function now() { return new Date().toISOString(); }
-/** Shareable club invite link, rooted at the web app the learner is using. */
-function inviteLink(req: Request, code: string): string {
-  let origin = '';
-  const referer = String(req.headers.referer || req.headers.origin || '');
-  try { origin = referer ? new URL(referer).origin : ''; } catch { origin = ''; }
-  const root = (origin || publicWebUrl()).replace(/\/$/, '');
-  return `${root}/?invite=${encodeURIComponent(code)}`;
-}
 function defaultUser(id: string, overrides: Partial<StoredUser> = {}): StoredUser {
   return {
     id, name: 'Demo Learner', skillLevel: 'beginner', dailyMinutes: 60,
@@ -532,10 +524,17 @@ app.post('/api/jobs', async (req: Request, res: Response) => {
   const topicId = req.body?.topicId || 'gate-cs-algorithms-time-and-space-complexity';
   if (!getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' });
   const depth = (['eli5', 'standard', 'deep'] as const).includes(req.body?.depth) ? req.body.depth : 'standard';
+  // Regeneration is first-class: the job remembers it is replacing an existing
+  // kit, so a later offline failure keeps the saved kit instead of silently
+  // overwriting it with another local placeholder.
+  const regenerate = Boolean(req.body?.regenerate);
+  const existing = await store.getContent(user.id, topicId);
   const id = randomUUID();
   const job = {
-    id, ownerId: user.id, topicId, depth, status: 'queued', stage: 'Dean',
-    message: 'Queued for the learning team', package: null, createdAt: now(), updatedAt: now(),
+    id, ownerId: user.id, topicId, depth, regenerate, hadContent: Boolean(existing),
+    status: 'queued', stage: 'Dean',
+    message: regenerate ? 'The team is re-researching this topic…' : 'Queued for the learning team',
+    package: null, createdAt: now(), updatedAt: now(),
   };
   await store.saveJob(job);
   metrics.jobsCreated += 1;
@@ -1467,6 +1466,16 @@ app.get('/api/universes', (_req: Request, res: Response) => {
   res.json({ universes });
 });
 
+// Reading Room: curated free blogs/resources, scoped to a learning universe.
+// Optional `module` narrows to one syllabus module; `q` is a free-text search.
+app.get('/api/resources', (req: Request, res: Response) => {
+  const goal = String(req.query.goal || 'gate-cs');
+  const module = req.query.module ? String(req.query.module) : undefined;
+  const q = req.query.q ? String(req.query.q) : undefined;
+  const { goal: safeGoal, resources, modules } = resourcesFor(goal, module, q);
+  res.json({ goal: safeGoal, resources, modules });
+});
+
 app.get('/api/lesson/:goal/:topicId/nav', (req: Request, res: Response) => {
   const topics = getCatalog(param(req.params.goal));
   const index = topics.findIndex((t) => t.id === param(req.params.topicId));
@@ -1520,94 +1529,6 @@ app.put('/api/notes/:topicId', async (req: Request, res: Response) => {
   const text = String(req.body?.text || '').slice(0, 20_000);
   const note = await store.saveNote({ id: `${user.id}:${topicId}`, ownerId: user.id, topicId, text, updatedAt: now() });
   res.json({ text: note.text, updatedAt: note.updatedAt });
-});
-
-// --------------------------------------------------------------- study rooms
-
-// Clubs: three public halls ship with the product; anything a learner creates
-// is private and only reachable through its invite link.
-app.get('/api/rooms', async (req: Request, res: Response) => {
-  const user = await userFor(req);
-  res.json({ rooms: listRooms(user?.id || null) });
-});
-
-app.post('/api/rooms', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const name = String(req.body?.name || '').trim();
-  if (!name) return res.status(400).json({ error: 'Club name is required' });
-  try {
-    const room = createRoom(
-      name, String(req.body?.goal || 'gate-cs'), String(req.body?.topic || ''),
-      user.id, user.name || 'Learner', { isPrivate: req.body?.isPrivate !== false },
-    );
-    res.status(201).json({
-      id: room.id, name: room.name, goal: room.goal, topic: room.topic,
-      ownerId: room.ownerId, ownerName: room.ownerName, isPrivate: room.isPrivate,
-      inviteCode: room.inviteCode, createdAt: room.createdAt,
-    });
-  } catch (error: any) {
-    res.status(429).json({ error: error?.message || 'Could not create club' });
-  }
-});
-
-/** Owner-only: rotate the invite link (the old link stops working). */
-app.post('/api/rooms/:id/invite', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  try {
-    const inviteCode = rotateInvite(param(req.params.id), user.id);
-    res.json({ inviteCode, link: inviteLink(req, inviteCode) });
-  } catch (error: any) {
-    res.status(error instanceof RoomAccessError ? 403 : 404).json({ error: error?.message || 'Club not found' });
-  }
-});
-
-/** Redeem an invite link. */
-app.post('/api/rooms/join-by-invite', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const code = String(req.body?.code || '').trim();
-  if (!code) return res.status(400).json({ error: 'Invite code is required' });
-  try {
-    const room = joinByInvite(code, user.id, user.name || 'Learner');
-    res.json(roomSummaryFor(room.id, user.id));
-  } catch (error: any) {
-    res.status(error instanceof RoomAccessError ? 404 : 400).json({ error: error?.message || 'Invite link is not valid' });
-  }
-});
-
-app.post('/api/rooms/:id/join', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  try {
-    const members = joinRoom(param(req.params.id), user.id, user.name || 'Learner', String(req.body?.inviteCode || ''));
-    res.json({ members });
-  } catch (error: any) {
-    res.status(error instanceof RoomAccessError ? 403 : 404).json({ error: error?.message || 'Club not found' });
-  }
-});
-
-app.post('/api/rooms/:id/messages', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  try {
-    const message = postMessage(param(req.params.id), user.id, user.name || 'Learner', String(req.body?.text || ''), req.body?.share || null);
-    res.status(201).json(message);
-  } catch (error: any) {
-    res.status(error instanceof RoomAccessError ? 403 : 400).json({ error: error?.message || 'Could not post message' });
-  }
-});
-
-app.get('/api/rooms/:id/messages', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  try {
-    const since = Number(String(req.query.since || 0));
-    res.json(roomMessages(param(req.params.id), user.id, Number.isFinite(since) ? since : 0));
-  } catch (error: any) {
-    res.status(error instanceof RoomAccessError ? 403 : 404).json({ error: error?.message || 'Club not found' });
-  }
 });
 
 // ------------------------------------------------------------ interview sim
@@ -1666,6 +1587,23 @@ async function updateJob(id: string, patch: Record<string, unknown>) {
   return job;
 }
 
+/**
+ * Recovery gate for topic jobs. Fresh topics may fall back to the local kit so
+ * learning never stops — but a *regeneration* that already has a saved kit
+ * fails loudly instead of overwriting it with an identical placeholder.
+ */
+async function fallbackOrFail(id: string, topicId: string, reason: string) {
+  const job = await store.getJob(id);
+  if (job?.regenerate && job?.hadContent) {
+    return updateJob(id, {
+      status: 'failed',
+      message: 'The AI team is offline right now, so your saved kit was kept untouched. Try regenerating again in a few minutes.',
+    });
+  }
+  if (recoverWithLocalFallback) return runLocalFallback(id, topicId);
+  return updateJob(id, { status: 'failed', message: reason });
+}
+
 async function dispatchJob(id: string, topicId: string, depth: string = 'standard') {
   try {
     const job = await store.getJob(id);
@@ -1676,14 +1614,14 @@ async function dispatchJob(id: string, topicId: string, depth: string = 'standar
         job_id: id, topic_id: topicId, depth,
         learner_level: learner?.skillLevel || 'beginner',
         daily_minutes: learner?.dailyMinutes || 60,
+        force_research: Boolean(job?.regenerate),
       }),
       signal: AbortSignal.timeout(runtimeTimeoutMs),
     });
     if (!response.ok) throw new Error(`runtime ${response.status}`);
     void syncRuntimeJob(id);
   } catch {
-    if (recoverWithLocalFallback) await runLocalFallback(id, (await store.getJob(id))?.topicId || 'algo-complexity');
-    else await updateJob(id, { status: 'failed', message: 'The agent runtime is unavailable; please retry later.' });
+    await fallbackOrFail(id, (await store.getJob(id))?.topicId || 'algo-complexity', 'The agent runtime is unavailable; please retry later.');
   }
 }
 
@@ -1697,7 +1635,7 @@ async function syncRuntimeJob(id: string) {
       const latest = remote.events?.at(-1);
       if (latest) await updateJob(id, { stage: latest.agent, message: latest.message });
       if (remote.status === 'failed' || remote.status === 'missing') {
-        if (recoverWithLocalFallback) return void (await runLocalFallback(id, (await store.getJob(id))?.topicId || 'algo-complexity'));
+        if (recoverWithLocalFallback) return void (await fallbackOrFail(id, (await store.getJob(id))?.topicId || 'algo-complexity', remote.error || latest?.message || 'The agent runtime could not complete this topic.'));
         return void (await updateJob(id, { status: 'failed', message: remote.error || latest?.message || 'The agent runtime could not complete this topic.' }));
       }
       if (remote.status === 'completed') {
@@ -1707,18 +1645,26 @@ async function syncRuntimeJob(id: string) {
         const completed = await updateJob(id, { status: 'completed', package: remote.package });
         if (completed) {
           await store.saveContent({ id: completed.id, ownerId: completed.ownerId, topicId: completed.topicId, package: remote.package, savedAt: now() });
-          await store.saveProgress({
-            id: `${completed.ownerId}:${completed.topicId}`, ownerId: completed.ownerId, topicId: completed.topicId,
-            completed: true, solvedQuestions: 0, reviewedFlashcards: 0, updatedAt: now(),
-          });
-          void logActivity(completed.ownerId, 'lesson', { topicId: completed.topicId, xp: 40 });
+          await recordLessonCompletion({ ownerId: completed.ownerId, topicId: completed.topicId, regenerate: completed.regenerate, hadContent: completed.hadContent });
         }
         return;
       }
     } catch { /* keep polling until the deadline */ }
   }
-  if (recoverWithLocalFallback) return void (await runLocalFallback(id, (await store.getJob(id))?.topicId || 'algo-complexity'));
-  await updateJob(id, { status: 'failed', message: 'The agent team timed out; please retry.' });
+  await fallbackOrFail(id, (await store.getJob(id))?.topicId || 'algo-complexity', 'The agent team timed out; please retry.');
+}
+
+/**
+ * Record a completed lesson. Regenerating a topic that already has a saved kit
+ * refreshes the content, but must not re-mark progress or re-award XP.
+ */
+async function recordLessonCompletion(job: { ownerId: string; topicId: string; regenerate?: boolean; hadContent?: boolean }) {
+  if (job.regenerate && job.hadContent) return;
+  await store.saveProgress({
+    id: `${job.ownerId}:${job.topicId}`, ownerId: job.ownerId, topicId: job.topicId,
+    completed: true, solvedQuestions: 0, reviewedFlashcards: 0, updatedAt: now(),
+  });
+  void logActivity(job.ownerId, 'lesson', { topicId: job.topicId, xp: 40 });
 }
 
 async function runLocalFallback(id: string, topicId: string) {
@@ -1743,11 +1689,7 @@ async function runLocalFallback(id: string, topicId: string) {
   const completed = await updateJob(id, { status: 'completed', package: packageData });
   if (completed) {
     await store.saveContent({ id: completed.id, ownerId: completed.ownerId, topicId, package: packageData, savedAt: now() });
-    await store.saveProgress({
-      id: `${completed.ownerId}:${topicId}`, ownerId: completed.ownerId, topicId,
-      completed: true, solvedQuestions: 0, reviewedFlashcards: 0, updatedAt: now(),
-    });
-    void logActivity(completed.ownerId, 'lesson', { topicId, xp: 40 });
+    await recordLessonCompletion({ ownerId: completed.ownerId, topicId, regenerate: completed.regenerate, hadContent: completed.hadContent });
   }
 }
 

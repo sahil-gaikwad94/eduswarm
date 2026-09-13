@@ -14,13 +14,14 @@ without the LLM runtime online.
 |---|---|
 | **Command center** | XP + levels, streaks, mastery map per module, ranked next actions, insights, weekly momentum, and a time-boxed *Today's Mission* |
 | **Evidence-gated lessons** | LangGraph pipeline (Dean → Researcher → Notes → Practice → Fact-Checker → Publisher) publishes only claim-cited packages; local fallback keeps learning alive during outages |
+| **Topic regeneration** | Any saved kit can be regenerated at ELI5 / Standard / Deep depth. If the AI team is offline, a regeneration keeps your saved kit intact instead of overwriting it with a placeholder — retry once the model is back |
 | **Spaced repetition** | SM-2 scheduler across every saved flashcard — Again/Hard/Good/Easy grades set the next review |
 | **Adaptive practice** | IRT-lite ranking repairs repeated misses first, tuned to the learner's level |
 | **Mock exams** | Timed papers with GATE negative marking (−⅓), question palette, flags, auto-filed mistakes, per-question review |
 | **Code lab** | Sandboxed JS runner (`node:vm`, timeout-guarded) with hidden tests + AI/static code review |
 | **Specialist agents** | Socratic Tutor, PYQ Coach, Doubt Solver, Code Reviewer, Mock Examiner, Revision Planner, Career Mentor — three-tier answer path (runtime RAG → direct model → curriculum), every reply labelled with the brain that produced it |
 | **Study OS** | Multi-goal tracking, diagnostic calibration, global search (Ctrl+K), achievements, weekly analytics, streaks |
-| **Clubs** | Three public halls plus private, invite-link-only clubs you create yourself |
+| **Reading Room** | A dynamic shelf of popular, genuinely insightful free blogs scoped to each learning universe and its syllabus modules |
 
 ## Architecture
 
@@ -35,7 +36,7 @@ flowchart LR
 
 - `apps/web`: modular React app (`lib/`, `components/`, `pages/`, `App`) — home
   (universe switcher + full syllabus + XP strip), lessons, SRS flashcards, PYQ lab,
-  mocks, code lab, agents, clubs, progress, mistakes, profile, onboarding,
+  mocks, code lab, agents, reading room, progress, mistakes, profile, onboarding,
   command palette.
 - `apps/api`: Express API — Google OAuth + signed sessions, curriculum, **78-question
   bank**, jobs + SSE, content/progress, **dashboard, study plans, SRS, mocks, code
@@ -129,7 +130,7 @@ the first model that answers wins. Bring your own key — the repo ships none.
 | Exams | `POST/GET /api/mock-exams`, `GET /api/mock-exams/:id`, `POST /api/mock-exams/:id/submit` |
 | Code | `GET /api/code/challenges`, `POST /api/code/run`, `POST /api/code/review` |
 | Growth | `POST /api/doubt`, `GET/POST /api/diagnostic`, `GET /api/analytics/weekly`, `GET /api/achievements`, goals CRUD |
-| Clubs | `GET/POST /api/rooms`, `POST /api/rooms/:id/join`, `POST /api/rooms/join-by-invite`, `POST /api/rooms/:id/invite`, `GET/POST /api/rooms/:id/messages` |
+| Reading Room | `GET /api/resources?goal=&module=&q=` — curated free blogs per universe, filterable by syllabus module |
 | Auth | `POST /api/auth/exchange` (login code → Bearer token), `GET /api/auth/status`, `GET /api/agents/status` |
 | Ops | `GET /health`, `GET /ready`, `GET /api/metrics` |
 
@@ -141,7 +142,7 @@ Runtime: `POST /v1/topic-jobs`, `GET /v1/topic-jobs/:id`, `/trace`, `/resume`,
 ## Quality gates
 
 ```bash
-npm test                                   # 46 API tests (jobs, SRS, mocks, code, auth, clubs, agents)
+npm test                                   # 48 API tests (jobs, regen, SRS, mocks, code, auth, reading room, agents)
 npm run build                              # API + web production builds
 npm run lint                               # strict TypeScript everywhere
 cd services/agent-runtime && python -m pytest test_main.py   # 14 runtime tests

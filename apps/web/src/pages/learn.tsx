@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import confetti from 'canvas-confetti';
 import { API, apiGet, apiPost, apiPut, type Pack, type Page, type Topic } from '../lib/api';
 import { Avatar, Empty, JobCard, Mermaid, RichText } from '../components/ui';
 
@@ -12,9 +13,9 @@ const DEPTHS = [
 
 // ------------------------------------------------------------------ lesson
 
-export function Lesson({ topic, pack, job, topics, isComplete, onStart, onBack, onCards, onPractice, onOpen, onComplete, onNavigate }: {
-  topic: Topic; pack: Pack | null; job: any; topics: Topic[]; isComplete: boolean;
-  onStart: (t: Topic, depth: string) => void; onBack: () => void; onCards: () => void; onPractice: () => void;
+export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart, onBack, onCards, onPractice, onOpen, onComplete, onNavigate }: {
+  topic: Topic; pack: Pack | null; job: any; jobError: string; topics: Topic[]; isComplete: boolean;
+  onStart: (t: Topic, depth: string, regenerate?: boolean) => void; onBack: () => void; onCards: () => void; onPractice: () => void;
   onOpen: (t: Topic) => void; onComplete: (t: Topic) => void; onNavigate: (page: Page, topicId?: string) => void;
 }) {
   const [videos, setVideos] = useState<any[]>(pack?.videos || []);
@@ -64,8 +65,14 @@ export function Lesson({ topic, pack, job, topics, isComplete, onStart, onBack, 
   const complete = () => {
     setCelebrate(true);
     onComplete(topic);
+    confetti({
+      particleCount: 110, spread: 75, origin: { y: 0.65 },
+      colors: ['#7557f5', '#bdf47c', '#ffd8c2', '#ffe285', '#a78dff'],
+    });
     window.setTimeout(() => setCelebrate(false), 4000);
   };
+
+  const isFallbackPack = pack?.verification?.status === 'fallback';
 
   const order = topics.length ? topics : [topic];
   const position = Math.max(0, order.findIndex((t) => t.id === topic.id));
@@ -109,6 +116,28 @@ export function Lesson({ topic, pack, job, topics, isComplete, onStart, onBack, 
       )}
 
       {job && <JobCard job={job} />}
+
+      {!job && jobError && (
+        <section className="job-error card" role="alert">
+          <span className="job-error-icon">⚠</span>
+          <div><b>The team couldn’t finish this run.</b><small>{jobError}</small></div>
+          <button onClick={() => onStart(topic, depth, true)}>↻ Try again</button>
+        </section>
+      )}
+
+      {!job && isFallbackPack && (
+        <section className="fallback-banner card" role="status">
+          <span className="fallback-icon">◌</span>
+          <div>
+            <b>Offline placeholder kit — you can upgrade it.</b>
+            <small>
+              The AI team was unreachable, so this kit was assembled locally. Your progress is saved and
+              nothing is lost — regenerate any time to get the full, evidence-backed version.
+            </small>
+          </div>
+          <button onClick={() => onStart(topic, pack?.depth || 'standard', true)}>✦ Regenerate with AI team</button>
+        </section>
+      )}
 
       {!job && !pack && (
         <section className="start-learning card">
@@ -239,7 +268,8 @@ export function Lesson({ topic, pack, job, topics, isComplete, onStart, onBack, 
                     </button>
                   ))}
                 </div>
-                <button className="secondary-button regen-button" onClick={() => onStart(topic, depth)}>↻ Regenerate this kit</button>
+                <button className="secondary-button regen-button" onClick={() => onStart(topic, depth, true)}>↻ Regenerate this kit</button>
+                <small className="regen-note">Re-runs the full Dean pipeline and replaces this kit. Your saved kit is kept if the AI team is offline.</small>
               </div>
             )}
           </aside>
@@ -250,7 +280,7 @@ export function Lesson({ topic, pack, job, topics, isComplete, onStart, onBack, 
         <>
           <div className="lesson-footer-actions">
             <button className="secondary-button" onClick={onCards}>Review saved flashcards →</button>
-            <button className="secondary-button" onClick={() => onNavigate('rooms')}>Discuss in study rooms →</button>
+            <button className="secondary-button" onClick={() => onNavigate('library')}>Explore free blogs on this →</button>
             <button onClick={onPractice}>Take saved practice quiz →</button>
           </div>
           <nav className="lesson-pager" aria-label="Tutorial navigation">
