@@ -5,7 +5,7 @@ import { Home, Plan } from './pages/home';
 import { Flashcards, Lesson, Practice } from './pages/learn';
 import { CodeLab, Mocks, Quiz } from './pages/drills';
 import { Agents, Mistakes, Profile, Progress } from './pages/insight';
-import { Rooms } from './pages/connect';
+import { Library } from './pages/library';
 import { Interview } from './pages/interview';
 
 export const UNIVERSES = [
@@ -44,11 +44,58 @@ export function App() {
   const [palette, setPalette] = useState(false);
   const [needsLogin, setNeedsLogin] = useState(false);
   const [switching, setSwitching] = useState(false);
-  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [jobError, setJobError] = useState('');
   const loadedFor = useRef<string>('');
   const loadingRef = useRef(false);
 
   const setPage = (next: Page) => { remember('eduswarm.page', next); setPageState(next); };
+
+  /** Phase 2 — hydrate everything that isn't needed to render the universe. */
+  const hydrate = useCallback(async (serverGoal: string, topicsList: any[]) => {
+    const results = await Promise.allSettled([
+      apiGet('/api/learning/content'),
+      apiGet('/api/agents'),
+      apiGet(`/api/dashboard?goal=${encodeURIComponent(serverGoal)}`),
+      apiGet(`/api/study-plan?goal=${encodeURIComponent(serverGoal)}`),
+      apiGet('/api/agents/status'),
+    ]);
+    const learning = results[0].status === 'fulfilled' ? results[0].value : { content: [], progress: [] };
+    const savedProgress = learning.progress || [];
+    setProgress(savedProgress);
+    setTopics(topicsList.map((t: any) => ({
+      ...t, status: savedProgress.some((p: any) => p.topicId === t.id && p.completed) ? 'complete' : 'available',
+    })));
+    if (results[1].status === 'fulfilled') setAgents(results[1].value?.agents || []);
+    if (results[2].status === 'fulfilled') setDashboard(results[2].value);
+    if (results[3].status === 'fulfilled') setPlan(results[3].value);
+    if (results[4].status === 'fulfilled') setAgentStatus(results[4].value);
+
+    const savedTopic = stored('eduswarm.topic', '');
+    if (savedTopic) {
+      const restored = topicsList.find((t: any) => t.id === savedTopic);
+      if (restored) {
+        setSelected((prev) => prev || restored);
+        const saved = (learning.content || []).find((x: any) => x.topicId === savedTopic);
+        if (saved) setPack((prev) => prev || saved.package);
+      }
+    }
+  }, []);
+
+  /** Light refresh after a lesson completes — no full reload, no loader flash. */
+  const softRefresh = useCallback(async (activeGoal: string) => {
+    const [learning, dash] = await Promise.allSettled([
+      apiGet('/api/learning/content'),
+      apiGet(`/api/dashboard?goal=${encodeURIComponent(activeGoal)}`),
+    ]);
+    if (learning.status === 'fulfilled') {
+      const savedProgress = learning.value.progress || [];
+      setProgress(savedProgress);
+      setTopics((prev) => prev.map((t) => ({
+        ...t, status: savedProgress.some((p: any) => p.topicId === t.id && p.completed) ? 'complete' : 'available',
+      })));
+    }
+    if (dash.status === 'fulfilled') setDashboard(dash.value);
+  }, []);
 
   const load = useCallback(async (activeGoal: string) => {
     // 1. A Google sign-in lands here with a single-use code. Exchange it for a
@@ -56,15 +103,10 @@ export function App() {
     //    which is what used to bounce new phones back to Google forever.
     const params = new URLSearchParams(window.location.search);
     const loginCode = params.get('loginCode');
-    const invite = params.get('invite');
-    if (invite) { setInviteCode(invite); setPage('rooms'); }
-    if (loginCode || invite) {
+    if (loginCode) {
       params.delete('loginCode');
-      params.delete('invite');
       const clean = `${window.location.pathname}${params.toString() ? `?${params}` : ''}${window.location.hash}`;
       window.history.replaceState(null, '', clean);
-    }
-    if (loginCode) {
       try {
         const data = await apiPost('/api/auth/exchange', { code: loginCode });
         setToken(data.token);
@@ -83,8 +125,6 @@ export function App() {
       const unauthorized = e?.status === 401 || String(e.message || '').includes('401');
       if (unauthorized) {
         setToken(null);
-        // Auto-redirect to Google at most once per browser, then fall back to
-        // an explicit button. This is what breaks the redirect loop.
         // Let the public landing page be the first touchpoint. The explicit
         // CTA starts OAuth, avoiding an unexpected redirect for new visitors.
         setNeedsLogin(true);
@@ -103,38 +143,14 @@ export function App() {
       remember('eduswarm.goal', serverGoal);
     }
 
-    const results = await Promise.allSettled([
-      apiGet(`/api/curriculum/${serverGoal}`),
-      apiGet('/api/learning/content'),
-      apiGet('/api/agents'),
-      apiGet(`/api/dashboard?goal=${encodeURIComponent(serverGoal)}`),
-      apiGet(`/api/study-plan?goal=${encodeURIComponent(serverGoal)}`),
-      apiGet('/api/agents/status'),
-    ]);
-    const curriculum = results[0].status === 'fulfilled' ? results[0].value : null;
-    const learning = results[1].status === 'fulfilled' ? results[1].value : {};
-    const agentData = results[2].status === 'fulfilled' ? results[2].value : null;
+    // 2. Two-phase load. Phase 1 fetches only the syllabus so the universe
+    //    renders in under two seconds; everything else streams in behind it.
+    const curriculum = await apiGet(`/api/curriculum/${serverGoal}`).catch(() => null);
     if (!curriculum?.topics?.length) throw new Error('The syllabus service is still waking up. Please try again in a few seconds.');
-    const savedProgress = learning.progress || [];
-    setProgress(savedProgress);
-    setTopics(curriculum.topics.map((t: any) => ({
-      ...t, status: savedProgress.some((p: any) => p.topicId === t.id && p.completed) ? 'complete' : 'available',
-    })));
-    setAgents(agentData?.agents || []);
-    if (results[3].status === 'fulfilled') setDashboard(results[3].value);
-    if (results[4].status === 'fulfilled') setPlan(results[4].value);
-    if (results[5].status === 'fulfilled') setAgentStatus(results[5].value);
-    loadedFor.current = serverGoal;
-    const savedTopic = stored('eduswarm.topic', '');
-    if (savedTopic) {
-      const restored = curriculum.topics.find((t: any) => t.id === savedTopic);
-      if (restored) {
-        setSelected((prev) => prev || restored);
-        const saved = learning.content?.find((x: any) => x.topicId === savedTopic);
-        if (saved) setPack((prev) => prev || saved.package);
-      }
-    }
-  }, []);
+    setTopics(curriculum.topics);
+
+    void hydrate(serverGoal, curriculum.topics);
+  }, [hydrate]);
 
   useEffect(() => {
     remember('eduswarm.goal', goal);
@@ -170,7 +186,7 @@ export function App() {
 
   const choose = (t: Topic) => {
     remember('eduswarm.topic', t.id);
-    setSelected(t); setPack(null); setJob(null); setError(''); setPage('lesson');
+    setSelected(t); setPack(null); setJob(null); setError(''); setJobError(''); setPage('lesson');
     apiGet(`/api/learning/content/${t.id}`).then((p) => setPack(p)).catch(() => {});
   };
 
@@ -183,13 +199,16 @@ export function App() {
     setPage(next);
   };
 
-  async function start(t: Topic, depth = 'standard') {
-    setSelected(t); setPage('lesson'); setError(''); setPack(null);
-    setJob({ status: 'queued', stage: 'Dean', message: 'The learning team is starting…' });
+  async function start(t: Topic, depth = 'standard', regenerate = false) {
+    setSelected(t); setPage('lesson'); setError(''); setJobError(''); setPack(null);
+    setJob({
+      status: 'queued', stage: 'Dean',
+      message: regenerate ? 'The team is re-researching this topic…' : 'The learning team is starting…',
+    });
     let j: any;
     try {
-      j = await apiPost('/api/jobs', { topicId: t.id, depth });
-    } catch (e: any) { setJob(null); setError(e?.message || 'Unable to start this tutorial.'); return; }
+      j = await apiPost('/api/jobs', { topicId: t.id, depth, regenerate });
+    } catch (e: any) { setJob(null); setJobError(e?.message || 'Unable to start this tutorial.'); return; }
     setJob(j);
     // EventSource cannot send headers, so the token rides along as a parameter.
     const token = getToken();
@@ -202,9 +221,13 @@ export function App() {
         es.close();
         try { setPack(await apiGet(`/api/content/${j.id}`)); } catch { /* job view keeps polling state */ }
         setJob(null);
-        await load(goal).catch(() => {});
+        await softRefresh(goal).catch(() => {});
       }
-      if (nextState.status === 'failed') { es.close(); setJob(null); setError(nextState.message || 'The learning team could not complete this topic.'); }
+      if (nextState.status === 'failed') {
+        es.close(); setJob(null);
+        setJobError(nextState.message || 'The learning team could not complete this topic.');
+        void softRefresh(goal).catch(() => {});
+      }
     };
     es.onerror = () => {
       es.close();
@@ -215,12 +238,17 @@ export function App() {
         if (nextState?.status === 'completed' && nextState.package) {
           setPack(await apiGet(`/api/content/${j.id}`).catch(() => null));
           setJob(null);
-          await load(goal).catch(() => {});
+          await softRefresh(goal).catch(() => {});
           return;
         }
-        if (nextState?.status === 'failed') { setJob(null); setError(nextState.message || 'The learning team could not complete this topic.'); return; }
+        if (nextState?.status === 'failed') {
+          setJob(null);
+          setJobError(nextState.message || 'The learning team could not complete this topic.');
+          void softRefresh(goal).catch(() => {});
+          return;
+        }
         if (checks < 900) { setJob(nextState || j); window.setTimeout(recover, 1000); }
-        else { setJob(nextState || j); setError('This study kit is taking longer than usual. Keep this lesson open or return later — the job is still saved and will continue safely.'); }
+        else { setJob(nextState || j); setJobError('This study kit is taking longer than usual. Keep this lesson open or return later — the job is still saved and will continue safely.'); }
       };
       void recover();
     };
@@ -310,7 +338,7 @@ export function App() {
             <Nav active={page === 'codelab'} icon="</>" label="Code lab" onClick={() => setPage('codelab')} />
             <Nav active={page === 'flashcards'} icon="▤" label="Flashcards" onClick={() => setPage('flashcards')} />
             <Nav active={page === 'agents'} icon="✦" label="Agent team" onClick={() => setPage('agents')} />
-            <Nav active={page === 'rooms'} icon="◍" label="Clubs" onClick={() => setPage('rooms')} />
+            <Nav active={page === 'library'} icon="❖" label="Reading Room" onClick={() => setPage('library')} />
             <Nav active={page === 'interview'} icon="◐" label="Interviews" onClick={() => setPage('interview')} />
             <Nav active={page === 'progress'} icon="↗" label="Progress" onClick={() => setPage('progress')} />
             <Nav active={page === 'mistakes'} icon="!" label="Mistake notebook" onClick={() => setPage('mistakes')} />
@@ -331,18 +359,18 @@ export function App() {
           )}
           {page === 'plan' && <Plan user={user} goal={goal} topics={topics} data={dashboard} plan={plan} onOpen={choose} onNavigate={navigate} />}
           {page === 'lesson' && (
-            <Lesson topic={selected || topics[0]} pack={pack} job={job} topics={topics}
+            <Lesson topic={selected || topics[0]} pack={pack} job={job} jobError={jobError} topics={topics}
               isComplete={progress.some((p: any) => p.topicId === (selected || topics[0]).id && p.completed)}
               onStart={start} onBack={() => setPage('plan')} onCards={() => setPage('flashcards')} onPractice={() => setPage('practice')}
               onOpen={choose} onComplete={completeTopic} onNavigate={navigate} />
           )}
-          {page === 'flashcards' && <Flashcards onLesson={() => setPage('lesson')} onProgress={() => void load(goal)} />}
-          {page === 'practice' && <Practice pack={pack} topic={selected || topics[0]} onLesson={() => setPage('lesson')} onProgress={() => void load(goal)} />}
+          {page === 'flashcards' && <Flashcards onLesson={() => setPage('lesson')} onProgress={() => void softRefresh(goal)} />}
+          {page === 'practice' && <Practice pack={pack} topic={selected || topics[0]} onLesson={() => setPage('lesson')} onProgress={() => void softRefresh(goal)} />}
           {page === 'quiz' && <Quiz course={goal} topicId={selected?.id || topics[0]?.id} />}
           {page === 'mocks' && <Mocks course={goal} />}
           {page === 'codelab' && <CodeLab />}
           {page === 'agents' && <Agents agents={agents} status={agentStatus} onOpen={openAgent} />}
-          {page === 'rooms' && <Rooms user={user} goal={goal} topic={selected || topics[0] || null} inviteCode={inviteCode} onInviteUsed={() => setInviteCode(null)} onNavigate={navigate} />}
+          {page === 'library' && <Library goal={goal} universeTitle={activeUniverse.title} onNavigate={navigate} />}
           {page === 'interview' && <Interview onNavigate={navigate} />}
           {page === 'progress' && <Progress topics={topics} progress={progress} />}
           {page === 'mistakes' && <Mistakes />}
@@ -357,7 +385,7 @@ export function App() {
         <Nav active={page === 'mocks'} icon="◷" label="Mocks" onClick={() => setPage('mocks')} />
         <Nav active={page === 'codelab'} icon="</>" label="Code" onClick={() => setPage('codelab')} />
         <Nav active={page === 'agents'} icon="✦" label="Agents" onClick={() => setPage('agents')} />
-        <Nav active={page === 'rooms'} icon="◍" label="Clubs" onClick={() => setPage('rooms')} />
+        <Nav active={page === 'library'} icon="❖" label="Reading" onClick={() => setPage('library')} />
         <Nav active={page === 'interview'} icon="◐" label="Mock HR" onClick={() => setPage('interview')} />
       </nav>
     </div>

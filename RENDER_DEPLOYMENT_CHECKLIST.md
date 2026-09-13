@@ -65,9 +65,8 @@ OPENROUTER_FALLBACK_MODELS=deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b
 LLM_TIMEOUT_MS=90000
 ```
 
-`WEB_URL` matters twice over: it is where the OAuth callback sends the
-single-use `loginCode`, and it is the root used for club invite links. If it is
-wrong, new devices loop on sign-in and invite links point at the wrong host.
+`WEB_URL` matters because it is where the OAuth callback sends the single-use
+`loginCode`. If it is wrong, new devices loop on sign-in.
 
 Sign-in is token-based. The web app and the API are on different domains, so the
 session cookie is a third-party cookie that Safari, Firefox and Chrome block.
@@ -128,10 +127,10 @@ sign-in. A 401 there means the code was reused or expired — sign in once more.
 
 ## Notes on state
 
-Clubs live in API process memory, so they reset when the API instance restarts
-or scales to more than one instance. Lessons, progress, reviews, mocks, agent
-sessions, goals, and the active universe are persisted in Mongo and survive
-restarts.
+Lessons, progress, reviews, mocks, agent sessions, goals, and the active
+universe are persisted in Mongo and survive restarts. The Reading Room's
+curated blog library is static reference data served from
+`apps/api/src/resources.ts`, so it needs no persistence.
 
 Never commit provider keys, Qdrant keys, database credentials, OAuth secrets, or
 session secrets.

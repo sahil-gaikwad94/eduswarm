@@ -1,11 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { API, apiGet, apiPost, type Page, type Topic } from '../lib/api';
+import { Mascot, MascotFace, Sparkles, type MascotMood } from './Mascot';
 
 export function Brand() {
   return <span className="brand"><span className="brand-mark">✦</span> EduSwarm</span>;
 }
 
-const LANDING_MOODS = ['is-dancing', 'is-walking', 'is-juggling', 'is-cartwheel'];
+const LANDING_MOODS: MascotMood[] = ['idle', 'wave', 'dance', 'cheer', 'think'];
 
 export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: string }) {
   const [mood, setMood] = useState(0);
@@ -15,7 +16,7 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
     const t = setInterval(() => setMood((m) => (m + 1) % LANDING_MOODS.length), 3600);
     return () => clearInterval(t);
   }, [hovering]);
-  const activeMood = hovering ? 'is-dancing' : LANDING_MOODS[mood];
+  const activeMood: MascotMood = hovering ? 'dance' : LANDING_MOODS[mood];
   return <main className="landing">
     <nav className="landing-nav"><Brand /><button className="landing-login" onClick={onSignIn}>Sign in <span>→</span></button></nav>
     <section className="landing-hero">
@@ -26,18 +27,15 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
         <div className="landing-proof"><span>✦</span><span><b>One calm place to grow</b><small>Lessons · practice · progress</small></span></div>
       </div>
       <div
-        className={`character-stage ${activeMood}`}
+        className="character-stage"
         onMouseEnter={() => setHovering(true)}
         onMouseLeave={() => setHovering(false)}
-        title="Psst… hover me to make me dance!"
+        title="Psst… hover me to make Doddly dance!"
       >
         <div className="orbit orbit-one" /><div className="orbit orbit-two" />
-        <span className="prop juggle-ball ball-1" aria-hidden /><span className="prop juggle-ball ball-2" aria-hidden /><span className="prop juggle-ball ball-3" aria-hidden />
-        <div className="doodle-character">
-          <span className="doodle-arm arm-left" aria-hidden /><span className="doodle-arm arm-right" aria-hidden />
-          <div className="doodle-antenna" />
-          <div className="doodle-body"><i className="eye left" /><i className="eye right" /><span className="cheek cheek-left" /><span className="cheek cheek-right" /><span className="smile" /></div>
-          <div className="doodle-feet"><i className="foot-left" /><i className="foot-right" /></div>
+        <Sparkles radius={170} count={6} />
+        <div className="mascot-hero">
+          <Mascot size={310} mood={activeMood} />
         </div>
         <div className="float-note note-one">learn ✦</div><div className="float-note note-two">you’ve got this!</div>
       </div>
@@ -48,24 +46,24 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
 
 const LOADING_QUIPS = [
   'Waking up your study buddy…',
-  'Juggling a few equations…',
+  'Doddly is buzzing through the syllabus…',
   'Doing a little victory dance…',
   'Untangling the syllabus…',
-  'Practising some silly walks…',
   'Sharpening the flashcards…',
-  'Chasing down that lost brain cell…',
+  'Gathering nectar from the best blogs…',
   'Warming up the learning swarm…',
 ];
+
+const LOADER_MOODS: MascotMood[] = ['idle', 'wave', 'dance', 'cheer'];
 
 export function LoadingScreen({ label = 'Loading your learning universe…' }: { label?: string }) {
   const [quip, setQuip] = useState(0);
   const [phase, setPhase] = useState(0);
   useEffect(() => {
-    const q = setInterval(() => setQuip((n) => (n + 1) % LOADING_QUIPS.length), 2200);
-    const p = setInterval(() => setPhase((n) => (n + 1) % 4), 3400);
+    const q = setInterval(() => setQuip((n) => (n + 1) % LOADING_QUIPS.length), 2000);
+    const p = setInterval(() => setPhase((n) => (n + 1) % LOADER_MOODS.length), 2600);
     return () => { clearInterval(q); clearInterval(p); };
   }, []);
-  const moods = ['is-dancing', 'is-walking', 'is-juggling', 'is-cartwheel'];
   return (
     <main className="loader-screen">
       <div className="loader-bg" aria-hidden>
@@ -73,26 +71,11 @@ export function LoadingScreen({ label = 'Loading your learning universe…' }: {
       </div>
       <div className="loader-inner">
         <div className="loader-brand"><Brand /></div>
-        <div className={`loader-stage ${moods[phase]}`}>
+        <div className="loader-stage">
           <span className="loader-shadow" aria-hidden />
-          <span className="prop prop-note note-1" aria-hidden>♪</span>
-          <span className="prop prop-note note-2" aria-hidden>♫</span>
-          <span className="prop prop-book" aria-hidden>📖</span>
-          <span className="prop prop-star star-1" aria-hidden>✦</span>
-          <span className="prop prop-star star-2" aria-hidden>✧</span>
-          <span className="prop juggle-ball ball-1" aria-hidden />
-          <span className="prop juggle-ball ball-2" aria-hidden />
-          <span className="prop juggle-ball ball-3" aria-hidden />
-          <div className="loader-doodle">
-            <span className="doodle-arm arm-left" aria-hidden />
-            <span className="doodle-arm arm-right" aria-hidden />
-            <div className="doodle-antenna" />
-            <div className="doodle-body">
-              <i className="eye left" /><i className="eye right" />
-              <span className="cheek cheek-left" /><span className="cheek cheek-right" />
-              <span className="smile" />
-            </div>
-            <div className="doodle-feet"><i className="foot-left" /><i className="foot-right" /></div>
+          <Sparkles radius={120} count={5} />
+          <div className="loader-mascot">
+            <Mascot size={215} mood={LOADER_MOODS[phase]} />
           </div>
         </div>
         <h1 className="loader-title">{label}</h1>
@@ -114,9 +97,8 @@ export function Nav({ active, label, icon, onClick }: { active: boolean; label: 
 
 export function Avatar({ size = 'small' }: { kind?: string; size?: string }) {
   return (
-    <span className={`agent-avatar ${size}`}>
-      <span className="avatar-face"><i /><i /></span>
-      <span className="avatar-spark">✦</span>
+    <span className={`agent-avatar doddly-avatar ${size}`}>
+      <MascotFace />
     </span>
   );
 }

@@ -307,20 +307,6 @@ test('notes round-trip per learner and topic', async () => {
   const missing = await request('/api/notes/nope', { headers });
   assert.equal(missing.status, 404);
 });
-test('study rooms support create, join, and chat', async () => {
-  const headers = { 'x-demo-user': 'room-learner' };
-  const listed = await request('/api/rooms', { headers });
-  assert.equal(listed.status, 200);
-  assert.equal(listed.body.rooms.length >= 3, true);
-  const created = await request('/api/rooms', { method: 'POST', headers, body: { name: 'Test Room', goal: 'gate-cs', topic: 'OS' } });
-  assert.equal(created.status, 201);
-  const joined = await request(`/api/rooms/${created.body.id}/join`, { method: 'POST', headers });
-  assert.equal(joined.body.members.length >= 1, true);
-  const posted = await request(`/api/rooms/${created.body.id}/messages`, { method: 'POST', headers, body: { text: 'hello room' } });
-  assert.equal(posted.status, 201);
-  const messages = await request(`/api/rooms/${created.body.id}/messages?since=0`, { headers });
-  assert.equal(messages.body.messages.some((m: any) => m.text === 'hello room'), true);
-});
 test('interview simulator runs warm-up to report', async () => {
   const headers = { 'x-demo-user': 'interview-learner' };
   const meta = await request('/api/interviews/meta', { headers });
@@ -451,38 +437,6 @@ test('agent status reports which brain will answer', async () => {
   assert.equal(result.body.models.length > 0, true);
 });
 
-// ----------------------------------------------------------- private clubs
-
-test('learner-created clubs are private and only joinable by invite link', async () => {
-  const owner = { 'x-demo-user': 'club-owner' };
-  const stranger = { 'x-demo-user': 'club-stranger' };
-  const created = await request('/api/rooms', { method: 'POST', headers: owner, body: { name: 'Night Owls', goal: 'gate-cs', topic: 'OS revision' } });
-  assert.equal(created.status, 201);
-  assert.equal(created.body.isPrivate, true, 'new clubs default to private');
-  assert.equal(typeof created.body.inviteCode, 'string');
-
-  const listed = await request('/api/rooms', { headers: stranger });
-  assert.equal(listed.body.rooms.some((r: any) => r.id === created.body.id), false, 'private clubs stay off the public list');
-  assert.equal(listed.body.rooms.length >= 3, true, 'public halls are still listed');
-
-  const peek = await request(`/api/rooms/${created.body.id}/messages?since=0`, { headers: stranger });
-  assert.equal(peek.status, 403, 'non-members cannot read a private club');
-  const badJoin = await request(`/api/rooms/${created.body.id}/join`, { method: 'POST', headers: stranger, body: { inviteCode: 'nope' } });
-  assert.equal(badJoin.status, 403);
-
-  const joined = await request('/api/rooms/join-by-invite', { method: 'POST', headers: stranger, body: { code: created.body.inviteCode } });
-  assert.equal(joined.status, 200);
-  assert.equal(joined.body.isMember, true);
-  const readable = await request(`/api/rooms/${created.body.id}/messages?since=0`, { headers: stranger });
-  assert.equal(readable.status, 200);
-
-  const rotated = await request(`/api/rooms/${created.body.id}/invite`, { method: 'POST', headers: owner });
-  assert.equal(rotated.status, 200);
-  assert.notEqual(rotated.body.inviteCode, created.body.inviteCode);
-  const foreign = await request(`/api/rooms/${created.body.id}/invite`, { method: 'POST', headers: stranger });
-  assert.equal(foreign.status, 403, 'only the owner can rotate the invite link');
-});
-
 test('doubts answer the concept asked instead of a similar-looking PYQ', async () => {
   const savedKey = process.env.OPENROUTER_API_KEY;
   delete process.env.OPENROUTER_API_KEY;
@@ -498,4 +452,77 @@ test('doubts answer the concept asked instead of a similar-looking PYQ', async (
   } finally {
     if (savedKey !== undefined) process.env.OPENROUTER_API_KEY = savedKey;
   }
+});
+
+// ------------------------------------------------------------- reading room
+
+test('reading room returns curated resources scoped to a universe', async () => {
+  const gate = await request('/api/resources?goal=gate-cs');
+  assert.equal(gate.status, 200);
+  assert.equal(gate.body.goal, 'gate-cs');
+  assert.ok(gate.body.resources.length >= 10, 'GATE universe has a real shelf');
+  assert.ok(gate.body.modules.length >= 8, 'module list mirrors the live syllabus');
+  const web = await request('/api/resources?goal=web-dev');
+  const ai = await request('/api/resources?goal=ai-ml');
+  assert.equal(web.body.goal, 'web-dev');
+  assert.equal(ai.body.goal, 'ai-ml');
+  assert.ok(web.body.resources.length >= 10 && ai.body.resources.length >= 10);
+  const webIds = new Set(web.body.resources.map((r: any) => r.id));
+  const aiIds = new Set(ai.body.resources.map((r: any) => r.id));
+  const gateIds = new Set(gate.body.resources.map((r: any) => r.id));
+  assert.ok([...webIds].every((id) => !gateIds.has(id)), 'shelves differ per universe');
+  assert.ok([...aiIds].every((id) => !gateIds.has(id)), 'shelves differ per universe');
+});
+
+test('reading room filters by module and search text', async () => {
+  const byModule = await request('/api/resources?goal=ai-ml&module=Deep%20Learning');
+  assert.equal(byModule.status, 200);
+  assert.ok(byModule.body.resources.length >= 1);
+  assert.ok(byModule.body.resources.every((r: any) => r.modules.includes('Deep Learning')));
+  const byQuery = await request('/api/resources?goal=web-dev&q=react');
+  assert.equal(byQuery.status, 200);
+  assert.ok(byQuery.body.resources.length >= 1);
+  assert.ok(byQuery.body.resources.every((r: any) =>
+    `${r.title} ${r.publisher} ${r.blurb} ${r.modules.join(' ')}`.toLowerCase().includes('react')));
+});
+
+// ------------------------------------------------- regeneration guarantees
+
+async function waitForJob(id: string, headers: any) {
+  for (let i = 0; i < 60; i += 1) {
+    const job = await request(`/api/jobs/${id}`, { headers });
+    if (['completed', 'failed'].includes(job.body.status)) return job.body;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error('job did not settle');
+}
+
+test('first generation still falls back to the local kit when the runtime is offline', async () => {
+  const headers = { 'x-demo-user': 'regen-fresh' };
+  const created = await request('/api/jobs', { method: 'POST', headers, body: { topicId: 'algo-complexity', depth: 'standard' } });
+  assert.equal(created.status, 202);
+  const settled = await waitForJob(created.body.id, headers);
+  assert.equal(settled.status, 'completed', 'a brand-new topic still gets a kit offline');
+  assert.ok(settled.package, 'fallback package is attached');
+});
+
+test('regeneration fails loudly and keeps the saved kit when the runtime is offline', async () => {
+  const headers = { 'x-demo-user': 'regen-keeper' };
+  const first = await request('/api/jobs', { method: 'POST', headers, body: { topicId: 'algo-sorting', depth: 'standard' } });
+  const settled = await waitForJob(first.body.id, headers);
+  assert.equal(settled.status, 'completed');
+  const saved = await request('/api/learning/content/algo-sorting', { headers });
+  assert.equal(saved.status, 200, 'kit is stored after first generation');
+
+  const regen = await request('/api/jobs', { method: 'POST', headers, body: { topicId: 'algo-sorting', depth: 'standard', regenerate: true } });
+  assert.equal(regen.status, 202);
+  assert.equal(regen.body.regenerate, true);
+  assert.equal(regen.body.hadContent, true);
+  const regenSettled = await waitForJob(regen.body.id, headers);
+  assert.equal(regenSettled.status, 'failed', 'offline regen must fail instead of overwriting');
+  assert.match(regenSettled.message, /kept untouched/i);
+
+  const after = await request('/api/learning/content/algo-sorting', { headers });
+  assert.equal(after.status, 200);
+  assert.deepEqual(after.body, saved.body, 'the saved kit is byte-identical after a failed regen');
 });

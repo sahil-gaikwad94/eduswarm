@@ -11,7 +11,7 @@ export const API = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? '' : '
 export type Page =
   | 'dashboard' | 'plan' | 'syllabus' | 'lesson' | 'flashcards' | 'practice'
   | 'quiz' | 'mocks' | 'codelab' | 'agents' | 'progress' | 'mistakes' | 'profile'
-  | 'rooms' | 'interview';
+  | 'library' | 'interview';
 
 export type Topic = {
   id: string; module: string; title: string; description: string;

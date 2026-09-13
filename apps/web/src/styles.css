@@ -332,17 +332,6 @@
 .chat-source{font-size:10px;letter-spacing:.05em;font-weight:700;color:#4b6b52;padding:0 4px}
 .chat-source.offline{color:#a8491f}
 
-/* ===== Private clubs ===== */
-.notice-banner{background:#fff8d8;border:1px solid #ead98b;border-radius:12px;padding:12px 15px;font-size:13px;margin:0 0 18px}
-.privacy-toggle{display:flex!important;flex-direction:row;align-items:flex-start;gap:10px;grid-column:1/-1}
-.privacy-toggle input{width:18px;height:18px;margin-top:2px}
-.privacy-toggle b{display:block;font-size:13px}
-.privacy-toggle small{display:block;color:var(--muted);font-size:11px}
-.room-block{display:grid;gap:6px}
-.invite-actions{display:flex;gap:6px;padding:0 2px 4px}
-.invite-actions button{font-size:10px;padding:6px 8px}
-.invite-redeem{display:flex;gap:9px;margin:0 0 18px}
-.invite-redeem input{flex:1;min-width:0}
 @media(max-width:940px){.universe-cards,.xp-strip,.home-shortcuts{grid-template-columns:1fr 1fr}.xp-strip-card.week{grid-column:span 2}.syllabus-head{display:grid;gap:14px}}
 @media(max-width:680px){.universe-cards,.xp-strip,.home-shortcuts{grid-template-columns:1fr}.xp-strip-card.week{grid-column:span 1}.invite-redeem{flex-direction:column}.syllabus-module-head{display:grid;gap:8px}}
 
@@ -511,3 +500,61 @@
 .character-stage.is-cartwheel .arm-right{animation:armWaveR .4s ease-in-out infinite}
 
 @media(prefers-reduced-motion:reduce){.character-stage *{animation-duration:6s!important}}
+
+/* ============================================================ Doddly mascot */
+.doddly{display:block}
+.mascot-hero{position:relative;z-index:2;filter:drop-shadow(0 18px 22px rgba(30,27,46,.14))}
+.character-stage{display:grid;place-items:center}
+.loader-mascot{position:relative;z-index:2;filter:drop-shadow(0 12px 14px rgba(30,27,46,.12))}
+.loader-stage .loader-shadow{bottom:6px}
+.sparkle-ring{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;z-index:1}
+.sparkle{position:absolute;font-size:17px;color:var(--violet)}
+.sparkle-1{color:#d1af21;font-size:13px}
+.sparkle-2{color:#7fb069;font-size:21px}
+.agent-avatar.doddly-avatar{background:linear-gradient(135deg,#ffe9a8,#ffc44d);border-radius:34% 66% 48% 52%;padding:2px}
+.agent-avatar.doddly-avatar.large{padding:5px}
+@media(max-width:700px){.mascot-hero .doddly{width:230px;height:230px}}
+
+/* ============================================================ Reading Room */
+.library-toolbar{padding:18px;display:grid;gap:14px;margin-bottom:26px}
+.library-search{width:100%}
+.library-chips{display:flex;flex-wrap:wrap;gap:8px}
+.library-chip{border:1px solid var(--line);background:var(--white);border-radius:99px;padding:7px 13px;font-size:12px;font-weight:700;color:var(--muted);transition:.15s}
+.library-chip:hover{border-color:var(--violet);color:var(--violet)}
+.library-chip.active{background:var(--ink);border-color:var(--ink);color:#fff}
+.library-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px;margin-bottom:30px}
+.library-card{display:flex;flex-direction:column;gap:9px;padding:21px;text-decoration:none;color:inherit;transition:transform .18s,box-shadow .18s,border-color .18s}
+.library-card:hover{transform:translateY(-3px);border-color:var(--violet);box-shadow:0 20px 40px rgba(30,27,46,.12)}
+.library-card-head{display:flex;align-items:center;gap:9px}
+.library-favicon{border-radius:8px;border:1px solid var(--line);background:#fff;flex:0 0 auto}
+.library-kind{font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:5px 9px;border-radius:99px;background:var(--lavender);color:var(--violet)}
+.library-kind.kind-course{background:#e7f8d5;color:#3f7a17}
+.library-kind.kind-book{background:#fff1d6;color:#8a5b00}
+.library-kind.kind-community{background:#ffe6dc;color:#a8481f}
+.library-kind.kind-practice{background:#dbeeff;color:#1c5f9e}
+.library-kind.kind-docs,.library-kind.kind-reference{background:#efefec;color:#5d5a6e}
+.library-free{margin-left:auto;font-size:10px;font-weight:800;letter-spacing:.1em;color:#3f7a17;background:#eef9e2;border:1px solid #cdeab2;border-radius:99px;padding:4px 8px}
+.library-card h2{margin:2px 0 0;font-size:19px}
+.library-publisher{margin:0;font-size:12px;font-weight:700;color:var(--violet)}
+.library-blurb{margin:0;font-size:13px;color:var(--muted);line-height:1.55;flex:1}
+.library-tags{display:flex;flex-wrap:wrap;gap:6px}
+.library-tags span{font-size:10.5px;font-weight:700;border:1px solid var(--line);border-radius:99px;padding:4px 9px;color:var(--muted)}
+.library-open{font-size:13px;font-weight:800;color:var(--ink)}
+.library-card:hover .library-open{color:var(--violet)}
+.library-note{display:flex;align-items:center;justify-content:space-between;gap:18px;border-top:1px solid var(--line);padding-top:22px}
+.library-note p{margin:0;color:var(--muted);font-size:13px;max-width:640px}
+@media(max-width:700px){.library-note{flex-direction:column;align-items:flex-start}}
+
+/* ==================================== lesson regen / fallback / job error */
+.fallback-banner{display:flex;gap:15px;align-items:center;padding:18px 21px;margin-bottom:24px;background:#fff8d8;border-color:#ead98b}
+.fallback-banner b,.fallback-banner small{display:block}
+.fallback-banner small{color:#78705e;margin-top:3px}
+.fallback-icon{flex:0 0 auto;display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#fff;border:1px solid #ead98b;font-size:19px;color:#876b00}
+.fallback-banner button,.job-error button{margin-left:auto;white-space:nowrap;background:var(--ink);color:#fff;border-radius:11px;padding:12px 16px;font-weight:700;transition:.18s}
+.fallback-banner button:hover,.job-error button:hover{background:var(--violet)}
+.job-error{display:flex;gap:14px;align-items:center;padding:17px 20px;margin-bottom:24px;background:#fff0ef;border-color:#ffc7c2}
+.job-error b,.job-error small{display:block}
+.job-error small{color:#a7352b;margin-top:2px}
+.job-error-icon{flex:0 0 auto;display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#fff;border:1px solid #ffc7c2;color:#a7352b}
+.regen-note{display:block;color:var(--muted);font-size:11px;line-height:1.5;margin-top:9px}
+@media(max-width:700px){.fallback-banner,.job-error{flex-wrap:wrap}.fallback-banner button,.job-error button{margin-left:0;width:100%}}
