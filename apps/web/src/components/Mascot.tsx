@@ -1,5 +1,5 @@
-import React, { useId } from 'react';
-import { motion } from 'framer-motion';
+import React, { useEffect, useId, useRef } from 'react';
+import { motion, useMotionValue, useSpring } from 'framer-motion';
 
 /**
  * Doddly — the EduSwarm honey-bee mascot.
@@ -49,11 +49,36 @@ const armRightByMood: Record<MascotMood, any> = {
 
 const fillBox = { transformBox: 'fill-box' as const };
 
-export function Mascot({ size = 200, mood = 'idle', className = '' }: { size?: number; mood?: MascotMood; className?: string }) {
+export function Mascot({ size = 200, mood = 'idle', className = '', eyesFollow = false }: {
+  size?: number; mood?: MascotMood; className?: string;
+  /** When true, Doddly's pupils softly track the visitor's cursor. */
+  eyesFollow?: boolean;
+}) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '');
   const body = `doddly-body-${uid}`;
   const wing = `doddly-wing-${uid}`;
   const clip = `doddly-clip-${uid}`;
+  const svgRef = useRef<SVGSVGElement>(null);
+  const pupilX = useMotionValue(0);
+  const pupilY = useMotionValue(0);
+  const followX = useSpring(pupilX, { stiffness: 260, damping: 22 });
+  const followY = useSpring(pupilY, { stiffness: 260, damping: 22 });
+
+  useEffect(() => {
+    if (!eyesFollow) return;
+    const onMove = (event: MouseEvent) => {
+      const el = svgRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const dx = (event.clientX - (rect.left + rect.width / 2)) / (rect.width / 2 || 1);
+      const dy = (event.clientY - (rect.top + rect.height / 2)) / (rect.height / 2 || 1);
+      pupilX.set(Math.max(-1, Math.min(1, dx)) * 2.6);
+      pupilY.set(Math.max(-1, Math.min(1, dy)) * 2.1);
+    };
+    window.addEventListener('mousemove', onMove);
+    return () => window.removeEventListener('mousemove', onMove);
+  }, [eyesFollow, pupilX, pupilY]);
+
   const excited = mood === 'cheer' || mood === 'dance';
   const smilePath = excited
     ? 'M93 122 Q110 146 127 122 Q110 132 93 122 Z'
@@ -63,6 +88,7 @@ export function Mascot({ size = 200, mood = 'idle', className = '' }: { size?: n
 
   return (
     <motion.svg
+      ref={svgRef}
       width={size}
       height={size}
       viewBox="0 0 220 232"
@@ -148,10 +174,12 @@ export function Mascot({ size = 200, mood = 'idle', className = '' }: { size?: n
         >
           <circle cx="88" cy="97" r="14" fill="#fff" stroke={INK} strokeWidth="4" />
           <circle cx="132" cy="97" r="14" fill="#fff" stroke={INK} strokeWidth="4" />
-          <circle cx={mood === 'think' ? 85 : 90} cy={mood === 'think' ? 94 : 99} r="6.3" fill={INK} />
-          <circle cx={mood === 'think' ? 129 : 134} cy={mood === 'think' ? 94 : 99} r="6.3" fill={INK} />
-          <circle cx={mood === 'think' ? 83 : 88} cy={mood === 'think' ? 92 : 96.5} r="2.1" fill="#fff" />
-          <circle cx={mood === 'think' ? 127 : 132} cy={mood === 'think' ? 92 : 96.5} r="2.1" fill="#fff" />
+          <motion.g style={{ x: eyesFollow ? followX : 0, y: eyesFollow ? followY : 0 }}>
+            <circle cx={mood === 'think' ? 85 : 90} cy={mood === 'think' ? 94 : 99} r="6.3" fill={INK} />
+            <circle cx={mood === 'think' ? 129 : 134} cy={mood === 'think' ? 94 : 99} r="6.3" fill={INK} />
+            <circle cx={mood === 'think' ? 83 : 88} cy={mood === 'think' ? 92 : 96.5} r="2.1" fill="#fff" />
+            <circle cx={mood === 'think' ? 127 : 132} cy={mood === 'think' ? 92 : 96.5} r="2.1" fill="#fff" />
+          </motion.g>
         </motion.g>
         <ellipse cx="76" cy="116" rx="9" ry="5.5" fill="#ff9d8a" opacity="0.7" />
         <ellipse cx="144" cy="116" rx="9" ry="5.5" fill="#ff9d8a" opacity="0.7" />

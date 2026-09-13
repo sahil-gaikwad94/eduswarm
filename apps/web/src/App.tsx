@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { API, apiGet, apiPatch, apiPost, getToken, setToken, type Agent, type Page, type Pack, type Topic } from './lib/api';
-import { AgentChat, Avatar, Brand, Landing, LoadingScreen, Nav, Onboarding, SearchPalette } from './components/ui';
+import { AgentChat, Avatar, Brand, LoadingScreen, Nav, Onboarding, SearchPalette } from './components/ui';
+import { Landing } from './pages/landing';
 import { Home, Plan } from './pages/home';
 import { Flashcards, Lesson, Practice } from './pages/learn';
 import { CodeLab, Mocks, Quiz } from './pages/drills';
@@ -25,6 +26,10 @@ function remember(key: string, value: string | null): void {
 }
 
 const REDIRECT_KEY = 'eduswarm.auth.attemptedAt';
+
+/** Design-review flag: /?previewLanding shows the landing page in demo mode. */
+const previewLanding = typeof window !== 'undefined'
+  && new URLSearchParams(window.location.search).has('previewLanding');
 
 export function App() {
   const [user, setUser] = useState<any>(null);
@@ -279,7 +284,17 @@ export function App() {
     window.location.assign(`${API}/auth/google`);
   };
 
-  if (needsLogin) return <Landing onSignIn={signIn} error={error} />;
+  if (needsLogin || previewLanding) {
+    return <Landing error={error} onSignIn={() => {
+      if (previewLanding) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('previewLanding');
+        window.location.replace(url.toString());
+        return;
+      }
+      signIn();
+    }} />;
+  }
   if (error) {
     return (
       <main className="center">

@@ -6,44 +6,6 @@ export function Brand() {
   return <span className="brand"><span className="brand-mark">✦</span> EduSwarm</span>;
 }
 
-const LANDING_MOODS: MascotMood[] = ['idle', 'wave', 'dance', 'cheer', 'think'];
-
-export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: string }) {
-  const [mood, setMood] = useState(0);
-  const [hovering, setHovering] = useState(false);
-  useEffect(() => {
-    if (hovering) return;
-    const t = setInterval(() => setMood((m) => (m + 1) % LANDING_MOODS.length), 3600);
-    return () => clearInterval(t);
-  }, [hovering]);
-  const activeMood: MascotMood = hovering ? 'dance' : LANDING_MOODS[mood];
-  return <main className="landing">
-    <nav className="landing-nav"><Brand /><button className="landing-login" onClick={onSignIn}>Sign in <span>→</span></button></nav>
-    <section className="landing-hero">
-      <div className="landing-copy"><p className="eyebrow">A SMALLER, SMARTER WAY TO LEARN</p><h1>Meet your<br /><em>learning swarm.</em></h1>
-        <p className="landing-lead">EduSwarm turns big goals into clear next steps, with an AI team that teaches, quizzes, and keeps your momentum alive.</p>
-        <button className="landing-cta" onClick={onSignIn}>Start learning free <span>↗</span></button>
-        {error && <p className="error-copy">{error}</p>}
-        <div className="landing-proof"><span>✦</span><span><b>One calm place to grow</b><small>Lessons · practice · progress</small></span></div>
-      </div>
-      <div
-        className="character-stage"
-        onMouseEnter={() => setHovering(true)}
-        onMouseLeave={() => setHovering(false)}
-        title="Psst… hover me to make Doddly dance!"
-      >
-        <div className="orbit orbit-one" /><div className="orbit orbit-two" />
-        <Sparkles radius={170} count={6} />
-        <div className="mascot-hero">
-          <Mascot size={310} mood={activeMood} />
-        </div>
-        <div className="float-note note-one">learn ✦</div><div className="float-note note-two">you’ve got this!</div>
-      </div>
-    </section>
-    <section className="landing-features"><div><span>01</span><b>Learn in layers</b><p>Simple explanations, deeper dives, and examples when you’re ready.</p></div><div><span>02</span><b>Practice that remembers</b><p>Quizzes and flashcards adapt to what you actually need.</p></div><div><span>03</span><b>See your momentum</b><p>Small wins become a plan you can keep showing up for.</p></div></section>
-  </main>;
-}
-
 const LOADING_QUIPS = [
   'Waking up your study buddy…',
   'Doddly is buzzing through the syllabus…',
