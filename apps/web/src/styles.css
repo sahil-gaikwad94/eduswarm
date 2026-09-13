@@ -351,3 +351,163 @@
 .landing:before{content:'';position:absolute;inset:0;background:radial-gradient(circle at 78% 28%,#e4defd 0 13%,transparent 34%),radial-gradient(circle at 7% 90%,#f5e5b9 0 8%,transparent 25%);opacity:.7;pointer-events:none}
 .landing-nav{height:88px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:2;max-width:1240px;margin:auto}.landing-login{background:transparent;border:1px solid var(--ink);border-radius:99px;padding:11px 18px;font-weight:700}.landing-login span{color:var(--violet);margin-left:8px}.landing-hero{max-width:1240px;margin:0 auto;min-height:590px;display:grid;grid-template-columns:1fr 1fr;align-items:center;gap:3vw;position:relative;z-index:1}.landing-copy{max-width:590px}.landing-copy h1{font-size:clamp(54px,7vw,100px);line-height:.9;letter-spacing:-.075em;margin:16px 0 28px}.landing-copy h1 em{font-family:Georgia,serif;font-weight:400;color:var(--violet);letter-spacing:-.06em}.landing-lead{font-size:18px;line-height:1.6;color:var(--muted);max-width:470px}.landing-cta{margin-top:22px;background:var(--ink);color:#fff;border-radius:99px;padding:15px 22px;font-weight:700;font-size:15px;box-shadow:0 8px 0 #d1c8b9;transition:transform .2s,box-shadow .2s}.landing-cta:hover{transform:translateY(3px);box-shadow:0 4px 0 #d1c8b9}.landing-cta span{color:#f1d464;margin-left:22px}.landing-proof{display:flex;gap:10px;align-items:center;margin-top:48px}.landing-proof>span:first-child{display:grid;place-items:center;width:35px;height:35px;border-radius:50%;background:#f1d464}.landing-proof b,.landing-proof small{display:block}.landing-proof small{color:var(--muted);font-size:12px;margin-top:3px}.character-stage{height:500px;position:relative;display:grid;place-items:center}.orbit{position:absolute;border:1px dashed #b7aaf0;border-radius:50%;animation:spin 22s linear infinite}.orbit-one{width:350px;height:350px}.orbit-two{width:450px;height:210px;transform:rotate(-28deg);animation-direction:reverse}.doodle-character{position:relative;animation:float 4s ease-in-out infinite;z-index:1}.doodle-antenna{width:4px;height:52px;background:var(--ink);margin:auto;position:relative}.doodle-antenna:before{content:'✦';position:absolute;top:-23px;left:-8px;color:#e8c944;font-size:20px}.doodle-body{width:205px;height:225px;border:5px solid var(--ink);background:#f4d45c;border-radius:48% 52% 45% 48%;position:relative;box-shadow:inset -18px -15px #e7bb43}.eye{position:absolute;top:88px;width:13px;height:18px;border-radius:50%;background:var(--ink)}.eye.left{left:62px}.eye.right{right:62px}.smile{position:absolute;left:83px;top:121px;width:39px;height:20px;border-bottom:4px solid var(--ink);border-radius:50%}.doodle-feet{display:flex;justify-content:space-around;margin-top:-3px}.doodle-feet i{width:35px;height:13px;border-bottom:5px solid var(--ink);border-radius:50%}.float-note{position:absolute;background:#fff;border:1px solid #ddd4c8;border-radius:12px;padding:10px 13px;font-weight:700;box-shadow:4px 5px 0 #ded6ca;animation:float 4s ease-in-out infinite}.note-one{top:80px;right:5%;transform:rotate(8deg)}.note-two{bottom:80px;left:4%;transform:rotate(-7deg);animation-delay:1s}.landing-features{max-width:1240px;margin:10px auto 50px;border-top:1px solid #d8d0c5;display:grid;grid-template-columns:repeat(3,1fr);gap:35px;padding-top:28px;position:relative;z-index:1}.landing-features span{color:var(--violet);font:700 12px monospace}.landing-features b{display:block;margin:14px 0 7px;font-size:18px}.landing-features p{color:var(--muted);font-size:13px;line-height:1.5;max-width:260px;margin:0}@keyframes float{0%,100%{transform:translateY(0) rotate(-2deg)}50%{transform:translateY(-13px) rotate(2deg)}}@keyframes spin{to{transform:rotate(360deg)}}
 @media(max-width:700px){.landing{padding:0 22px}.landing-nav{height:72px}.landing-hero{grid-template-columns:1fr;min-height:auto;padding:52px 0 30px}.landing-copy h1{font-size:62px}.character-stage{height:350px;order:-1}.doodle-body{transform:scale(.75)}.orbit-one{width:270px;height:270px}.orbit-two{width:330px;height:160px}.landing-features{grid-template-columns:1fr;gap:22px}.landing-proof{margin-top:30px}}
+
+/* ---------- Playful loading screen ---------- */
+.loader-screen{position:fixed;inset:0;z-index:60;display:grid;place-items:center;overflow:hidden;background:radial-gradient(120% 120% at 50% 0%,#f3efff 0%,#fff9e6 45%,#ffeede 100%)}
+.loader-bg{position:absolute;inset:0;pointer-events:none}
+.loader-bg .blob{position:absolute;border-radius:50%;filter:blur(6px);opacity:.55;animation:blobDrift 14s ease-in-out infinite}
+.blob-a{width:320px;height:320px;background:radial-gradient(circle at 30% 30%,#cdbcff,#a78dff);top:-90px;left:-70px}
+.blob-b{width:260px;height:260px;background:radial-gradient(circle at 40% 40%,#bdf47c,#8fd94f);bottom:-80px;right:-60px;animation-delay:-4s}
+.blob-c{width:220px;height:220px;background:radial-gradient(circle at 40% 40%,#ffd8c2,#ffb992);top:55%;left:8%;animation-delay:-8s}
+@keyframes blobDrift{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(24px,-20px) scale(1.08)}66%{transform:translate(-18px,16px) scale(.94)}}
+.loader-inner{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:24px;width:min(520px,92vw)}
+.loader-brand{margin-bottom:6px}
+.loader-brand .brand{font-size:24px}
+.loader-stage{position:relative;width:280px;height:250px;display:grid;place-items:center;margin:8px 0 4px}
+.loader-shadow{position:absolute;bottom:24px;width:130px;height:22px;background:rgba(30,27,46,.16);border-radius:50%;filter:blur(3px);animation:shadowPulse 1.1s ease-in-out infinite}
+@keyframes shadowPulse{0%,100%{transform:scale(1);opacity:.5}50%{transform:scale(.72);opacity:.28}}
+
+/* the doodle character */
+.loader-doodle{position:relative;z-index:2}
+.loader-stage .doodle-antenna{width:4px;height:38px;background:var(--ink);margin:auto;position:relative}
+.loader-stage .doodle-antenna:before{content:'✦';position:absolute;top:-20px;left:-8px;color:#e8c944;font-size:18px;animation:sparkTwinkle 1.4s ease-in-out infinite}
+@keyframes sparkTwinkle{0%,100%{transform:scale(1) rotate(0);opacity:1}50%{transform:scale(1.4) rotate(25deg);opacity:.65}}
+.loader-stage .doodle-body{width:150px;height:165px;border:5px solid var(--ink);background:#f4d45c;border-radius:48% 52% 45% 48%;position:relative;box-shadow:inset -14px -12px #e7bb43}
+.loader-stage .eye{position:absolute;top:60px;width:11px;height:16px;border-radius:50%;background:var(--ink);animation:blink 3.4s infinite}
+.loader-stage .eye.left{left:44px}
+.loader-stage .eye.right{right:44px}
+@keyframes blink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.1)}}
+.loader-stage .cheek{position:absolute;top:82px;width:16px;height:10px;border-radius:50%;background:#ff9d8a;opacity:.75}
+.loader-stage .cheek-left{left:30px}
+.loader-stage .cheek-right{right:30px}
+.loader-stage .smile{position:absolute;left:56px;top:86px;width:34px;height:20px;border-bottom:4px solid var(--ink);border-radius:50%}
+.loader-stage .doodle-feet{display:flex;justify-content:space-around;margin-top:-2px;width:150px}
+.loader-stage .doodle-feet i{width:28px;height:11px;border-bottom:5px solid var(--ink);border-radius:50%;transform-origin:center}
+.doodle-arm{position:absolute;top:96px;width:40px;height:6px;background:var(--ink);border-radius:6px;z-index:1}
+.arm-left{left:-26px;transform-origin:right center;transform:rotate(28deg)}
+.arm-right{right:-26px;transform-origin:left center;transform:rotate(-28deg)}
+
+/* floating props */
+.prop{position:absolute;z-index:0;opacity:0;transition:opacity .4s}
+.prop-note{font-size:26px;color:var(--violet)}
+.note-1{top:26px;left:34px}
+.note-2{top:56px;right:34px}
+.prop-book{font-size:30px;bottom:30px;left:26px}
+.prop-star{color:#e8c944;font-size:20px}
+.star-1{top:20px;right:60px}
+.star-2{bottom:60px;right:34px}
+.juggle-ball{width:20px;height:20px;border-radius:50%;border:3px solid var(--ink);top:70px;left:50%;margin-left:-10px}
+.ball-1{background:var(--violet)}
+.ball-2{background:var(--lime)}
+.ball-3{background:var(--peach)}
+
+/* ---- MOOD: dancing ---- */
+.is-dancing .loader-doodle{animation:danceBob .62s ease-in-out infinite}
+.is-dancing .doodle-body{animation:danceWobble .62s ease-in-out infinite}
+.is-dancing .arm-left{animation:armWaveL .62s ease-in-out infinite}
+.is-dancing .arm-right{animation:armWaveR .62s ease-in-out infinite}
+.is-dancing .prop-note,.is-dancing .prop-star{opacity:1}
+.is-dancing .note-1{animation:noteFloat 1.6s ease-in-out infinite}
+.is-dancing .note-2{animation:noteFloat 1.6s ease-in-out .4s infinite}
+@keyframes danceBob{0%,100%{transform:translateY(0) rotate(-4deg)}50%{transform:translateY(-16px) rotate(4deg)}}
+@keyframes danceWobble{0%,100%{transform:skewX(-5deg)}50%{transform:skewX(5deg)}}
+@keyframes armWaveL{0%,100%{transform:rotate(20deg)}50%{transform:rotate(-45deg)}}
+@keyframes armWaveR{0%,100%{transform:rotate(-20deg)}50%{transform:rotate(45deg)}}
+@keyframes noteFloat{0%{transform:translateY(0) rotate(-8deg);opacity:.3}50%{transform:translateY(-18px) rotate(8deg);opacity:1}100%{transform:translateY(-30px) rotate(-8deg);opacity:0}}
+
+/* ---- MOOD: walking ---- */
+.is-walking .loader-doodle{animation:walkAcross 3.4s ease-in-out infinite}
+.is-walking .doodle-body{animation:walkBob .5s ease-in-out infinite}
+.is-walking .foot-left{animation:stepL .5s ease-in-out infinite}
+.is-walking .foot-right{animation:stepR .5s ease-in-out infinite}
+.is-walking .arm-left{animation:stepR .5s ease-in-out infinite}
+.is-walking .arm-right{animation:stepL .5s ease-in-out infinite}
+.is-walking .prop-book,.is-walking .prop-star{opacity:1}
+@keyframes walkAcross{0%,100%{transform:translateX(-70px)}50%{transform:translateX(70px) scaleX(1)}50.01%{transform:translateX(70px) scaleX(-1)}99.99%{transform:translateX(-70px) scaleX(-1)}}
+@keyframes walkBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+@keyframes stepL{0%,100%{transform:rotate(18deg)}50%{transform:rotate(-18deg)}}
+@keyframes stepR{0%,100%{transform:rotate(-18deg)}50%{transform:rotate(18deg)}}
+
+/* ---- MOOD: juggling ---- */
+.is-juggling .loader-doodle{animation:juggleLean 1s ease-in-out infinite}
+.is-juggling .arm-left{transform:rotate(-55deg)}
+.is-juggling .arm-right{transform:rotate(55deg)}
+.is-juggling .juggle-ball{opacity:1}
+.is-juggling .ball-1{animation:juggle1 .9s ease-in-out infinite}
+.is-juggling .ball-2{animation:juggle2 .9s ease-in-out infinite}
+.is-juggling .ball-3{animation:juggle3 .9s ease-in-out infinite}
+@keyframes juggleLean{0%,100%{transform:rotate(-2deg)}50%{transform:rotate(2deg)}}
+@keyframes juggle1{0%{transform:translate(-34px,0)}50%{transform:translate(0,-70px)}100%{transform:translate(34px,0)}}
+@keyframes juggle2{0%{transform:translate(34px,0)}50%{transform:translate(0,-90px)}100%{transform:translate(-34px,0)}}
+@keyframes juggle3{0%{transform:translate(0,-40px)}50%{transform:translate(-34px,10px)}100%{transform:translate(0,-40px)}}
+
+/* ---- MOOD: cartwheel / spin silly ---- */
+.is-cartwheel .loader-doodle{animation:spinSilly 1.6s ease-in-out infinite}
+.is-cartwheel .arm-left{animation:armWaveL .4s ease-in-out infinite}
+.is-cartwheel .arm-right{animation:armWaveR .4s ease-in-out infinite}
+.is-cartwheel .prop-star{opacity:1}
+.is-cartwheel .star-1{animation:sparkTwinkle .8s ease-in-out infinite}
+.is-cartwheel .star-2{animation:sparkTwinkle .8s ease-in-out .3s infinite}
+@keyframes spinSilly{0%{transform:rotate(0) scale(1)}40%{transform:rotate(360deg) scale(1)}55%{transform:rotate(360deg) scale(1.08,.9)}70%{transform:rotate(360deg) scale(.94,1.08)}100%{transform:rotate(360deg) scale(1)}}
+
+/* text + progress */
+.loader-title{font-family:'Space Grotesk';font-size:clamp(24px,4vw,34px);letter-spacing:-.04em;margin:14px 0 6px}
+.loader-quip{color:var(--muted);font-size:15px;font-weight:600;margin:0 0 22px;min-height:22px;animation:quipIn .5s ease}
+@keyframes quipIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.loader-track{width:min(300px,80vw);height:9px;border-radius:99px;background:#e7e0f5;overflow:hidden;border:1px solid #d8ceff}
+.loader-fill{display:block;height:100%;width:40%;border-radius:99px;background:linear-gradient(90deg,var(--violet),#a78dff,var(--lime));background-size:200% 100%;animation:fillSlide 1.4s ease-in-out infinite,fillShimmer 2s linear infinite}
+@keyframes fillSlide{0%{margin-left:-40%}100%{margin-left:100%}}
+@keyframes fillShimmer{to{background-position:200% 0}}
+.loader-dots{display:flex;gap:7px;margin-top:16px}
+.loader-dots i{width:9px;height:9px;border-radius:50%;background:var(--violet);animation:dotJump 1s ease-in-out infinite}
+.loader-dots i:nth-child(2){animation-delay:.15s;background:#a78dff}
+.loader-dots i:nth-child(3){animation-delay:.3s;background:var(--lime)}
+@keyframes dotJump{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(-8px);opacity:1}}
+
+@media(max-width:680px){.loader-stage{width:240px;height:220px}.loader-stage .doodle-body{width:128px;height:142px}}
+@media(prefers-reduced-motion:reduce){.loader-screen *{animation-duration:6s!important}}
+
+/* ---------- Landing character: silly moods ---------- */
+.character-stage .doodle-character{position:relative}
+.character-stage .doodle-arm{position:absolute;top:120px;width:52px;height:7px;background:var(--ink);border-radius:7px;z-index:0}
+.character-stage .arm-left{left:-34px;transform-origin:right center;transform:rotate(26deg)}
+.character-stage .arm-right{right:-34px;transform-origin:left center;transform:rotate(-26deg)}
+.character-stage .cheek{position:absolute;top:104px;width:20px;height:12px;border-radius:50%;background:#ff9d8a;opacity:.7}
+.character-stage .cheek-left{left:40px}
+.character-stage .cheek-right{right:40px}
+.character-stage .doodle-feet i{transform-origin:center}
+.character-stage .juggle-ball{position:absolute;z-index:0;width:26px;height:26px;border-radius:50%;border:3px solid var(--ink);top:110px;left:50%;margin-left:-13px;opacity:0;transition:opacity .4s}
+.character-stage .ball-1{background:var(--violet)}
+.character-stage .ball-2{background:var(--lime)}
+.character-stage .ball-3{background:var(--peach)}
+
+/* dancing */
+.character-stage.is-dancing .doodle-character{animation:danceBob .62s ease-in-out infinite}
+.character-stage.is-dancing .doodle-body{animation:danceWobble .62s ease-in-out infinite}
+.character-stage.is-dancing .arm-left{animation:armWaveL .62s ease-in-out infinite}
+.character-stage.is-dancing .arm-right{animation:armWaveR .62s ease-in-out infinite}
+.character-stage.is-dancing .note-one{animation:noteFloat 1.6s ease-in-out infinite}
+.character-stage.is-dancing .note-two{animation:noteFloat 1.6s ease-in-out .5s infinite}
+
+/* walking across the stage */
+.character-stage.is-walking .doodle-character{animation:landWalk 3.6s ease-in-out infinite}
+.character-stage.is-walking .doodle-body{animation:walkBob .5s ease-in-out infinite}
+.character-stage.is-walking .foot-left,.character-stage.is-walking .arm-right{animation:stepL .5s ease-in-out infinite}
+.character-stage.is-walking .foot-right,.character-stage.is-walking .arm-left{animation:stepR .5s ease-in-out infinite}
+@keyframes landWalk{0%,100%{transform:translateX(-90px) scaleX(1)}49.99%{transform:translateX(90px) scaleX(1)}50%{transform:translateX(90px) scaleX(-1)}99.99%{transform:translateX(-90px) scaleX(-1)}}
+
+/* juggling */
+.character-stage.is-juggling .doodle-character{animation:juggleLean 1s ease-in-out infinite}
+.character-stage.is-juggling .arm-left{transform:rotate(-52deg)}
+.character-stage.is-juggling .arm-right{transform:rotate(52deg)}
+.character-stage.is-juggling .juggle-ball{opacity:1}
+.character-stage.is-juggling .ball-1{animation:juggle1 .9s ease-in-out infinite}
+.character-stage.is-juggling .ball-2{animation:juggle2 .9s ease-in-out infinite}
+.character-stage.is-juggling .ball-3{animation:juggle3 .9s ease-in-out infinite}
+
+/* cartwheel / silly spin */
+.character-stage.is-cartwheel .doodle-character{animation:spinSilly 1.7s ease-in-out infinite}
+.character-stage.is-cartwheel .arm-left{animation:armWaveL .4s ease-in-out infinite}
+.character-stage.is-cartwheel .arm-right{animation:armWaveR .4s ease-in-out infinite}
+
+@media(prefers-reduced-motion:reduce){.character-stage *{animation-duration:6s!important}}

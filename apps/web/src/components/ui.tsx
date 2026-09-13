@@ -5,7 +5,17 @@ export function Brand() {
   return <span className="brand"><span className="brand-mark">✦</span> EduSwarm</span>;
 }
 
+const LANDING_MOODS = ['is-dancing', 'is-walking', 'is-juggling', 'is-cartwheel'];
+
 export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: string }) {
+  const [mood, setMood] = useState(0);
+  const [hovering, setHovering] = useState(false);
+  useEffect(() => {
+    if (hovering) return;
+    const t = setInterval(() => setMood((m) => (m + 1) % LANDING_MOODS.length), 3600);
+    return () => clearInterval(t);
+  }, [hovering]);
+  const activeMood = hovering ? 'is-dancing' : LANDING_MOODS[mood];
   return <main className="landing">
     <nav className="landing-nav"><Brand /><button className="landing-login" onClick={onSignIn}>Sign in <span>→</span></button></nav>
     <section className="landing-hero">
@@ -15,10 +25,83 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
         {error && <p className="error-copy">{error}</p>}
         <div className="landing-proof"><span>✦</span><span><b>One calm place to grow</b><small>Lessons · practice · progress</small></span></div>
       </div>
-      <div className="character-stage"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="doodle-character"><div className="doodle-antenna" /><div className="doodle-body"><i className="eye left" /><i className="eye right" /><span className="smile" /></div><div className="doodle-feet"><i /><i /></div></div><div className="float-note note-one">learn ✦</div><div className="float-note note-two">you’ve got this!</div></div>
+      <div
+        className={`character-stage ${activeMood}`}
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+        title="Psst… hover me to make me dance!"
+      >
+        <div className="orbit orbit-one" /><div className="orbit orbit-two" />
+        <span className="prop juggle-ball ball-1" aria-hidden /><span className="prop juggle-ball ball-2" aria-hidden /><span className="prop juggle-ball ball-3" aria-hidden />
+        <div className="doodle-character">
+          <span className="doodle-arm arm-left" aria-hidden /><span className="doodle-arm arm-right" aria-hidden />
+          <div className="doodle-antenna" />
+          <div className="doodle-body"><i className="eye left" /><i className="eye right" /><span className="cheek cheek-left" /><span className="cheek cheek-right" /><span className="smile" /></div>
+          <div className="doodle-feet"><i className="foot-left" /><i className="foot-right" /></div>
+        </div>
+        <div className="float-note note-one">learn ✦</div><div className="float-note note-two">you’ve got this!</div>
+      </div>
     </section>
     <section className="landing-features"><div><span>01</span><b>Learn in layers</b><p>Simple explanations, deeper dives, and examples when you’re ready.</p></div><div><span>02</span><b>Practice that remembers</b><p>Quizzes and flashcards adapt to what you actually need.</p></div><div><span>03</span><b>See your momentum</b><p>Small wins become a plan you can keep showing up for.</p></div></section>
   </main>;
+}
+
+const LOADING_QUIPS = [
+  'Waking up your study buddy…',
+  'Juggling a few equations…',
+  'Doing a little victory dance…',
+  'Untangling the syllabus…',
+  'Practising some silly walks…',
+  'Sharpening the flashcards…',
+  'Chasing down that lost brain cell…',
+  'Warming up the learning swarm…',
+];
+
+export function LoadingScreen({ label = 'Loading your learning universe…' }: { label?: string }) {
+  const [quip, setQuip] = useState(0);
+  const [phase, setPhase] = useState(0);
+  useEffect(() => {
+    const q = setInterval(() => setQuip((n) => (n + 1) % LOADING_QUIPS.length), 2200);
+    const p = setInterval(() => setPhase((n) => (n + 1) % 4), 3400);
+    return () => { clearInterval(q); clearInterval(p); };
+  }, []);
+  const moods = ['is-dancing', 'is-walking', 'is-juggling', 'is-cartwheel'];
+  return (
+    <main className="loader-screen">
+      <div className="loader-bg" aria-hidden>
+        <span className="blob blob-a" /><span className="blob blob-b" /><span className="blob blob-c" />
+      </div>
+      <div className="loader-inner">
+        <div className="loader-brand"><Brand /></div>
+        <div className={`loader-stage ${moods[phase]}`}>
+          <span className="loader-shadow" aria-hidden />
+          <span className="prop prop-note note-1" aria-hidden>♪</span>
+          <span className="prop prop-note note-2" aria-hidden>♫</span>
+          <span className="prop prop-book" aria-hidden>📖</span>
+          <span className="prop prop-star star-1" aria-hidden>✦</span>
+          <span className="prop prop-star star-2" aria-hidden>✧</span>
+          <span className="prop juggle-ball ball-1" aria-hidden />
+          <span className="prop juggle-ball ball-2" aria-hidden />
+          <span className="prop juggle-ball ball-3" aria-hidden />
+          <div className="loader-doodle">
+            <span className="doodle-arm arm-left" aria-hidden />
+            <span className="doodle-arm arm-right" aria-hidden />
+            <div className="doodle-antenna" />
+            <div className="doodle-body">
+              <i className="eye left" /><i className="eye right" />
+              <span className="cheek cheek-left" /><span className="cheek cheek-right" />
+              <span className="smile" />
+            </div>
+            <div className="doodle-feet"><i className="foot-left" /><i className="foot-right" /></div>
+          </div>
+        </div>
+        <h1 className="loader-title">{label}</h1>
+        <p className="loader-quip" key={quip}>{LOADING_QUIPS[quip]}</p>
+        <div className="loader-track" aria-hidden><span className="loader-fill" /></div>
+        <div className="loader-dots" aria-hidden><i /><i /><i /></div>
+      </div>
+    </main>
+  );
 }
 
 export function Nav({ active, label, icon, onClick }: { active: boolean; label: string; icon: string; onClick: () => void }) {

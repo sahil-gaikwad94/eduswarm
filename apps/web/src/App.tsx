@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { API, apiGet, apiPatch, apiPost, getToken, setToken, type Agent, type Page, type Pack, type Topic } from './lib/api';
-import { AgentChat, Avatar, Brand, Landing, Nav, Onboarding, SearchPalette } from './components/ui';
+import { AgentChat, Avatar, Brand, Landing, LoadingScreen, Nav, Onboarding, SearchPalette } from './components/ui';
 import { Home, Plan } from './pages/home';
 import { Flashcards, Lesson, Practice } from './pages/learn';
 import { CodeLab, Mocks, Quiz } from './pages/drills';
@@ -265,15 +265,7 @@ export function App() {
     );
   }
   if (!user || !topics.length) {
-    return (
-      <main className="center">
-        <section className="onboard card">
-          <Brand />
-          <h1>Loading your learning universe…</h1>
-          <p>Preparing your syllabus and agent workspace.</p>
-        </section>
-      </main>
-    );
+    return <LoadingScreen />;
   }
   if (!user.goals?.length) return <Onboarding user={user} onDone={(updated) => { setUser(updated); void load(goal); }} />;
 
