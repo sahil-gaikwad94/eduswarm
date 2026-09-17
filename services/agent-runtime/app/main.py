@@ -174,12 +174,32 @@ class AgentGraph:
     def save(self): STORE.save(self.state)
     def event(self, agent: str, message: str, status: str = "running"):
         self.state.events.append({"id": len(self.state.events) + 1, "agent": agent, "message": message, "status": status, "node": self.state.current_node, "iteration": self.state.iteration, "timestamp": now()}); self.save()
+
+    def _sanitize_error(self, raw: str) -> str:
+        """Return a user-friendly error without leaking internal IDs, but keep trace."""
+        low = raw.lower()
+        if "function id" in low and "not found" in low:
+            return "Model not available (BYOK function not found) — trying next model in chain. If all fail, check OPENROUTER_MODEL and ensure free models are in OPENROUTER_FALLBACK_MODELS."
+        if "provider returned error" in low and "nvidia" in low:
+            return "Nvidia BYOK model unavailable — trying fallback models."
+        if "no endpoints" in low or "model" in low and "not found" in low:
+            return "Selected model not available on provider — trying fallback."
+        if len(raw) > 600:
+            return raw[:600] + "… (truncated, see trace for full details)"
+        return raw
+
     def run_agent(self, agent: str, action: str, rationale: str, fn: Callable[[], dict[str, Any]], tool: str | None = None):
         started = now(); self.event(agent, action)
         try: output = fn(); status = "completed"
-        except Exception as exc: output = {"error": str(exc)}; status = "failed"
+        except Exception as exc: 
+            raw_error = str(exc)
+            # Keep full error in trace for debugging, but sanitize event message
+            output = {"error": raw_error, "sanitized": self._sanitize_error(raw_error)}
+            status = "failed"
         self.state.trace.append({"agent": agent, "action": action, "rationale": rationale, "tool": tool, "input": {}, "output": output, "started_at": started, "finished_at": now(), "status": status}); self.state.iteration += 1; self.save()
-        if status == "failed": raise RuntimeError(f"{agent}: {output['error']}")
+        if status == "failed":
+            # Raise with sanitized message for user-facing events, full error stays in trace
+            raise RuntimeError(f"{agent}: {output.get('sanitized', output['error'])}")
         return output
     def dean(self):
         topic = resolve_topic(self.state.topic_id)

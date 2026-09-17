@@ -1591,17 +1591,44 @@ async function updateJob(id: string, patch: Record<string, unknown>) {
  * Recovery gate for topic jobs. Fresh topics may fall back to the local kit so
  * learning never stops — but a *regeneration* that already has a saved kit
  * fails loudly instead of overwriting it with an identical placeholder.
+ *
+ * Fixed: previously any runtime error (including Nvidia BYOK 404) immediately
+ * triggered local fallback, which is why users saw "always get that local kit"
+ * even after changing keys/models. Now we surface a clearer message and log
+ * the underlying cause for ops.
  */
+function sanitizeJobError(raw: string): string {
+  const low = String(raw || '').toLowerCase();
+  if (low.includes('function id') && low.includes('not found')) {
+    return 'The AI team tried a model that is not available in your provider account (Nvidia BYOK function not found). It automatically tried fallback models — if this persists, set OPENROUTER_MODEL to a free model like meta-llama/llama-3.3-70b-instruct:free and ensure OPENROUTER_FALLBACK_MODELS includes free alternatives.';
+  }
+  if (low.includes('nvidia') && low.includes('not found')) {
+    return 'Nvidia BYOK model unavailable — the team tried fallback models. Check OPENROUTER_MODEL / OPENROUTER_FALLBACK_MODELS.';
+  }
+  if (low.includes('401') || low.includes('invalid api key') || low.includes('auth failed')) {
+    return 'LLM API key invalid or missing. Check OPENROUTER_API_KEY on both API and agent runtime services.';
+  }
+  if (low.includes('429') || low.includes('rate limit')) {
+    return 'Provider rate limit hit — retry in a minute. The team will try fallback models.';
+  }
+  if (String(raw).length > 500) return String(raw).slice(0, 500) + '…';
+  return String(raw);
+}
+
 async function fallbackOrFail(id: string, topicId: string, reason: string) {
   const job = await store.getJob(id);
+  const safeReason = sanitizeJobError(reason);
   if (job?.regenerate && job?.hadContent) {
     return updateJob(id, {
       status: 'failed',
-      message: 'The AI team is offline right now, so your saved kit was kept untouched. Try regenerating again in a few minutes.',
+      message: `The AI team could not regenerate right now (${safeReason}). Your saved kit was kept untouched — try again in a few minutes.`,
     });
   }
-  if (recoverWithLocalFallback) return runLocalFallback(id, topicId);
-  return updateJob(id, { status: 'failed', message: reason });
+  if (recoverWithLocalFallback) {
+    console.warn(`[jobs] ${id} falling back to local kit after: ${safeReason}`);
+    return runLocalFallback(id, topicId);
+  }
+  return updateJob(id, { status: 'failed', message: safeReason });
 }
 
 async function dispatchJob(id: string, topicId: string, depth: string = 'standard') {
@@ -1618,10 +1645,14 @@ async function dispatchJob(id: string, topicId: string, depth: string = 'standar
       }),
       signal: AbortSignal.timeout(runtimeTimeoutMs),
     });
-    if (!response.ok) throw new Error(`runtime ${response.status}`);
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`runtime ${response.status}: ${body.slice(0, 300)}`);
+    }
     void syncRuntimeJob(id);
-  } catch {
-    await fallbackOrFail(id, (await store.getJob(id))?.topicId || 'algo-complexity', 'The agent runtime is unavailable; please retry later.');
+  } catch (error: any) {
+    console.warn(`[jobs] dispatch failed for ${id}:`, error?.message || error);
+    await fallbackOrFail(id, (await store.getJob(id))?.topicId || 'algo-complexity', error?.message || 'The agent runtime is unavailable; please retry later.');
   }
 }
 
@@ -1630,13 +1661,19 @@ async function syncRuntimeJob(id: string) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     try {
       const response = await fetch(`${runtime}/v1/topic-jobs/${id}`, { signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error('runtime polling failed');
+      if (!response.ok) throw new Error(`runtime polling failed: ${response.status}`);
       const remote = (await response.json()) as any;
       const latest = remote.events?.at(-1);
-      if (latest) await updateJob(id, { stage: latest.agent, message: latest.message });
+      if (latest) {
+        // Sanitize message before saving to job so UI doesn't show raw function IDs
+        const safeMsg = latest.message ? sanitizeJobError(String(latest.message)) : latest.message;
+        await updateJob(id, { stage: latest.agent, message: safeMsg });
+      }
       if (remote.status === 'failed' || remote.status === 'missing') {
-        if (recoverWithLocalFallback) return void (await fallbackOrFail(id, (await store.getJob(id))?.topicId || 'algo-complexity', remote.error || latest?.message || 'The agent runtime could not complete this topic.'));
-        return void (await updateJob(id, { status: 'failed', message: remote.error || latest?.message || 'The agent runtime could not complete this topic.' }));
+        const rawError = remote.error || remote.events?.at(-1)?.message || 'The agent runtime could not complete this topic.';
+        console.warn(`[jobs] ${id} failed in runtime:`, rawError.slice(0, 500));
+        if (recoverWithLocalFallback) return void (await fallbackOrFail(id, (await store.getJob(id))?.topicId || 'algo-complexity', rawError));
+        return void (await updateJob(id, { status: 'failed', message: sanitizeJobError(rawError) }));
       }
       if (remote.status === 'completed') {
         const current = await store.getJob(id);
@@ -1649,7 +1686,10 @@ async function syncRuntimeJob(id: string) {
         }
         return;
       }
-    } catch { /* keep polling until the deadline */ }
+    } catch (error: any) {
+      // Log polling errors but keep polling until deadline
+      if (attempt % 10 === 0) console.warn(`[jobs] polling ${id} attempt ${attempt}:`, error?.message || error);
+    }
   }
   await fallbackOrFail(id, (await store.getJob(id))?.topicId || 'algo-complexity', 'The agent team timed out; please retry.');
 }

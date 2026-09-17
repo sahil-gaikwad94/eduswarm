@@ -44,7 +44,7 @@ services:
       - key: OPENROUTER_MODEL
         value: meta-llama/llama-3.3-70b-instruct:free
       - key: OPENROUTER_FALLBACK_MODELS
-        value: deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
+        value: google/gemma-3-27b-it:free,google/gemma-3-12b-it:free,qwen/qwen3-coder:free,deepseek/deepseek-chat-v3-0324:free,openai/gpt-oss-20b:free,openrouter/free
       - key: LLM_TIMEOUT_MS
         value: '90000'
   - type: web
@@ -66,7 +66,7 @@ services:
       - key: OPENROUTER_MODEL
         value: meta-llama/llama-3.3-70b-instruct:free
       - key: OPENROUTER_FALLBACK_MODELS
-        value: deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
+        value: google/gemma-3-27b-it:free,google/gemma-3-12b-it:free,qwen/qwen3-coder:free,deepseek/deepseek-chat-v3-0324:free,openai/gpt-oss-20b:free,openrouter/free
       - key: OPENROUTER_REQUEST_TIMEOUT_SECONDS
         value: 300
       - key: OPENROUTER_BASE_URL

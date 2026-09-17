@@ -20,14 +20,20 @@ export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: stri
 export type LlmResult = { text: string; model: string; provider: string };
 
 const DEFAULT_CHAIN = [
-  'deepseek/deepseek-chat-v3-0324:free',
   'meta-llama/llama-3.3-70b-instruct:free',
-  'qwen/qwen-2.5-72b-instruct:free',
+  'google/gemma-3-27b-it:free',
+  'google/gemma-3-12b-it:free',
+  'qwen/qwen3-coder:free',
+  'deepseek/deepseek-chat-v3-0324:free',
+  'openai/gpt-oss-20b:free',
   'mistralai/mistral-small-3.2-24b-instruct:free',
   'openrouter/free',
 ];
 
+// 404 / 400 with "not found"/"function" = bad model id (common with Nvidia BYOK). Try next model.
+// Transient 408/425/429/5xx = retry same model briefly, then try next.
 const RETRYABLE = new Set([408, 425, 429, 500, 502, 503, 504]);
+const NOT_FOUND_CODES = new Set([400, 404]);
 
 function splitList(value: string | undefined): string[] {
   return String(value || '')
@@ -92,12 +98,22 @@ async function callModel(model: string, messages: ChatMessage[], temperature: nu
     signal: AbortSignal.timeout(timeoutMs()),
   });
   if (!response.ok) {
-    const detail = (await response.text().catch(() => '')).slice(0, 400);
+    const detail = (await response.text().catch(() => '')).slice(0, 800);
     const error: any = new Error(`${model} → HTTP ${response.status}${detail ? `: ${detail}` : ''}`);
     error.status = response.status;
+    error.detail = detail;
     throw error;
   }
   return extractText(await response.json().catch(() => ({})));
+}
+
+function isModelNotFound(status: number, detail: string): boolean {
+  if (status === 404) return true;
+  if (status === 400) {
+    const low = detail.toLowerCase();
+    return low.includes('not found') || low.includes('function') || low.includes('no endpoints') || low.includes('model');
+  }
+  return false;
 }
 
 /**
@@ -118,11 +134,25 @@ export async function completeChat(
       failures.push(`${model} → empty or refused reply`);
     } catch (error: any) {
       const status = Number(error?.status || 0);
-      failures.push(String(error?.message || error));
-      // A bad key or an invalid model list will never recover mid-request.
-      if (status === 401 || status === 402 || status === 403) break;
-      if (status && !RETRYABLE.has(status)) continue;
+      const detail = String(error?.detail || error?.message || '');
+      failures.push(String(error?.message || error).slice(0, 500));
+      // Auth / billing errors will never recover by trying another model with same key
+      if (status === 401 || status === 402 || status === 403) {
+        // Provide actionable message for invalid key
+        if (status === 401) failures.push('Check OPENROUTER_API_KEY validity');
+        break;
+      }
+      // Model/function not found (Nvidia BYOK 404) → try next model immediately
+      if (isModelNotFound(status, detail)) {
+        continue;
+      }
+      // Retryable transient errors: continue to next model (callModel already timed out once)
+      // Non-retryable 4xx other than auth/not-found: also try next model
+      if (status && !RETRYABLE.has(status) && status < 500) {
+        continue;
+      }
+      // For retryable 5xx, also try next model after this failure
     }
   }
-  throw new Error(`Every configured model failed — ${failures.slice(0, 3).join(' | ')}`);
+  throw new Error(`Every configured model failed — ${failures.slice(0, 4).join(' | ')}`);
 }

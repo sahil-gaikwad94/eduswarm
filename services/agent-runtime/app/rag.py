@@ -27,13 +27,17 @@ from qdrant_client import QdrantClient, models
 
 EMBEDDING_SIZE = 3072
 
-# Free-tier model ids change often, so generation walks a chain instead of
-# betting on one id. `OPENROUTER_MODEL` / `OPENROUTER_FALLBACK_MODELS`
-# (comma separated) are tried first, then these.
+# Free-tier model ids churn constantly (OpenRouter rotates them), so generation
+# walks a chain instead of betting on one id. `OPENROUTER_MODEL` /
+# `OPENROUTER_FALLBACK_MODELS` (comma separated) are tried first, then these.
+# Keep at least 4-5 known-good free models that do NOT require BYOK/Nvidia.
 DEFAULT_FALLBACK_MODELS = [
-    "deepseek/deepseek-chat-v3-0324:free",
     "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen-2.5-72b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "google/gemma-3-12b-it:free",
+    "qwen/qwen3-coder:free",
+    "deepseek/deepseek-chat-v3-0324:free",
+    "openai/gpt-oss-20b:free",
     "mistralai/mistral-small-3.2-24b-instruct:free",
     "openrouter/free",
 ]
@@ -184,51 +188,110 @@ class OpenRouterRag:
         return self.search(query, topic_id=topic_id, limit=limit)
 
     def structured_generate(self, prompt: str) -> dict[str, Any]:
+        """Generate structured JSON, walking the model chain on failures.
+
+        The previous implementation used a single model id and broke immediately
+        on 404. When a user configures a BYOK Nvidia model that is not available
+        in their account (e.g. Function id not found), OpenRouter returns 404
+        with provider_name=Nvidia. That should try the next model in the chain
+        instead of failing the whole Dean team and forcing a local fallback kit.
+        """
         self._require_key()
-        payload = json.dumps(
-            {
-                "model": self.settings.model,
-                "messages": [
-                    {"role": "system", "content": "Return valid JSON only. Do not use Markdown fences."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-            }
-        ).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self.settings.base_url}/chat/completions",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {self.settings.api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://eduswarm-web.onrender.com",
-                "X-Title": "EduSwarm",
-            },
-            method="POST",
-        )
-        last_error: Exception | None = None
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
-                    body = json.loads(response.read().decode("utf-8"))
-                content = body["choices"][0]["message"]["content"]
-                if isinstance(content, list):
-                    content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
-                content = str(content).strip()
-                if content.startswith("```"):
-                    content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-                return json.loads(content)
-            except (urllib.error.HTTPError, urllib.error.URLError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-                last_error = exc
-                if isinstance(exc, urllib.error.HTTPError) and exc.code not in {408, 429, 500, 502, 503, 504}:
+        base_headers = {
+            "Authorization": f"Bearer {self.settings.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://eduswarm-web.onrender.com",
+            "X-Title": "EduSwarm",
+        }
+        errors: list[str] = []
+
+        for model in self.model_chain():
+            payload = json.dumps(
+                {
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "Return valid JSON only. Do not use Markdown fences."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.2,
+                    "response_format": {"type": "json_object"},
+                }
+            ).encode("utf-8")
+            request = urllib.request.Request(
+                f"{self.settings.base_url}/chat/completions",
+                data=payload,
+                headers=base_headers,
+                method="POST",
+            )
+            last_error: Exception | None = None
+            for attempt in range(3):
+                try:
+                    with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
+                        body = json.loads(response.read().decode("utf-8"))
+                    content = body["choices"][0]["message"]["content"]
+                    if isinstance(content, list):
+                        content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+                    content = str(content).strip()
+                    if content.startswith("```"):
+                        # Strip ```json ... ``` fences if model adds them despite instructions
+                        parts = content.split("\n", 1)
+                        if len(parts) > 1:
+                            content = parts[1].rsplit("```", 1)[0].strip()
+                        else:
+                            content = content.strip("`").strip()
+                    parsed = json.loads(content)
+                    if isinstance(parsed, dict) and parsed:
+                        return parsed
+                    errors.append(f"{model} → empty JSON object")
                     break
-                if attempt < 2:
-                    time.sleep(2 ** attempt)
-        if isinstance(last_error, urllib.error.HTTPError):
-            detail = last_error.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"OpenAI-compatible provider HTTP {last_error.code}: {detail[:1000]}") from last_error
-        raise RuntimeError(f"OpenAI-compatible provider request failed: {last_error}") from last_error
+                except urllib.error.HTTPError as exc:
+                    last_error = exc
+                    try:
+                        detail = exc.read().decode("utf-8", errors="replace")[:800]
+                    except Exception:
+                        detail = str(exc)
+                    # Auth / billing errors will never recover by retrying same or other models with same key
+                    if exc.code in (401, 402, 403):
+                        errors.append(f"{model} HTTP {exc.code}: {detail[:300]}")
+                        # Break chain immediately — key is invalid
+                        raise RuntimeError(
+                            f"LLM auth failed ({exc.code}). Check OPENROUTER_API_KEY. Last error: {detail[:500]}"
+                        ) from exc
+                    # 404 = model/function not found (common with Nvidia BYOK). Try next model.
+                    # 400 with \"not found\" or \"function\" also indicates bad model id.
+                    is_not_found = exc.code == 404 or (exc.code == 400 and ("not found" in detail.lower() or "function" in detail.lower()))
+                    if is_not_found:
+                        errors.append(f"{model} HTTP {exc.code}: model/function not found, trying next — {detail[:200]}")
+                        break  # try next model in chain
+                    # Retryable transient errors: retry same model
+                    if exc.code in {408, 425, 429, 500, 502, 503, 504}:
+                        if attempt < 2:
+                            time.sleep(2 ** attempt)
+                            continue
+                        errors.append(f"{model} HTTP {exc.code} after retries: {detail[:200]}")
+                        break
+                    # Other 4xx: try next model
+                    errors.append(f"{model} HTTP {exc.code}: {detail[:200]}")
+                    break
+                except (urllib.error.URLError, TimeoutError) as exc:
+                    last_error = exc
+                    if attempt < 2:
+                        time.sleep(2 ** attempt)
+                        continue
+                    errors.append(f"{model} network error after retries: {exc}")
+                    break
+                except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+                    last_error = exc
+                    errors.append(f"{model} invalid response: {exc}")
+                    break
+            # Continue to next model if this one failed
+            continue
+
+        # Every model in chain failed
+        chain_str = ", ".join(self.model_chain()[:6])
+        raise RuntimeError(
+            f"Every configured model failed (tried: {chain_str}). Errors: {' | '.join(errors[:4])}"
+        )
 
     def chat(self, messages: list[dict[str, str]], system: str) -> str:
         return self.chat_with_model(messages, system)[0]
@@ -240,21 +303,43 @@ class OpenRouterRag:
         return chain
 
     def chat_with_model(self, messages: list[dict[str, str]], system: str) -> tuple[str, str]:
-        """Complete a chat, falling back across models. Returns (text, model)."""
+        """Complete a chat, falling back across models. Returns (text, model).
+
+        Now explicitly handles 404 / function-not-found as try-next-model,
+        which fixes Nvidia BYOK errors like:
+        'Function id ... not found in account ...'
+        """
         self._require_key()
-        normalized = [{"role": str(message.get("role", "user")), "content": str(message.get("content", message.get("text", "")))} for message in messages if message.get("text") or message.get("content")]
+        normalized = [
+            {"role": str(message.get("role", "user")), "content": str(message.get("content", message.get("text", "")))}
+            for message in messages
+            if message.get("text") or message.get("content")
+        ]
         latest = normalized[-1]["content"] if normalized else ""
-        reinforced_system = system + f"\n\nThe latest learner message is exactly: <learner_message>{latest}</learner_message>\nYou must answer that message directly. Do not ask the learner to provide the message again when it is present."
-        payload = json.dumps({
-            "messages": [{"role": "system", "content": reinforced_system}, *normalized],
-            "temperature": 0.35,
-            "max_tokens": int(os.getenv("OPENROUTER_MAX_TOKENS", "1400")),
-        }).encode("utf-8")
-        headers = {"Authorization": f"Bearer {self.settings.api_key}", "Content-Type": "application/json", "HTTP-Referer": "https://eduswarm-web.onrender.com", "X-Title": "EduSwarm"}
+        reinforced_system = (
+            system
+            + f"\n\nThe latest learner message is exactly: <learner_message>{latest}</learner_message>\n"
+            "You must answer that message directly. Do not ask the learner to provide the message again when it is present."
+        )
+        payload = json.dumps(
+            {
+                "messages": [{"role": "system", "content": reinforced_system}, *normalized],
+                "temperature": 0.35,
+                "max_tokens": int(os.getenv("OPENROUTER_MAX_TOKENS", "1400")),
+            }
+        ).encode("utf-8")
+        headers = {
+            "Authorization": f"Bearer {self.settings.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://eduswarm-web.onrender.com",
+            "X-Title": "EduSwarm",
+        }
         errors: list[str] = []
         for model in self.model_chain():
             body_payload = json.dumps({**json.loads(payload), "model": model}).encode("utf-8")
-            request = urllib.request.Request(f"{self.settings.base_url}/chat/completions", data=body_payload, headers=headers, method="POST")
+            request = urllib.request.Request(
+                f"{self.settings.base_url}/chat/completions", data=body_payload, headers=headers, method="POST"
+            )
             try:
                 with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
                     body = json.loads(response.read().decode("utf-8"))
@@ -264,15 +349,33 @@ class OpenRouterRag:
                 text = str(content).strip()
                 if len(text) >= 40:
                     return text, model
-                errors.append(f"{model} returned an empty reply")
+                errors.append(f"{model} returned an empty/short reply")
             except urllib.error.HTTPError as exc:
-                detail = exc.read().decode("utf-8", errors="replace")[:300]
-                errors.append(f"{model} HTTP {exc.code}: {detail}")
+                try:
+                    detail = exc.read().decode("utf-8", errors="replace")[:500]
+                except Exception:
+                    detail = str(exc)
+                # Auth failures are fatal for the whole chain
                 if exc.code in (401, 402, 403):
+                    errors.append(f"{model} HTTP {exc.code}: {detail[:300]}")
                     break
+                # 404 / function-not-found → try next model (Nvidia BYOK case)
+                is_not_found = exc.code == 404 or (
+                    exc.code == 400 and ("not found" in detail.lower() or "function" in detail.lower())
+                )
+                if is_not_found:
+                    errors.append(f"{model} HTTP {exc.code}: model/function not found, trying next — {detail[:200]}")
+                    continue
+                # Transient: log and try next (don't retry same model infinitely here; outer loop moves on)
+                if exc.code in {408, 425, 429, 500, 502, 503, 504}:
+                    errors.append(f"{model} HTTP {exc.code} (transient): {detail[:200]}")
+                    continue
+                errors.append(f"{model} HTTP {exc.code}: {detail[:300]}")
+                continue
             except Exception as exc:  # URLError, timeout, malformed body
                 errors.append(f"{model} {type(exc).__name__}: {exc}")
-        raise RuntimeError("every configured model failed — " + " | ".join(errors[:3]))
+                continue
+        raise RuntimeError("every configured model failed — " + " | ".join(errors[:4]))
 
 
 RagProvider = OpenRouterRag
