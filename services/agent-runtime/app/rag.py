@@ -87,14 +87,7 @@ class OpenRouterRag:
         # The API key is required for generation, but Qdrant-only operations
         # (ingest/search) work without it so knowledge tooling stays usable.
         self.qdrant = QdrantClient(url=self.settings.qdrant_url, api_key=self.settings.qdrant_api_key or None)
-        try:
-            configured_timeout = int(os.getenv("OPENROUTER_REQUEST_TIMEOUT_SECONDS", "0"))
-        except ValueError:
-            configured_timeout = 0
-        # `None` delegates to the socket default (no per-request deadline).
-        # A positive value remains available as an operator-controlled circuit
-        # breaker; compact lesson output controls cost, not a forced timeout.
-        self.request_timeout: float | None = float(configured_timeout) if configured_timeout > 0 else None
+        self.request_timeout = max(20, int(os.getenv("OPENROUTER_REQUEST_TIMEOUT_SECONDS", "75")))
 
     def _require_key(self) -> None:
         if not self.settings.api_key:
@@ -215,8 +208,8 @@ class OpenRouterRag:
         failures: list[str] = []
         # Free model ids churn. Keep the compact-package path as resilient as
         # chat by trying one alternate configured model only when the first
-        # cannot return valid JSON. The attempt count limits retries after an
-        # error; it never cancels a model that is still generating a response.
+        # cannot return valid JSON. The bounded attempt count keeps failures
+        # fast enough to reach the local companion instead of hanging a job.
         max_models = max(1, min(5, int(os.getenv("OPENROUTER_STRUCTURED_MAX_MODELS", "2"))))
         for model in self.model_chain()[:max_models]:
             request = urllib.request.Request(

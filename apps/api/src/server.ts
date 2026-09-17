@@ -62,16 +62,9 @@ const authMode = process.env.AUTH_MODE || (process.env.NODE_ENV === 'production'
 const allowLocalFallback =
   process.env.ALLOW_LOCAL_FALLBACK === 'true' ||
   (process.env.ALLOW_LOCAL_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
-// Zero means wait for the model/runtime instead of cancelling an in-flight AI
-// response. Deployments that need a circuit breaker can still set a positive
-// millisecond value explicitly.
-const configuredTimeout = (name: string) => {
-  const value = Number(process.env[name] ?? 0);
-  return Number.isFinite(value) && value > 0 ? value : 0;
-};
-const runtimeTimeoutMs = configuredTimeout('AGENT_RUNTIME_TIMEOUT_MS');
-const runtimeMaxWaitMs = configuredTimeout('AGENT_RUNTIME_MAX_WAIT_MS');
-const agentChatTimeoutMs = configuredTimeout('AGENT_CHAT_TIMEOUT_MS');
+const runtimeTimeoutMs = Math.max(3000, Number(process.env.AGENT_RUNTIME_TIMEOUT_MS || 10000));
+const runtimeMaxWaitMs = Math.max(5000, Number(process.env.AGENT_RUNTIME_MAX_WAIT_MS || 180000));
+const agentChatTimeoutMs = Math.max(10000, Number(process.env.AGENT_CHAT_TIMEOUT_MS || 300000));
 const recoverWithLocalFallback = allowLocalFallback || process.env.NODE_ENV === 'production';
 const sessionSecret = process.env.SESSION_SECRET || 'development-only-session-secret';
 const sessionCookie = 'eduswarm_session';
@@ -171,9 +164,6 @@ function publicWebUrl() {
   return process.env.WEB_URL || [...allowedOrigins][0] || 'http://localhost:5173';
 }
 function now() { return new Date().toISOString(); }
-function optionalAbortSignal(timeoutMs: number) {
-  return timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
-}
 function defaultUser(id: string, overrides: Partial<StoredUser> = {}): StoredUser {
   return {
     id, name: 'Demo Learner', skillLevel: 'beginner', dailyMinutes: 60,
@@ -777,7 +767,7 @@ app.post('/api/agents/sessions/:id/messages', async (req: Request, res: Response
         topic_id: session.topicId || null, topic_title: topic?.title || null, goal,
         system, messages: history.concat({ role: 'user', text }),
       }),
-      signal: optionalAbortSignal(agentChatTimeoutMs),
+      signal: AbortSignal.timeout(Math.min(agentChatTimeoutMs, 120_000)),
     });
     if (ai.ok) {
       const data = (await ai.json()) as any;
@@ -1664,7 +1654,7 @@ async function dispatchJob(id: string, topicId: string, depth: string = 'standar
         daily_minutes: learner?.dailyMinutes || 60,
         force_research: Boolean(job?.regenerate),
       }),
-      signal: optionalAbortSignal(runtimeTimeoutMs),
+      signal: AbortSignal.timeout(runtimeTimeoutMs),
     });
     if (!response.ok) throw new Error(`runtime ${response.status}`);
     void syncRuntimeJob(id);
@@ -1674,7 +1664,7 @@ async function dispatchJob(id: string, topicId: string, depth: string = 'standar
 }
 
 async function syncRuntimeJob(id: string) {
-  for (let attempt = 0; runtimeMaxWaitMs === 0 || attempt < Math.ceil(runtimeMaxWaitMs / 1000); attempt += 1) {
+  for (let attempt = 0; attempt < Math.ceil(runtimeMaxWaitMs / 1000); attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     try {
       const response = await fetch(`${runtime}/v1/topic-jobs/${id}`, { signal: AbortSignal.timeout(5000) });
