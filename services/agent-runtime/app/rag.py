@@ -27,16 +27,34 @@ from qdrant_client import QdrantClient, models
 
 EMBEDDING_SIZE = 3072
 
-# Free-tier model ids change often, so generation walks a chain instead of
-# betting on one id. `OPENROUTER_MODEL` / `OPENROUTER_FALLBACK_MODELS`
-# (comma separated) are tried first, then these.
+# Checked against OpenRouter's free model catalogue on 2026-09-18. These are
+# current OpenAI-chat-compatible models, not a generic auto-router. The first
+# tool-capable entries are suitable for the function-call envelope used by
+# ``structured_generate`` below, so JSON is carried in tool arguments instead
+# of relying on unsupported ``response_format`` JSON mode.
+#
+# Keep the operational list intentionally short: free endpoints are rate
+# limited, and a compact diverse chain fails over more predictably than a long
+# list of stale aliases.
 DEFAULT_FALLBACK_MODELS = [
+    "nvidia/nemotron-3.5-lightning:free",
+    "inclusionai/ling-3.0-flash-vl:free",
+    "qwen/qwen3.8-27b:free",
+    "deepseek/deepseek-v4-flash:free",
+    "thinkingmachines/inkling-small:free",
+]
+
+# These aliases were in earlier EduSwarm deployments. They either no longer
+# have a free endpoint or are an opaque auto-router. Filtering them means a
+# Render service with an old environment value recovers on its next deploy
+# rather than spending a whole lesson attempt on the 404 shown in the UI.
+RETIRED_FREE_MODEL_IDS = frozenset({
+    "openrouter/free",
     "deepseek/deepseek-chat-v3-0324:free",
     "meta-llama/llama-3.3-70b-instruct:free",
     "qwen/qwen-2.5-72b-instruct:free",
     "mistralai/mistral-small-3.2-24b-instruct:free",
-    "openrouter/free",
-]
+})
 
 STOPWORDS = frozenset(
     "a an the and or but of to in on for with is are was were be been being "
@@ -63,7 +81,7 @@ class Settings:
             os.getenv("QDRANT_URL", "http://localhost:6333"),
             os.getenv("QDRANT_API_KEY", ""),
             os.getenv("QDRANT_COLLECTION", "eduswarm_knowledge"),
-            os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"),
+            os.getenv("OPENROUTER_MODEL", DEFAULT_FALLBACK_MODELS[0]),
             os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/"),
         )
 
@@ -87,7 +105,9 @@ class OpenRouterRag:
         # The API key is required for generation, but Qdrant-only operations
         # (ingest/search) work without it so knowledge tooling stays usable.
         self.qdrant = QdrantClient(url=self.settings.qdrant_url, api_key=self.settings.qdrant_api_key or None)
-        self.request_timeout = max(20, int(os.getenv("OPENROUTER_REQUEST_TIMEOUT_SECONDS", "240")))
+        # Keep a failed free-model attempt bounded. The cap also protects
+        # deployments that still have the old 240-second environment value.
+        self.request_timeout = min(120, max(20, int(os.getenv("OPENROUTER_REQUEST_TIMEOUT_SECONDS", "120"))))
         try:
             configured_backoff = float(os.getenv("OPENROUTER_STRUCTURED_RETRY_BACKOFF_SECONDS", "2"))
         except ValueError:
@@ -191,6 +211,52 @@ class OpenRouterRag:
     def retrieve(self, query: str, topic_id: str, limit: int = 6) -> list[EvidenceChunk]:
         return self.search(query, topic_id=topic_id, limit=limit)
 
+    @staticmethod
+    def _structured_result(body: dict[str, Any]) -> dict[str, Any]:
+        """Read a structured result from a forced tool call or JSON fallback.
+
+        Current free models such as Nemotron 3.5 Lightning and Ling 3.0 Flash
+        advertise tool calling but not ``response_format``. A forced local
+        result tool gives us a valid JSON argument string on those providers.
+        The content branch remains for a compatible model that replies in
+        JSON rather than emitting a tool call.
+        """
+        if not isinstance(body, dict):
+            raise ValueError("provider response is not a JSON object")
+        choices = body.get("choices") or []
+        if not choices or not isinstance(choices[0], dict):
+            raise ValueError("provider response has no completion choices")
+        message = choices[0].get("message") or {}
+        if not isinstance(message, dict):
+            raise ValueError("provider response has no assistant message")
+        for call in message.get("tool_calls") or []:
+            function = call.get("function") if isinstance(call, dict) else None
+            if not isinstance(function, dict) or function.get("name") != "publish_structured_result":
+                continue
+            arguments = function.get("arguments", "")
+            parsed = json.loads(arguments) if isinstance(arguments, str) else arguments
+            result = parsed.get("result", parsed) if isinstance(parsed, dict) else None
+            if isinstance(result, dict) and result:
+                return result
+            raise ValueError("publish_structured_result returned an empty result")
+
+        content = message.get("content", "")
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
+        content = str(content).strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        if not content:
+            raise ValueError("provider returned neither a tool result nor JSON content")
+        # A few reasoning models prefix an otherwise valid JSON object with a
+        # sentence. Decode from its first object rather than publishing it as
+        # an opaque parsing error to the learner.
+        start = content.find("{")
+        parsed, _ = json.JSONDecoder().raw_decode(content[start:] if start >= 0 else content)
+        if not isinstance(parsed, dict) or not parsed:
+            raise ValueError("provider returned an empty JSON object")
+        return parsed
+
     def structured_generate(self, prompt: str) -> dict[str, Any]:
         self._require_key()
         # Structured lesson output includes notes and practice in one response.
@@ -200,12 +266,38 @@ class OpenRouterRag:
         max_tokens = max(500, min(2800, int(os.getenv("OPENROUTER_STRUCTURED_MAX_TOKENS", "2200"))))
         base_payload = {
             "messages": [
-                {"role": "system", "content": "Return valid JSON only. Do not use Markdown fences."},
+                {
+                    "role": "system",
+                    "content": "Return the requested object by calling publish_structured_result exactly once. Do not write Markdown or explanatory text.",
+                },
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.2,
             "max_tokens": max_tokens,
-            "response_format": {"type": "json_object"},
+            # Free models in the default chain reliably expose tool calling but
+            # not necessarily response_format/json_object. Requiring this
+            # parameter makes OpenRouter skip endpoints that cannot honour it.
+            "provider": {"require_parameters": True},
+            "tools": [{
+                "type": "function",
+                "function": {
+                    "name": "publish_structured_result",
+                    "description": "Publish the requested JSON object as the final result. This is a local result envelope, not an external network action.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "result": {
+                                "type": "object",
+                                "description": "The exact JSON object requested by the user prompt.",
+                                "additionalProperties": True,
+                            },
+                        },
+                        "required": ["result"],
+                        "additionalProperties": False,
+                    },
+                },
+            }],
+            "tool_choice": {"type": "function", "function": {"name": "publish_structured_result"}},
         }
         headers = {
             "Authorization": f"Bearer {self.settings.api_key}",
@@ -214,10 +306,13 @@ class OpenRouterRag:
             "X-Title": "EduSwarm",
         }
         failures: list[str] = []
-        # Make one alternate-model retry when the primary cannot return valid
-        # JSON. It has a small backoff so a transient 429/5xx does not cause an
-        # immediate repeat request.
-        max_models = max(1, min(2, int(os.getenv("OPENROUTER_STRUCTURED_MAX_MODELS", "2"))))
+        # A current free model can still be capacity-limited. Try enough
+        # independent providers to recover from that case, but cap attempts so
+        # one topic job remains inside the API's ten-minute recovery window.
+        # Keep at least three chances for legacy Render environments that still
+        # carry the previous value of 2; explicitly lower values do not turn a
+        # transient single free-endpoint failure into a failed lesson.
+        max_models = max(3, min(4, int(os.getenv("OPENROUTER_STRUCTURED_MAX_MODELS", "4"))))
         models_to_try = self.model_chain()[:max_models]
         for attempt, model in enumerate(models_to_try):
             request = urllib.request.Request(
@@ -229,13 +324,7 @@ class OpenRouterRag:
             try:
                 with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
                     body = json.loads(response.read().decode("utf-8"))
-                content = body["choices"][0]["message"]["content"]
-                if isinstance(content, list):
-                    content = "".join(part.get("text", "") for part in content if isinstance(part, dict))
-                content = str(content).strip()
-                if content.startswith("```"):
-                    content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-                return json.loads(content)
+                return self._structured_result(body)
             except urllib.error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", errors="replace")[:300]
                 failures.append(f"{model} HTTP {exc.code}: {detail}")
@@ -243,22 +332,30 @@ class OpenRouterRag:
                 # model, whereas model-specific errors often will.
                 if exc.code in {401, 402, 403}:
                     raise RuntimeError("OpenAI-compatible provider request failed: " + failures[-1]) from exc
-            except (urllib.error.URLError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            except (urllib.error.URLError, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 failures.append(f"{model} {type(exc).__name__}: {exc}")
 
             if attempt < len(models_to_try) - 1 and self.structured_retry_backoff_seconds:
                 time.sleep(self.structured_retry_backoff_seconds)
 
-        raise RuntimeError("every configured model failed to return valid JSON — " + " | ".join(failures[:3]))
+        raise RuntimeError("every current free model failed to return a structured result — " + " | ".join(failures[:3]))
 
     def chat(self, messages: list[dict[str, str]], system: str) -> str:
         return self.chat_with_model(messages, system)[0]
 
     def model_chain(self) -> list[str]:
-        """Model ids to try in order — free-tier ids churn, so fall back."""
-        configured = [m.strip() for m in f"{os.getenv('OPENROUTER_MODEL', '')},{os.getenv('OPENROUTER_FALLBACK_MODELS', '')}".split(",") if m.strip()]
-        chain = list(dict.fromkeys([*configured, *DEFAULT_FALLBACK_MODELS]))
-        return chain
+        """Current model ids in configured order, followed by safe defaults.
+
+        Explicit new model ids retain priority. Known retired free aliases are
+        deliberately ignored: keeping them in a persistent Render environment
+        should not cause the 404/invalid-JSON failure that prompted this list.
+        """
+        configured = [
+            model.strip()
+            for model in f"{os.getenv('OPENROUTER_MODEL', '')},{os.getenv('OPENROUTER_FALLBACK_MODELS', '')}".split(",")
+            if model.strip() and model.strip() not in RETIRED_FREE_MODEL_IDS
+        ]
+        return list(dict.fromkeys([*configured, *DEFAULT_FALLBACK_MODELS]))
 
     def chat_with_model(self, messages: list[dict[str, str]], system: str) -> tuple[str, str]:
         """Complete a chat, falling back across models. Returns (text, model)."""

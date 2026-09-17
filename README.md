@@ -118,10 +118,13 @@ adds Qdrant retrieval and is the preferred brain, but it is a separate service:
 when it is asleep or erroring, the API calls the model directly so specialists
 still answer with a real model instead of degrading silently. Model ids are a
 comma-separated chain (`OPENROUTER_MODEL`, then `OPENROUTER_FALLBACK_MODELS`);
-the first model that answers wins. Structured lessons have a four-minute
-per-provider attempt window, make one retry after a two-second backoff, and the
-API keeps the learner's streamed job active for up to ten minutes before local
-recovery. Topic jobs use SSE (`/api/jobs/:id/events`) for live browser-facing
+the first model that answers wins. The supplied chain pins current free models
+(Nemotron 3.5 Lightning, Ling 3.0 Flash, Qwen 3.8, and DeepSeek V4 Flash) and
+never delegates to `openrouter/free`. Structured endpoints use a forced function
+result envelope instead of `response_format`, so JSON is reliable on free models
+that support tools but not JSON mode. A provider attempt is capped at two
+minutes, with up to four models and a short backoff; the API keeps the learner's
+streamed job active for up to ten minutes before local recovery. Topic jobs use SSE (`/api/jobs/:id/events`) for live browser-facing
 progress and keep-alive heartbeats. Bring your own key — the repo ships none.
 
 ## API surface

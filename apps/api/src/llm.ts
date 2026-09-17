@@ -19,13 +19,27 @@
 export type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 export type LlmResult = { text: string; model: string; provider: string };
 
-const DEFAULT_CHAIN = [
+// Checked against OpenRouter's free catalogue on 2026-09-18. These are
+// explicit current models rather than `openrouter/free`, whose auto-routing
+// can select an incompatible endpoint for a learner request.
+export const DEFAULT_CHAIN = [
+  'nvidia/nemotron-3.5-lightning:free',
+  'inclusionai/ling-3.0-flash-vl:free',
+  'qwen/qwen3.8-27b:free',
+  'deepseek/deepseek-v4-flash:free',
+  'thinkingmachines/inkling-small:free',
+];
+
+// Old service environments persist independently of render.yaml. Ignore only
+// these retired free aliases so an existing deployment immediately moves past
+// the DeepSeek V3-0324 404 and the generic router's invalid JSON responses.
+export const RETIRED_FREE_MODELS = new Set([
+  'openrouter/free',
   'deepseek/deepseek-chat-v3-0324:free',
   'meta-llama/llama-3.3-70b-instruct:free',
   'qwen/qwen-2.5-72b-instruct:free',
   'mistralai/mistral-small-3.2-24b-instruct:free',
-  'openrouter/free',
-];
+]);
 
 const RETRYABLE = new Set([408, 425, 429, 500, 502, 503, 504]);
 
@@ -36,11 +50,17 @@ function splitList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
-/** Ordered model ids to try, honouring explicit configuration first. */
+/**
+ * Ordered model ids to try, honouring current explicit configuration first.
+ *
+ * Known-retired free ids are removed even when they remain in a persisted
+ * Render environment. This preserves custom model choices while allowing an
+ * existing deployment to self-heal from the old V3-0324/free-router failure.
+ */
 export function modelChain(): string[] {
-  const configured = [...splitList(process.env.OPENROUTER_MODEL), ...splitList(process.env.OPENROUTER_FALLBACK_MODELS)];
-  const chain = [...new Set([...configured, ...DEFAULT_CHAIN])];
-  return chain;
+  const configured = [...splitList(process.env.OPENROUTER_MODEL), ...splitList(process.env.OPENROUTER_FALLBACK_MODELS)]
+    .filter((model) => !RETIRED_FREE_MODELS.has(model));
+  return [...new Set([...configured, ...DEFAULT_CHAIN])];
 }
 
 export function llmConfigured(): boolean {

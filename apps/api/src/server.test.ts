@@ -1,11 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { app } from './server.js';
+import { DEFAULT_CHAIN, modelChain } from './llm.js';
 import http from 'node:http';
 
 function request(path: string, options: any = {}) { return new Promise<{status:number; body:any}>((resolve, reject) => { const server = app.listen(0, () => { const address = server.address() as any; const req = http.request({ hostname: '127.0.0.1', port: address.port, path, method: options.method || 'GET', headers: { 'content-type': 'application/json', ...(options.headers || {}) } }, res => { let data=''; res.on('data', c => data+=c); res.on('end', () => { server.close(); resolve({ status: res.statusCode || 0, body: data ? JSON.parse(data) : null }); }); }); req.on('error', reject); if (options.body) req.write(JSON.stringify(options.body)); req.end(); }); }); }
 
 test('health endpoint is available', async () => { const result = await request('/health'); assert.equal(result.status, 200); assert.equal(result.body.ok, true); });
+test('retired free model settings fall through to the current compatible chain', () => {
+  const primary = process.env.OPENROUTER_MODEL;
+  const fallbacks = process.env.OPENROUTER_FALLBACK_MODELS;
+  try {
+    process.env.OPENROUTER_MODEL = 'openrouter/free';
+    process.env.OPENROUTER_FALLBACK_MODELS = 'deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free';
+    assert.deepEqual(modelChain(), DEFAULT_CHAIN);
+  } finally {
+    if (primary === undefined) delete process.env.OPENROUTER_MODEL; else process.env.OPENROUTER_MODEL = primary;
+    if (fallbacks === undefined) delete process.env.OPENROUTER_FALLBACK_MODELS; else process.env.OPENROUTER_FALLBACK_MODELS = fallbacks;
+  }
+});
 test('demo session returns the isolated learner identity', async () => { const result = await request('/api/session', { headers: { 'x-demo-user': 'session-user' } }); assert.equal(result.status, 200); assert.equal(result.body.authenticated, true); assert.equal(result.body.user.id, 'session-user'); });
 test('onboarding creates an independent goal', async () => { const result = await request('/api/onboarding', { method: 'POST', body: { name: 'Ada', goal: 'gate-cs', dailyMinutes: 30 } }); assert.equal(result.status, 201); assert.equal(result.body.goals.length, 1); assert.equal(result.body.dailyMinutes, 30); });
 

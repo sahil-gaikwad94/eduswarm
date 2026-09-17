@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app, STATE_DIR, reference_routes, resolve_topic
 from app.curriculum import curriculum_topics
-from app.rag import EvidenceChunk
+from app.rag import DEFAULT_FALLBACK_MODELS, EvidenceChunk, OpenRouterRag, Settings
 
 client = TestClient(app)
 
@@ -33,6 +33,48 @@ def test_health_reports_agent_graph_mode():
     response = client.get('/health')
     assert response.status_code == 200
     assert response.json()['mode'] == 'langgraph-openrouter-qdrant'
+
+
+def test_retired_free_model_settings_are_replaced_by_current_safe_chain(monkeypatch):
+    monkeypatch.setenv('OPENROUTER_MODEL', 'openrouter/free')
+    monkeypatch.setenv('OPENROUTER_FALLBACK_MODELS', 'deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free')
+    rag = OpenRouterRag(Settings('test-key', 'http://localhost:6333', '', 'test', 'openrouter/free', 'https://openrouter.example/api/v1'))
+
+    assert rag.model_chain() == DEFAULT_FALLBACK_MODELS
+    assert 'openrouter/free' not in rag.model_chain()
+    assert 'deepseek/deepseek-chat-v3-0324:free' not in rag.model_chain()
+
+
+def test_structured_generation_uses_forced_tool_arguments(monkeypatch):
+    monkeypatch.delenv('OPENROUTER_MODEL', raising=False)
+    monkeypatch.delenv('OPENROUTER_FALLBACK_MODELS', raising=False)
+    monkeypatch.setenv('OPENROUTER_STRUCTURED_RETRY_BACKOFF_SECONDS', '0')
+    captured = {}
+
+    class ProviderResponse:
+        def read(self):
+            return ('{"choices":[{"message":{"tool_calls":[{"function":{"name":"publish_structured_result",'
+                    '"arguments":"{\\"result\\": {\\"blocks\\": [{\\"title\\": \\"Review\\", \\"minutes\\": 25}]}}"}}]}}]}').encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def fake_urlopen(request, timeout):
+        captured['payload'] = __import__('json').loads(request.data.decode())
+        captured['timeout'] = timeout
+        return ProviderResponse()
+
+    monkeypatch.setattr('app.rag.urllib.request.urlopen', fake_urlopen)
+    rag = OpenRouterRag(Settings('test-key', 'http://localhost:6333', '', 'test', DEFAULT_FALLBACK_MODELS[0], 'https://openrouter.example/api/v1'))
+
+    assert rag.structured_generate('Create a study plan.') == {'blocks': [{'title': 'Review', 'minutes': 25}]}
+    assert captured['payload']['model'] == DEFAULT_FALLBACK_MODELS[0]
+    assert captured['payload']['provider'] == {'require_parameters': True}
+    assert captured['payload']['tool_choice']['function']['name'] == 'publish_structured_result'
+    assert 'response_format' not in captured['payload']
 
 
 def test_every_live_topic_has_its_real_scope_and_two_reference_routes():

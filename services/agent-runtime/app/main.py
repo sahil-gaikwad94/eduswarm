@@ -566,11 +566,14 @@ async def launch_agent(state: JobState):
 @app.get("/health")
 def health():
     rag = OpenRouterRag()
+    models = rag.model_chain() if hasattr(rag, "model_chain") else []
     return {
         "ok": True, "service": "agent-runtime", "mode": "langgraph-openrouter-qdrant",
         "providerConfigured": bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")),
-        "model": getattr(getattr(rag, "settings", None), "model", ""),
-        "models": (rag.model_chain()[:4] if hasattr(rag, "model_chain") else []),
+        # Report the first model that will actually be attempted. This differs
+        # from a stale OPENROUTER_MODEL value when it is a retired free alias.
+        "model": models[0] if models else getattr(getattr(rag, "settings", None), "model", ""),
+        "models": models[:4],
     }
 @app.get("/ready")
 def ready():

@@ -38,8 +38,8 @@ services:
       # Same key as the runtime: the API calls the model directly whenever the
       # runtime is down, so specialists never degrade to canned guidance.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
-      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-nvidia/nemotron-3.5-lightning:free}
+      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-inclusionai/ling-3.0-flash-vl:free,qwen/qwen3.8-27b:free,deepseek/deepseek-v4-flash:free,thinkingmachines/inkling-small:free}
       OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
     depends_on:
       mongo: { condition: service_healthy }
@@ -57,8 +57,8 @@ services:
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: eduswarm_knowledge
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-meta-llama/llama-3.3-70b-instruct:free}
-      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-nvidia/nemotron-3.5-lightning:free}
+      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-inclusionai/ling-3.0-flash-vl:free,qwen/qwen3.8-27b:free,deepseek/deepseek-v4-flash:free,thinkingmachines/inkling-small:free}
       OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
       EDUSWARM_STATE_DIR: /tmp/eduswarm-state
     volumes: ["runtime-state:/tmp/eduswarm-state"]
