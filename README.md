@@ -13,7 +13,7 @@ without the LLM runtime online.
 | Pillar | What learners get |
 |---|---|
 | **Command center** | XP + levels, streaks, mastery map per module, ranked next actions, insights, weekly momentum, and a time-boxed *Today's Mission* |
-| **Evidence-gated lessons** | LangGraph pipeline (Dean → Researcher → Notes → Practice → Fact-Checker → Publisher) publishes only claim-cited packages; local fallback keeps learning alive during outages |
+| **Evidence-gated, compact lessons** | LangGraph pipeline (Dean → Researcher → Notes + Practice → Curator → Fact-Checker → Publisher) publishes claim-cited two-page explanations in one model call; a source-linked local companion supplies code, diagrams, drills, and fallback lessons |
 | **Topic regeneration** | Any saved kit can be regenerated at ELI5 / Standard / Deep depth. If the AI team is offline, a regeneration keeps your saved kit intact instead of overwriting it with a placeholder — retry once the model is back |
 | **Spaced repetition** | SM-2 scheduler across every saved flashcard — Again/Hard/Good/Easy grades set the next review |
 | **Adaptive practice** | IRT-lite ranking repairs repeated misses first, tuned to the learner's level |
@@ -46,7 +46,7 @@ flowchart LR
   study-plan, code-evaluation, and mock-analysis endpoints.
 - `packages/contracts`: shared TypeScript contracts for every API shape.
 - `infra`: Docker Compose topology + Render Blueprint (`render.yaml`).
-- `services/agent-runtime/seed_knowledge.py`: seeds Qdrant with 21 curriculum briefs.
+- `services/agent-runtime/seed_knowledge.py`: seeds Qdrant with curated briefs; its opt-in, robots-aware reference mode ingests permitted public source text for every live curriculum topic.
 
 The runtime uses an OpenAI-compatible provider (OpenRouter by default) and Qdrant
 in production. Embeddings are local and deterministic, so retrieval never needs a
@@ -96,7 +96,10 @@ Optional full stack (Mongo + Redis + Qdrant + runtime):
 
 ```bash
 docker compose -f infra/docker-compose.yml up --build
-cd services/agent-runtime && python seed_knowledge.py   # seed Qdrant briefs
+cd services/agent-runtime && python seed_knowledge.py   # seed curated Qdrant briefs
+# Optional: index publicly accessible reference text for every curriculum topic.
+# This respects each publisher's robots.txt and never stores downloaded pages in Git.
+python seed_knowledge.py --fetch-references
 ```
 
 ## Render deployment
@@ -115,7 +118,11 @@ adds Qdrant retrieval and is the preferred brain, but it is a separate service:
 when it is asleep or erroring, the API calls the model directly so specialists
 still answer with a real model instead of degrading silently. Model ids are a
 comma-separated chain (`OPENROUTER_MODEL`, then `OPENROUTER_FALLBACK_MODELS`);
-the first model that answers wins. Bring your own key — the repo ships none.
+the first model that answers wins. Structured lessons have a four-minute
+per-provider attempt window, make one retry after a two-second backoff, and the
+API keeps the learner's streamed job active for up to ten minutes before local
+recovery. Topic jobs use SSE (`/api/jobs/:id/events`) for live browser-facing
+progress and keep-alive heartbeats. Bring your own key — the repo ships none.
 
 ## API surface
 

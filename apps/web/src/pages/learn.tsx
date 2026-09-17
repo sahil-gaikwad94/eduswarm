@@ -89,6 +89,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
   const diagrams = pack?.diagrams || [];
   const cheatSheet = pack?.cheatSheet || [];
   const pyqs = pack?.pyqs || [];
+  const localCompanion = pack?.localCompanion;
 
   return (
     <>
@@ -129,10 +130,10 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
         <section className="fallback-banner card" role="status">
           <span className="fallback-icon">◌</span>
           <div>
-            <b>Offline placeholder kit — you can upgrade it.</b>
+            <b>Local reference tutorial — ready to study.</b>
             <small>
-              The AI team was unreachable, so this kit was assembled locally. Your progress is saved and
-              nothing is lost — regenerate any time to get the full, evidence-backed version.
+              The AI team is unavailable, so this source-linked kit uses the built-in curriculum, worked examples,
+              practice, and trusted documentation. Your progress is saved; regenerate later for a cited AI expansion.
             </small>
           </div>
           <button onClick={() => onStart(topic, pack?.depth || 'standard', true)}>✦ Regenerate with AI team</button>
@@ -166,7 +167,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
               </span>
               <span>
                 {pack?.verification?.status === 'fallback'
-                  ? `Generated locally with bank questions + worked examples · ${sections.length} sections · verify before relying on it.`
+                  ? `Local tutorial with worked examples, recall practice, and ${pack.verification.sources.length} linked references · ${sections.length} sections`
                   : pack ? `${pack.verification.claimsChecked} claims · ${pack.verification.sources.length} sources`
                     : 'Start to unlock the full explanation'}
               </span>
@@ -180,6 +181,24 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                 </div>
               </section>
             ))}
+            {localCompanion && (
+              <section className="local-companion card">
+                <p className="label">LOCAL REFERENCE COMPANION</p>
+                <h2>{localCompanion.title}</h2>
+                <p>{localCompanion.summary}</p>
+                {(localCompanion.sections || []).map((section: any) => (
+                  <details key={section.heading}>
+                    <summary>{section.heading}</summary>
+                    <RichText text={String(section.body)} />
+                  </details>
+                ))}
+                <div className="companion-links">
+                  {(localCompanion.sources || []).map((source: any) => (
+                    <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>↗ {source.publisher}: {source.title}</a>
+                  ))}
+                </div>
+              </section>
+            )}
             {pack && (
               <>
                 {codeExamples.length > 0 && (
@@ -244,7 +263,11 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                 </section>
                 <div className="sources">
                   <p className="label">RECOMMENDED SOURCES</p>
-                  {pack.verification.sources.map((s: string) => <span key={s}>↗ {s}</span>)}
+                  {(pack.verification.sourceRefs || []).length > 0
+                    ? pack.verification.sourceRefs.map((source: any) => (
+                      <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>↗ {source.publisher}: {source.title}</a>
+                    ))
+                    : pack.verification.sources.map((s: string) => <span key={s}>↗ {s}</span>)}
                 </div>
                 <div className="sources">
                   <p className="label">WATCH NEXT ON YOUTUBE</p>

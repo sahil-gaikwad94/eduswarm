@@ -57,7 +57,7 @@ function apiKey(): string {
 }
 
 function timeoutMs(): number {
-  return Math.max(10_000, Number(process.env.LLM_TIMEOUT_MS || 90_000));
+  return Math.max(10_000, Number(process.env.LLM_TIMEOUT_MS || 240_000));
 }
 
 function extractText(body: any): string {

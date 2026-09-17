@@ -12,6 +12,7 @@
 
 import { QUESTION_BANK, type Question } from './questionBank.js';
 import { getCatalog, getTopic, type CurriculumTopic } from './curriculum.js';
+import { localKnowledgeFor, referencesFor } from './localKnowledge.js';
 
 export type AgentContext = {
   agentId: string;
@@ -213,6 +214,10 @@ function hintFor(text: string) {
   return CONCEPT_HINTS.find((hint) => hint.match.test(text)) || null;
 }
 
+function titleCase(value: string): string {
+  return String(value || '').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 /** Offline specialist reply: deterministic, but specific to what was asked. */
 export function localSpecialistReply(ctx: AgentContext, text: string): string {
   const question = text.trim();
@@ -236,17 +241,21 @@ export function localSpecialistReply(ctx: AgentContext, text: string): string {
   }
 
   if (looksLikeCode(question)) {
-    const lines = question.split('\n').filter((l) => l.trim());
+    const lines = question.split('\n').filter((line) => line.trim());
+    const findings: string[] = [];
+    if (/\.sort\(\s*\)/.test(question)) findings.push('`Array.prototype.sort()` compares strings by default; ` [10, 2].sort()` becomes `[10, 2]`. Use `(a, b) => a - b` for numeric order.');
+    if (/async\s+|await\s+/.test(question) && !/try\s*\{/.test(question)) findings.push('The async path has no visible error boundary. A rejected await needs `try/catch` (or a returned promise handled by the caller).');
+    if (/\[[^\]]+\]/.test(question) && !/length|undefined|\?\./.test(question)) findings.push('Array/property access has no visible boundary guard; trace empty input and the last valid index before trusting it.');
+    if (/while\s*\(/.test(question) && !/\+\+|--|-=|\*=/.test(question)) findings.push('The loop does not visibly update a progress variable; prove that its condition changes on every path.');
+    const review = findings.length
+      ? findings.slice(0, 3).map((finding, index) => `${index + 1}. ${finding}`).join('\n')
+      : 'No single syntax-level defect is safe to claim from this snippet alone. The next useful review is a concrete trace against an expected result.';
     return [
-      `**Answer:** I can review this without a model call — here is the checklist that catches most defects in ${lines.length} lines like yours.`,
-      '**Why:** correctness first, then edges, then cost.',
-      '1. **Contract** — state inputs, outputs, errors, side effects. If the contract is unclear, the bug is in the contract.',
-      '2. **Edges** — run it mentally on: empty, single element, duplicates, maximum size, negative/zero, malformed input.',
-      '3. **Invariant** — after every mutation, what must still be true? Trace one failing case by hand line by line.',
-      '4. **Cost** — count the nested loops: that is your worst case. Note extra space separately.',
-      '5. **Termination** — can any loop skip its increment or recurse without shrinking the input?',
-      '',
-      `**Next step:** paste the code with one failing input, the expected output and the actual output, and I will return the corrected implementation. ${topicLine}`.trim(),
+      `**Review:** ${findings.length ? 'These are concrete risks visible in the code you pasted.' : `The ${lines.length}-line snippet needs its contract and a failing case to make a precise correctness claim.`}`,
+      `**Why:** ${review}`,
+      '**Test now:** run empty input, one-element input, a duplicate/boundary input, and the largest valid input. For each, write expected output before executing.',
+      '**Complexity:** count the largest nested/recursive path and state auxiliary memory separately.',
+      `**Next step:** paste one failing input with expected and actual output; I will trace the exact branch and return a minimal patch. ${topicLine}`.trim(),
     ].join('\n');
   }
 
@@ -262,21 +271,62 @@ export function localSpecialistReply(ctx: AgentContext, text: string): string {
     ].join('\n');
   }
 
+  if (ctx.agentId === 'revision-planner') {
+    const minutes = Math.max(15, ctx.dailyMinutes || 60);
+    const review = Math.min(15, Math.max(5, Math.round(minutes * 0.2)));
+    const repair = Math.min(20, Math.max(5, Math.round(minutes * 0.3)));
+    const focus = ctx.topic?.title || ctx.weakTopics?.[0] || 'the concept in your message';
+    return [
+      `**Today’s ${minutes}-minute plan:** make **${focus}** the concrete outcome, not a vague “revision” session.`,
+      `1. **${review} min — retrieve:** answer due cards or write the core definition from memory.`,
+      `2. **${repair} min — repair:** trace one small example and write the assumption that caused your latest miss${ctx.weakTopics?.length ? ` (${ctx.weakTopics.slice(0, 2).join(', ')})` : ''}.`,
+      `3. **${Math.max(5, minutes - review - repair)} min — apply:** solve one timed question or implement one small function without notes.`,
+      '**Spaced follow-up:** revisit the same recall prompt tomorrow, then on days 3, 7, and 14. Grade recall honestly; “hard” means redo the worked example.',
+    ].join('\n');
+  }
+
+  if (ctx.agentId === 'mock-examiner') {
+    const accuracy = typeof ctx.accuracy === 'number' ? `${ctx.accuracy}%` : 'not enough attempts yet';
+    const repair = ctx.weakTopics?.slice(0, 2).filter(Boolean).join(' and ') || ctx.topic?.title || 'your two lowest-confidence topics';
+    return [
+      `**Exam read:** current accuracy is ${accuracy}. Do not spend the opening minutes proving a hard question to yourself.`,
+      '**Order:** take direct-definition and familiar-method marks first; flag calculation-heavy or ambiguous questions; return only when the easy pass is complete.',
+      '**Pacing:** use a hard stop for any question where you cannot state the governing rule within about 30 seconds. Protect accuracy before chasing attempts—negative marking makes random guesses expensive.',
+      `**Repair before the next mock:** ${repair}. For each, do one untimed trace, then two timed questions with a written error label.`,
+    ].join('\n');
+  }
+
+  if (ctx.agentId === 'career-mentor') {
+    const route = ctx.goal === 'ai-ml'
+      ? 'an AI/ML engineer who can frame, evaluate, and ship a measured model feature'
+      : ctx.goal === 'web-dev'
+        ? 'a full-stack engineer who can own an accessible, observable feature from browser to database'
+        : 'a software engineer who can explain CS fundamentals clearly under interview constraints';
+    return [
+      `**Career connection:** ${titleCase(ctx.goalTitle || ctx.goal)} maps to ${route}.`,
+      `**Proof project:** build one small artifact around ${ctx.topic?.title || 'the concept you asked about'} with a README that states the problem, constraints, trade-offs, tests, and one failure you fixed.`,
+      '**Interview story:** practise “I chose X over Y because __; I measured __; when __ failed, I changed __.” That demonstrates judgment, not only tutorial completion.',
+      '**Next step:** ship the smallest demonstrable slice this week and ask for a review against its rubric.',
+    ].join('\n');
+  }
+
   if (ctx.topic) {
     const peers = modulePeers(ctx.topic);
+    const knowledge = localKnowledgeFor(ctx.topic);
+    const refs = referencesFor(ctx.topic);
+    const socratic = ctx.agentId === 'socratic-tutor'
+      ? `**Check:** before looking below, what assumption must hold for your answer to “${subject}” to work?`
+      : '';
     return [
-      `**Answer:** ${subject}`,
-      `**Why:** this sits inside ${ctx.topic.title} — ${ctx.topic.description}`,
-      '**Worked approach:**',
-      '1. Restate the question in one sentence using only terms from the lesson scope above.',
-      '2. Write the governing definition or invariant, then the smallest concrete example that must satisfy it.',
-      '3. Predict the result before you compute it; a wrong prediction names the exact gap.',
-      '4. Check the boundary case that breaks most answers (empty input, zero, n=1, maximum size, cycle).',
-      '',
-      `**Trap:** most mistakes here are assumption errors, not arithmetic. State your assumption explicitly and test it.`,
-      `**Next step:** open the tutorial for ${ctx.topic.title} and finish its practice set${peers.length ? `, then move to ${peers[0]}` : ''}.`,
-      '_(Offline guidance — the model brain was unreachable, so this answer came from your curriculum instead.)_',
-    ].join('\n');
+      `**Answer:** ${knowledge.mentalModel}`,
+      `**Why:** ${knowledge.mechanics.map((item) => `• ${item}`).join('\n')}`,
+      `**Worked example:** ${knowledge.workedExample}`,
+      `**Trap:** ${knowledge.trap}`,
+      socratic,
+      `**Next step:** ${knowledge.check}${peers.length ? ` Then connect it to ${peers[0]}.` : ''}`,
+      `**Reference:** ${refs[0].publisher} — ${refs[0].title} (${refs[0].url})`,
+      '_(Local curriculum brain — the model path was unavailable, so this answer uses the built-in topic guide.)_',
+    ].filter(Boolean).join('\n\n');
   }
 
   const options = extractOptions(question);

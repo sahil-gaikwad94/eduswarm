@@ -62,9 +62,14 @@ const authMode = process.env.AUTH_MODE || (process.env.NODE_ENV === 'production'
 const allowLocalFallback =
   process.env.ALLOW_LOCAL_FALLBACK === 'true' ||
   (process.env.ALLOW_LOCAL_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
-const runtimeTimeoutMs = Math.max(3000, Number(process.env.AGENT_RUNTIME_TIMEOUT_MS || 10000));
-const runtimeMaxWaitMs = Math.max(5000, Number(process.env.AGENT_RUNTIME_MAX_WAIT_MS || 600000));
-const agentChatTimeoutMs = Math.max(10000, Number(process.env.AGENT_CHAT_TIMEOUT_MS || 300000));
+// Topic generation is intentionally allowed a longer window than a normal API
+// request: a structured lesson can take several provider/tool steps.
+const runtimeTimeoutMs = Math.max(3000, Number(process.env.AGENT_RUNTIME_TIMEOUT_MS || 30_000));
+const runtimeMaxWaitMs = Math.max(5000, Number(process.env.AGENT_RUNTIME_MAX_WAIT_MS || 600_000));
+const agentChatTimeoutMs = Math.max(10_000, Number(process.env.AGENT_CHAT_TIMEOUT_MS || 240_000));
+// A stale browser reconnect must not trigger recovery before the active runtime
+// job receives its configured generation window.
+const staleJobRecoveryMs = runtimeMaxWaitMs + 60_000;
 const recoverWithLocalFallback = allowLocalFallback || process.env.NODE_ENV === 'production';
 const sessionSecret = process.env.SESSION_SECRET || 'development-only-session-secret';
 const sessionCookie = 'eduswarm_session';
@@ -497,7 +502,7 @@ app.get('/api/jobs/:id', async (req: Request, res: Response) => {
   const job = await store.getJob(param(req.params.id));
   if (!job || job.ownerId !== user.id) return res.status(404).json({ error: 'Job not found' });
   const age = Date.now() - new Date(job.updatedAt || job.createdAt).getTime();
-  if (['queued', 'running'].includes(job.status) && age > 2 * 60 * 1000) {
+  if (['queued', 'running'].includes(job.status) && age > staleJobRecoveryMs) {
     if (recoverWithLocalFallback) void runLocalFallback(job.id, job.topicId);
     else void dispatchJob(job.id, job.topicId);
   }
@@ -512,10 +517,17 @@ app.get('/api/jobs/:id/events', async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  // Keep job progress streaming through proxies while a model is composing a
+  // response. The browser already consumes this as an EventSource stream.
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
   res.write(`data: ${JSON.stringify(job)}\n\n`);
+  const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 15_000);
   const unsubscribe = await store.subscribe(param(req.params.id), (event) => res.write(`data: ${JSON.stringify(event)}\n\n`));
-  req.on('close', () => void unsubscribe());
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    void unsubscribe();
+  });
 });
 
 app.post('/api/jobs', async (req: Request, res: Response) => {
@@ -767,7 +779,7 @@ app.post('/api/agents/sessions/:id/messages', async (req: Request, res: Response
         topic_id: session.topicId || null, topic_title: topic?.title || null, goal,
         system, messages: history.concat({ role: 'user', text }),
       }),
-      signal: AbortSignal.timeout(Math.min(agentChatTimeoutMs, 120_000)),
+      signal: AbortSignal.timeout(agentChatTimeoutMs),
     });
     if (ai.ok) {
       const data = (await ai.json()) as any;
@@ -1588,6 +1600,44 @@ async function updateJob(id: string, patch: Record<string, unknown>) {
 }
 
 /**
+ * Keep provider output focused on the evidence-sensitive explanation.  The
+ * local tutorial supplies the durable supporting layer (code, diagrams,
+ * checklists, source links) for every syllabus topic, so an online lesson does
+ * not need a second long model call to be useful.
+ */
+function attachLocalCompanion(packageData: any, topicId: string): any {
+  const topic = getTopic(topicId);
+  if (!topic || !packageData) return packageData;
+  const depth = (['eli5', 'standard', 'deep'] as const).includes(packageData.depth)
+    ? packageData.depth as PackDepth
+    : 'standard';
+  const local = buildLocalPack(topicId, topic, depth);
+  const existingVideos = Array.isArray(packageData.videos) ? packageData.videos : [];
+  const localVideos = Array.isArray(local.videos) ? local.videos : [];
+  const videos = [...existingVideos, ...localVideos]
+    .filter((video, index, all) => video?.url && all.findIndex((candidate) => candidate?.url === video.url) === index)
+    .slice(0, 4);
+  return {
+    ...packageData,
+    codeExamples: Array.isArray(packageData.codeExamples) && packageData.codeExamples.length ? packageData.codeExamples : local.codeExamples,
+    diagrams: Array.isArray(packageData.diagrams) && packageData.diagrams.length ? packageData.diagrams : local.diagrams,
+    cheatSheet: Array.isArray(packageData.cheatSheet) && packageData.cheatSheet.length ? packageData.cheatSheet : local.cheatSheet,
+    videos,
+    localCompanion: {
+      title: `Quick reference for ${topic.title}`,
+      summary: 'The concise AI lesson above is paired with local worked examples, visual maps, recall checks, and source links. Open a section only when you need that extra support.',
+      sections: local.notes.sections.slice(1, 3),
+      sources: local.verification.sourceRefs || [],
+    },
+    verification: {
+      ...packageData.verification,
+      localCompanion: true,
+      localReferences: local.verification.sourceRefs || [],
+    },
+  };
+}
+
+/**
  * Recovery gate for topic jobs. Fresh topics may fall back to the local kit so
  * learning never stops — but a *regeneration* that already has a saved kit
  * fails loudly instead of overwriting it with an identical placeholder.
@@ -1642,9 +1692,10 @@ async function syncRuntimeJob(id: string) {
         const current = await store.getJob(id);
         if (current?.status === 'completed') return;
         if (!remote.package?.topicId || remote.package.verification?.status !== 'approved') throw new Error('invalid verified package');
-        const completed = await updateJob(id, { status: 'completed', package: remote.package });
+        const packageData = attachLocalCompanion(remote.package, current?.topicId || remote.package.topicId);
+        const completed = await updateJob(id, { status: 'completed', package: packageData });
         if (completed) {
-          await store.saveContent({ id: completed.id, ownerId: completed.ownerId, topicId: completed.topicId, package: remote.package, savedAt: now() });
+          await store.saveContent({ id: completed.id, ownerId: completed.ownerId, topicId: completed.topicId, package: packageData, savedAt: now() });
           await recordLessonCompletion({ ownerId: completed.ownerId, topicId: completed.topicId, regenerate: completed.regenerate, hadContent: completed.hadContent });
         }
         return;

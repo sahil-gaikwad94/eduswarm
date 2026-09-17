@@ -23,6 +23,7 @@ export type Pack = {
   readingMinutes?: number; generatedAt?: string;
   notes: { sections: any[] }; videos: any[]; flashcards: any[]; quiz: any[]; pyqs: any[];
   codeExamples?: any[]; diagrams?: any[]; cheatSheet?: string[];
+  localCompanion?: { title: string; summary: string; sources?: any[]; sections?: any[] };
 };
 
 export type Agent = {

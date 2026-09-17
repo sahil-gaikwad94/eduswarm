@@ -4,7 +4,8 @@ import pytest
 
 from fastapi.testclient import TestClient
 
-from app.main import app, STATE_DIR
+from app.main import app, STATE_DIR, reference_routes, resolve_topic
+from app.curriculum import curriculum_topics
 from app.rag import EvidenceChunk
 
 client = TestClient(app)
@@ -34,6 +35,18 @@ def test_health_reports_agent_graph_mode():
     assert response.json()['mode'] == 'langgraph-openrouter-qdrant'
 
 
+def test_every_live_topic_has_its_real_scope_and_two_reference_routes():
+    topics = curriculum_topics()
+    assert len(topics) == 237
+    node_id = 'web-dev-backend-with-node-js-node-js-runtime'
+    assert resolve_topic(node_id)['description'].startswith('Modules, streams')
+    node_routes = reference_routes(node_id, resolve_topic(node_id)['title'])
+    assert node_routes[0]['url'] == 'https://www.geeksforgeeks.org/node-js/nodejs/'
+    for topic_id, topic in topics.items():
+        assert topic['description']
+        assert len(reference_routes(topic_id, topic['title'])) >= 2
+
+
 def test_topic_job_runs_agents_and_publishes_verified_package():
     job_id = 'test-agent-graph'
     response = client.post('/v1/topic-jobs', json={'job_id': job_id, 'topic_id': 'algo-complexity'})
@@ -51,10 +64,15 @@ def test_topic_job_runs_agents_and_publishes_verified_package():
     assert result['package']['verification']['status'] == 'approved'
     assert len(result['package']['verification']['sources']) >= 2
     assert result['package']['notes']['sections']
+    assert result['context']['section_target'] == 6
+    assert result['context']['word_budget'] == 1000
 
     trace = client.get(f'/v1/topic-jobs/{job_id}/trace').json()
     agents = [run['agent'] for run in trace['trace']]
     assert agents == ['Dean', 'Researcher', 'Notes Author', 'Practice Team', 'Fact-Checker', 'Publisher']
+    practice = next(run for run in trace['trace'] if run['agent'] == 'Practice Team')
+    assert practice['tool'] == 'local_practice_curator'
+    assert practice['output']['generation_calls_saved'] == 1
     assert trace['checkpoints'] >= 6
 
     (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)

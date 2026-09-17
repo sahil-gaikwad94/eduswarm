@@ -628,3 +628,8 @@
 .l2-bubble{position:absolute;top:-26px;left:50%;transform:translateX(-50%);z-index:6;background:var(--white);border:1.6px solid var(--ink);border-radius:16px;padding:10px 16px;font-size:13.5px;font-weight:800;white-space:nowrap;box-shadow:4px 5px 0 rgba(30,27,46,.14)}
 .l2-bubble:after{content:'';position:absolute;bottom:-7px;left:50%;margin-left:-7px;width:12px;height:12px;background:var(--white);border-right:1.6px solid var(--ink);border-bottom:1.6px solid var(--ink);transform:rotate(45deg)}
 .l2-miniflame{position:absolute;top:16%;left:6%;z-index:3;filter:drop-shadow(0 8px 8px rgba(30,27,46,.14));pointer-events:none}
+
+/* The generated lesson stays compact; this expandable card exposes the
+   deterministic code/diagram/reference companion without pretending it was an
+   AI-cited claim. */
+.local-companion{margin:28px 0 0;padding:22px;background:#f4f1ff;border-color:#d8ceff}.local-companion h2{font-size:21px;margin:0 0 8px}.local-companion>p:not(.label){color:var(--muted);font-size:14px;margin:0}.local-companion details{border-top:1px solid #ded6f7;margin-top:14px;padding-top:12px}.local-companion summary{cursor:pointer;font-weight:700;color:var(--violet)}.local-companion details p,.local-companion details ul{font-size:14px}.companion-links{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.companion-links a,.sources a{font-size:12px;color:var(--violet);font-weight:700;text-decoration:none}.companion-links a:hover,.sources a:hover{text-decoration:underline}

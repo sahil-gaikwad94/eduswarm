@@ -334,20 +334,34 @@ test('interview flows are deterministic per interview id', async () => {
   const b = buildInterview('gate', 'fixed-id');
   assert.deepEqual(a.items.map((i) => i.id), b.items.map((i) => i.id));
 });
-test('local study kits are deep and topic-aware', async () => {
+test('local study kits are compact, topic-aware, and source-linked', async () => {
   const { buildLocalPack } = await import('./localPack.js');
-  const { getTopic } = await import('./curriculum.js');
+  const { getTopic, catalogs } = await import('./curriculum.js');
   const topic = getTopic('algo-complexity')!;
   const pack = buildLocalPack('algo-complexity', topic, 'standard');
-  assert.equal(pack.notes.sections.length >= 10, true);
+  assert.equal(pack.notes.sections.length, 6, 'the standard local lesson is one focused sitting, not a generic three-page essay');
   assert.equal(pack.quiz.length >= 4, true);
   assert.equal(pack.codeExamples.length >= 1, true);
   assert.equal(pack.diagrams.length >= 1, true);
   assert.equal(pack.verification.evidenceMode, 'local-fallback');
   assert.equal(pack.verification.sources.length >= 2, true);
+  assert.equal(pack.verification.sourceRefs.length >= 2, true);
   assert.equal(pack.readingMinutes > 0, true);
   const deep = buildLocalPack('algo-complexity', topic, 'deep');
   assert.equal(deep.notes.sections.length > pack.notes.sections.length, true);
+
+  const node = getTopic('web-dev-backend-with-node-js-node-js-runtime')!;
+  const nodePack = buildLocalPack(node.id, node, 'standard');
+  assert.match(nodePack.notes.sections[1].body, /event.loop|event loop/i);
+  assert.equal(nodePack.verification.sourceRefs.some((source: any) => source.url === 'https://www.geeksforgeeks.org/node-js/nodejs/'), true);
+
+  for (const curriculum of Object.values(catalogs)) {
+    for (const current of curriculum) {
+      const local = buildLocalPack(current.id, current, 'eli5');
+      assert.equal(local.verification.sourceRefs.length >= 2, true, `${current.id} has reference routes`);
+      assert.equal(local.notes.sections.length >= 5, true, `${current.id} has a usable local tutorial`);
+    }
+  }
 });
 test('token auth round-trips and login codes are single-use', async () => {
   const { issueToken, verifyToken, issueLoginCode, redeemLoginCode, bearerFromHeader } = await import('./auth.js');

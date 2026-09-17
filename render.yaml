@@ -46,7 +46,13 @@ services:
       - key: OPENROUTER_FALLBACK_MODELS
         value: deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
       - key: LLM_TIMEOUT_MS
-        value: '90000'
+        value: '240000'
+      - key: AGENT_RUNTIME_TIMEOUT_MS
+        value: '30000'
+      - key: AGENT_RUNTIME_MAX_WAIT_MS
+        value: '600000'
+      - key: AGENT_CHAT_TIMEOUT_MS
+        value: '240000'
   - type: web
     name: eduswarm-agent
     runtime: python
@@ -68,7 +74,13 @@ services:
       - key: OPENROUTER_FALLBACK_MODELS
         value: deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
       - key: OPENROUTER_REQUEST_TIMEOUT_SECONDS
-        value: 300
+        value: 240
+      - key: OPENROUTER_STRUCTURED_MAX_TOKENS
+        value: 2200
+      - key: OPENROUTER_STRUCTURED_MAX_MODELS
+        value: 2
+      - key: OPENROUTER_STRUCTURED_RETRY_BACKOFF_SECONDS
+        value: 2
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
       - key: QDRANT_URL
