@@ -118,7 +118,11 @@ adds Qdrant retrieval and is the preferred brain, but it is a separate service:
 when it is asleep or erroring, the API calls the model directly so specialists
 still answer with a real model instead of degrading silently. Model ids are a
 comma-separated chain (`OPENROUTER_MODEL`, then `OPENROUTER_FALLBACK_MODELS`);
-the first model that answers wins. Bring your own key — the repo ships none.
+the first model that answers wins. Topic generation has **no default time
+limit**: `OPENROUTER_REQUEST_TIMEOUT_SECONDS=0`, `AGENT_RUNTIME_TIMEOUT_MS=0`,
+and `AGENT_RUNTIME_MAX_WAIT_MS=0` mean an in-flight model run is allowed to
+finish. Set a positive value only when an operator explicitly wants a circuit
+breaker. Bring your own key — the repo ships none.
 
 ## API surface
 

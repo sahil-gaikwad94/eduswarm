@@ -56,8 +56,11 @@ function apiKey(): string {
   return process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || '';
 }
 
-function timeoutMs(): number {
-  return Math.max(10_000, Number(process.env.LLM_TIMEOUT_MS || 90_000));
+function timeoutMs(): number | undefined {
+  // A zero/empty value means do not cut off a model response. Operators can
+  // still set a positive millisecond value when they need a circuit breaker.
+  const value = Number(process.env.LLM_TIMEOUT_MS ?? 0);
+  return Number.isFinite(value) && value > 0 ? Math.max(10_000, value) : undefined;
 }
 
 function extractText(body: any): string {
@@ -80,6 +83,7 @@ export function isUsableReply(text: string): boolean {
 }
 
 async function callModel(model: string, messages: ChatMessage[], temperature: number): Promise<string> {
+  const timeout = timeoutMs();
   const response = await fetch(`${baseUrl()}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -89,7 +93,7 @@ async function callModel(model: string, messages: ChatMessage[], temperature: nu
       'X-Title': 'EduSwarm',
     },
     body: JSON.stringify({ model, messages, temperature, max_tokens: 1400, stream: false }),
-    signal: AbortSignal.timeout(timeoutMs()),
+    signal: timeout ? AbortSignal.timeout(timeout) : undefined,
   });
   if (!response.ok) {
     const detail = (await response.text().catch(() => '')).slice(0, 400);
