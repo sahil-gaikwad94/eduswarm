@@ -11,6 +11,7 @@
  */
 
 import { QUESTION_BANK, type Question } from './questionBank.js';
+import { localKnowledgeFor, referencesFor } from './localKnowledge.js';
 
 export type PackDepth = 'eli5' | 'standard' | 'deep';
 export type TopicRef = { title: string; description: string; module?: string };
@@ -229,96 +230,113 @@ function pickDiagrams(topic: TopicRef, count = 3): Diagram[] {
 
 // ------------------------------------------------------------------- builder
 
+/**
+ * Build a compact, source-linked local tutorial.  This intentionally follows a
+ * familiar reference-tutorial flow (overview → concepts → worked example →
+ * implementation → pitfalls → practice) instead of filling every topic with
+ * the same generic essay.  It is original local material, designed to be read
+ * in one focused sitting while the linked docs remain available for detail.
+ */
 export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDepth = 'standard'): any {
-  const T = topic.title;
-  const D = topic.description;
-  const M = topic.module || 'Core concepts';
+  const knowledge = localKnowledgeFor({ ...topic, id: topicId });
+  const references = referencesFor({ ...topic, id: topicId });
   const related = relatedQuestions(topic, 6);
-  const snippets = depth === 'eli5' ? pickSnippets(topic, 2) : pickSnippets(topic, 3);
-  const diagrams = depth === 'eli5' ? pickDiagrams(topic, 2) : pickDiagrams(topic, 3);
+  const matchedSnippets = pickSnippets(topic, depth === 'eli5' ? 1 : 2);
+  const matchedDiagrams = pickDiagrams(topic, 1);
+  const codeExamples = [knowledge.code, ...matchedSnippets]
+    .filter(Boolean)
+    .filter((item, index, all) => all.findIndex((candidate: any) => candidate.title === (item as any).title) === index)
+    .slice(0, depth === 'deep' ? 3 : 2)
+    .map((item: any) => ({ title: item.title, language: item.language, code: item.code, explanation: item.explanation }));
+  const diagrams = [knowledge.diagram, ...matchedDiagrams]
+    .filter(Boolean)
+    .filter((item, index, all) => all.findIndex((candidate: any) => candidate.title === (item as any).title) === index)
+    .slice(0, 2)
+    .map((item: any) => ({ title: item.title, caption: item.caption, mermaid: item.mermaid }));
   const S = (heading: string, body: string) => ({ heading, body });
+  const title = topic.title;
+  const module = topic.module || 'this module';
+  const quickFacts = knowledge.mechanics.map((item) => `• ${item}`).join('\n');
+  const buildSteps = knowledge.buildSteps.map((item, index) => `${index + 1}. ${item}`).join('\n');
+  const bankExample = related[0]
+    ? `**Practice anchor — ${related[0].subject}, ${related[0].year}:** ${related[0].question}\n\nBefore reading the answer, choose an option and state the rule you used. **Answer:** ${related[0].options[related[0].answer]}. ${related[0].explanation}`
+    : `Create a tiny example for ${title}: write the input, the state after each step, and the expected result. Then change one boundary condition and explain why the result changes or stays the same.`;
 
-  const examBlock = related.length
-    ? related.slice(0, 3).map((q, i) =>
-      `Q${i + 1} (${q.year} · ${q.subject}): ${q.question}\n${q.options.map((o, j) => `  ${'ABCD'[j]}. ${o}`).join('\n')}\nAnswer: ${'ABCD'[q.answer]}. ${q.explanation}`).join('\n\n')
-    : 'No banked question matches this exact topic yet — apply the method below to any practice set and file misses in your mistake notebook.';
+  const sections: any[] = [
+    S(`Introduction to ${title}`, `${title} is about ${knowledge.focus}. ${topic.description}\n\n**By the end of this local tutorial, you should be able to:** define the key terms in plain language, trace one realistic example, make the important trade-off, and recognize the failure mode that makes an otherwise plausible answer wrong. This is a compact reference-style lesson: read it once, work the example, then use the source links for API-level detail.`),
+    S('Core idea and vocabulary', `${knowledge.mentalModel}\n\n${quickFacts}`),
+    S('How it works: a guided example', `${knowledge.workedExample}\n\n${bankExample}`),
+    S('Build or apply it', `${buildSteps}\n\nWhen you implement or solve a question, write the contract first: what comes in, what result must come out, and which condition must remain true while you work. That turns the example into a reusable method rather than a memorized answer.`),
+    S('Common mistakes and a fast self-check', `**The trap:** ${knowledge.trap}\n\n**Check yourself:** ${knowledge.check}\n\nUse this exit test before moving on: explain the mental model without the page, solve the smallest non-trivial case, then name one input, workload, or assumption where your first approach would fail. If any step is fuzzy, repeat only that section and retry the example.`),
+    S(`Where ${title} fits next`, `${title} is one link in ${module}. Review any prerequisite that you could not use during the example; then move to the next syllabus topic only after you can retrieve this lesson’s model, procedure, and trap from memory.\n\n**Reference reading:** start with ${references[0].title} for the canonical vocabulary, use ${references[1].title} for a second explanation, and keep ${references[2].title} for examples or practice. The links are provided as sources—not copied text—so you can verify details and go deeper.`),
+  ];
 
-  const trapBlock = related.length
-    ? related.slice(0, 4).map((q) => `• ${q.topic}: ${q.explanation}`).join('\n')
-    : '• Skipping preconditions — most wrong answers violate an assumption, not the method.\n• Confusing similar terms — define each one before comparing.\n• Ignoring edge cases — empty, single, duplicate, maximum, invalid.';
-
-  const sections: any[] = [];
   if (depth === 'eli5') {
-    sections.push(S('The 30-second story', `Imagine ${T} as a kitchen routine you already know: ingredients go in, fixed steps transform them, and a finished dish comes out. ${D} The only thing that makes it feel hard is vocabulary — every new term below maps to one concrete thing you can point at.\n\nRead this kit like a story first, examples second, definitions last. By the end you will explain ${T} to a friend without notes — that is the entire goal of this mode. When you feel comfortable, regenerate this kit in Standard mode for the full exam-grade treatment.`));
+    sections.splice(1, 1, S('The simple picture', `${knowledge.mentalModel}\n\nThink of the worked example as a small story: identify what goes in, what changes, and what comes out. Do not memorize terms until you can tell that story.`));
+    sections.splice(3, 1);
   }
-  sections.push(
-    S('Start with the intuition', `${T} becomes easy when you connect the definition to one small concrete example. ${D}\n\nName three things before anything else: the input you are given, the transformation that happens, and the result you must produce. Then ask the question that matters most: what must remain true after every single step? That invariant is the backbone of every proof, every implementation, and every correct exam answer on this topic.\n\nTest the idea immediately with an edge case — empty input, a single element, the maximum allowed value — and explain the outcome in your own words. If you cannot, the model is still fuzzy: shrink the example until it is obvious, then grow it back.\n\nMake the model stick with a 60-second drill: close your eyes and narrate what happens to one concrete input, naming the state after every step. Then change exactly one thing about the input — order, size, duplicates — and predict the new outcome before checking. Correct predictions mean the intuition is real; wrong ones pinpoint the fuzzy step to revisit.`),
-    S('Formal definition and vocabulary', `Now make the intuition airtight. In a formal solution you define each variable, state every assumption, and separate the general rule from convenient special cases.\n\nTranslate problems into this vocabulary before choosing any technique: list preconditions, bounds, and whether behavior depends on input order or hidden state. Most avoidable mistakes come from applying a valid rule where its preconditions fail.\n\nKeep a running glossary as you read: term, one-line definition, and one example each. ${M} rewards precise language — examiners and interviewers both test whether you can distinguish neighboring concepts, not just recite them.\n\nWrite every definition three ways: in plain words, in symbols or pseudocode, and as a tiny example with its answer. If any of the three versions disagrees with the others, you have found a gap — resolve it now, because exams and interviewers probe exactly those seams. Revisit this glossary before every practice set until each entry feels boring and obvious.`),
-    S('Worked example, step by step', `Take a deliberately small input and write the state after every operation — on paper, not in your head. At each step, name the invariant out loud: the fact that stays true and guarantees progress.\n\nThen grow the input and check that the same reasoning scales. Ask: which step dominates the cost? What auxiliary information am I storing, and is it necessary? A solution you can trace by hand is a solution you actually understand.\n\nFinish by re-solving the same example from memory with the page covered. Retrieval — not re-reading — is what moves this into long-term memory.\n\nNow solve a second example that differs in one structural way: a different shape, order, or boundary condition. Before tracing it, write your prediction and your reason in one sentence. Comparing prediction against trace is the fastest known way to convert fragile familiarity into durable skill.`),
-    S('Real exam-style problems, solved', `These are real patterns from the question bank. Cover the answers, attempt each one, then study the reasoning:\n\n${examBlock}\n\nNotice the shared method: classify the concept, write the governing rule, eliminate options by specific contradiction, verify the survivor with a small case. Speed comes from pattern recognition; accuracy comes from never skipping the verification step.\n\nTrain under exam conditions in two passes. Pass one is untimed: solve slowly, justify every elimination in writing, and record each trap in a distractor journal with the exact line of reasoning that would have saved you. Pass two is timed at 90 seconds per question: classify first, compute second, verify third. Your journal, not your score, is the real output of this section.`),
-    S('Code walkthrough', `Read the implementation below (${snippets[0]?.title || 'invariant-first solving'}) line by line and map each line to the invariant from section one. Then close it and rewrite the core logic from memory.\n\n${snippets[0]?.explanation || ''}\n\nDeliberately break it: remove a boundary check, flip a comparison, skip initialization. Watching exactly how it fails teaches more than ten clean re-reads. Port the same logic to a second language or style (iterative vs recursive) to prove the idea is language-independent.\n\nAnnotate the final version with its contract: preconditions at the top, the invariant as a comment inside the loop or recursion, and the complexity beside the signature. Then list five tests — empty, singleton, typical, boundary, adversarial — and confirm each by hand. Code you can specify, break, fix, and test is code you own.`),
-    S('Visual map of the idea', `Study the diagrams attached to this kit (${diagrams.map((d) => d.title).join('; ')}). Redraw the first one from memory — diagrams you can reproduce are concepts you own.\n\nFor each node or arrow, ask what breaks if it is removed. Visual reasoning catches structural misunderstandings that prose hides: cycles, missing base cases, and ordering bugs all show up as wrong shapes before they show up as wrong answers.\n\nDo a teach-back: explain the diagram to an imaginary junior in under two minutes, pointing at each node as the words leave your mouth. Wherever you hesitate, the understanding is thin — mark that node and re-study only that part. Repeat until the explanation flows without pauses.`),
-    S('Complexity and trade-offs', `Every serious answer states its costs. Use this comparison habit:\n\n| Approach | Time | Space | When to use |\n|---|---|---|---|\n| Brute force | Usually exponential or quadratic | Minimal | Tiny inputs, or as a correctness baseline |\n| Textbook method | As analyzed below | Moderate | Default choice once preconditions hold |\n| Optimized variant | Better constants or bounds | Often higher | When profiling proves it matters |\n\nAlways say whether a bound is best, average, or worst case, and name the input that triggers the worst case. In exams, half the options die the moment you check complexity; in interviews, stating trade-offs unprompted signals senior thinking.\n\nFor recursive methods, write the recurrence and solve it (substitution or a recursion tree — show two levels, then generalize). For iterative ones, count the dominant operation as a function of input size and argue why nothing else matters. Then sanity-check with numbers: what does n = 10^5 cost under each candidate bound? Arithmetic kills hand-waving.`),
-    S('Common mistakes and edge cases', `The traps that actually catch learners on this topic:\n\n${trapBlock}\n\nBuild a personal edge-case checklist and run every solution through it: empty, singleton, duplicates, sorted and reverse-sorted, maximum values, invalid states, and adversarial orderings. Log each miss in your mistake notebook with the failed assumption — that log is worth more than any formula sheet.\n\nRun a pre-mortem before your next practice set: imagine you already failed it, and write down the three most likely reasons — a skipped precondition, a misread bound, a confused pair of terms. Then solve the set with that list visible. Catching a predicted failure in the moment rewires the habit permanently.`),
-    S('How this appears in exams and interviews', `Examiners test ${T} in three predictable ways: direct definition recall (fast marks — never drop these), small-case application (trace by hand, watch boundaries), and disguised variants where the topic hides inside a story (classify first, then solve).\n\nInterviewers add a fourth: trade-off discussion. Prepare a two-minute spoken answer covering what it is, when it wins, when it loses, and its complexity. Practice saying it aloud — fluency under pressure is a trained skill, not talent.\n\nScript your two-minute answer now: sentence one defines it, sentence one defines it, sentence two gives the smallest example, sentence three states when it wins and loses, sentence four gives complexity with the worst-case trigger. Then prepare for the inevitable follow-up — 'what breaks if...?' — by listing the three most attackable assumptions in your own explanation.`),
-    S(`Where ${T} fits in ${M}`, `Zoom out: this topic exists to solve a specific class of problems inside ${M}. Name its prerequisites (what must be solid first) and its successors (what it unlocks next). Learning in dependency order compounds; learning out of order leaks.\n\nIf a prerequisite feels shaky, detour for one focused session rather than struggling through confusion. The syllabus view shows the full chain — use it as a map, not a cage.\n\nTest each prerequisite in 30 seconds: can you state its core idea and solve its simplest case cold? Any hesitation means a detour, and detours compound positively — an hour on foundations routinely saves three on advanced topics. Write down the two topics this one unlocks and glance at them now; knowing the destination makes the current climb feel purposeful.`),
-    S('Cheat sheet (memorize this)', cheatBullets(T, related).map((b) => `• ${b}`).join('\n')),
-    S('Your practice plan for this topic', `1) Attempt the kit quiz below untimed and write one-line justifications.\n2) Grade with spaced flashcards over the next week (Again/Hard/Good/Easy).\n3) Drill 5 adaptive PYQs on this subject, then one timed mini-mock.\n4) Explain the core idea aloud in 60 seconds — record it, replay it, fix the fuzzy parts.\n\nDone means: accurate under time, explainable from memory, and connected to neighboring topics. Anything less is familiarity, not mastery.\n\nSchedule the follow-through: review these flashcards tomorrow, in 3 days, in 7 days, and in 14 days — the app's spaced scheduler handles the timing if you grade honestly. Each review should be faster than the last; if one feels harder, that card marks a genuine gap worth one more worked example.`),
-  );
   if (depth === 'deep') {
-    sections.push(
-      S('Proof sketch: why it actually works', `Go beyond using the method — prove it. Restate the invariant as a formal claim, show it holds initially, show each step preserves it, and show it implies correctness at termination. This four-part skeleton (initiation, maintenance, termination, conclusion) fits nearly every algorithm on this topic.\n\nThen steelman the skeptic: construct the nastiest input you can and trace why the proof still holds. If you find a hole, you have found either a deeper truth or a real boundary condition worth remembering.\n\nWrite the proof in the standard four-beat rhythm and keep it beside your implementation: initiation (the invariant holds before the first step), maintenance (each step preserves it — show the algebra), termination (a measure strictly decreases, so the process ends), conclusion (invariant plus termination implies the postcondition). Proofs in this shape are checkable, and checkable proofs survive exam pressure.`),
-      S('Advanced variations', `The standard form is the beginning. Explore the variants that separate strong candidates: tighter bounds under extra assumptions, randomized or approximate versions, parallel or streaming adaptations, and the generalization that unifies neighboring topics.\n\nFor each variant, answer: what changes, what stays invariant, and what breaks. Depth is breadth plus the ability to transfer — these variations are transfer training.\n\nBuild a comparison table with one row per variant and columns for assumption, cost, and failure mode. The table forces the real question — 'which variant wins under which constraints?' — and that question is precisely what senior interview loops and the hardest exam items ask. Memorize the table by rebuilding it blank.`),
-      S('In production systems', `This topic earns its keep far beyond exams: query planners, caches, schedulers, load balancers, ML pipelines, and distributed stores all embed these ideas. Pick one production system you use and find where ${T} hides inside it.\n\nRead one engineering blog or paper section about that usage. Real constraints — partial failure, skewed data, latency budgets — reframe the textbook version and make it unforgettable.\n\nFrame the production usage as an SLO problem: what latency, throughput, or correctness budget does the system promise, and how does this topic help meet it? Then name the failure mode that wakes engineers at night — skew, stampedes, partial failure, drift — and how the textbook version must bend to survive it. Concepts tied to operational pain are never forgotten.`),
-      S('Challenge drill', `Close the kit. Solve: (1) the hardest related bank question from memory, (2) a self-invented adversarial case, (3) a two-minute whiteboard explanation with diagram. Time yourself.\n\nThen regenerate this topic in ELI5 mode and compare — the ideas that survive simplification are the ones you truly own.\n\nGrade yourself honestly: 3 points for a correct unaided solution, 2 for correct-with-hint, 1 for a clear explanation of exactly where you got stuck, 0 for anything else. Below 7 total means another cycle through the kit with full retrieval; 9 or above means you are ready to teach it — the strongest possible signal of mastery.`),
+    sections.splice(4, 0,
+      S('Trade-offs and transfer', `Strong answers compare alternatives instead of presenting one technique as magic. For ${title}, name the precondition that makes the standard approach valid, the resource it consumes (time, memory, complexity, or operational risk), and the signal that tells you to choose a different approach.\n\nTransfer drill: take the guided example and change its scale, ordering, failure mode, or correctness requirement. Re-state the invariant or contract before deciding whether the same solution still holds.`),
+      S('Prove it, test it, teach it', `Use a four-beat proof or review: **initialization** (why the starting state is valid), **maintenance** (why each step preserves the rule), **termination** (why progress cannot continue forever), and **conclusion** (why the final state solves the original problem).\n\nThen teach ${title} in two minutes using one diagram, one example, and the trap above. A clear explanation under this constraint is a stronger signal of mastery than a longer summary.`),
     );
   }
 
   const flashcards = [
-    ...related.slice(0, 4).map((q) => ({ question: q.question, answer: `${q.options[q.answer]} — ${q.explanation}` })),
-    { question: `What is the core idea behind ${T}?`, answer: 'State the input, invariant, transformation, and result; verify with a small example and its edge cases.' },
-    { question: 'How should you analyse a solution?', answer: 'Check preconditions, correctness invariant, time complexity, extra space, and boundary cases.' },
-    { question: 'What is a common failure mode?', answer: 'Applying a valid rule where its preconditions fail — especially on empty, duplicate, maximum, or adversarial inputs.' },
-    { question: 'How do you convert this into exam readiness?', answer: 'Classify the pattern, solve untimed with justifications, explain every distractor, then repeat under time.' },
-  ].slice(0, 8);
-  const quiz = [
-    ...related.slice(0, 4).map((q) => ({ question: q.question, options: q.options, answer: q.answer, explanation: q.explanation })),
-    { question: `Which is the strongest first step when solving ${T}?`, options: ['Memorise a template', 'Identify input, invariant, and preconditions', 'Skip edge cases', 'Optimise before proving'], answer: 1, explanation: 'A clear model and explicit assumptions guide both proof and implementation.' },
-    { question: 'What should a high-quality explanation include?', options: ['Only the final answer', 'Definition, example, mistakes, trade-offs, and practice', 'Only a formula', 'Unverified links'], answer: 1, explanation: 'Learning sticks when concepts connect to intuition, formal language, examples, and retrieval.' },
-  ].slice(0, 6);
+    { question: `What is the core mental model for ${title}?`, answer: knowledge.mentalModel },
+    ...knowledge.mechanics.slice(0, 3).map((mechanic, index) => ({ question: `${title}: key idea ${index + 1}?`, answer: mechanic })),
+    { question: `What is the most important trap in ${title}?`, answer: knowledge.trap },
+    { question: `How do you check your understanding of ${title}?`, answer: knowledge.check },
+    ...related.slice(0, 2).map((q) => ({ question: q.question, answer: `${q.options[q.answer]} — ${q.explanation}` })),
+  ].slice(0, depth === 'eli5' ? 5 : 7);
 
-  const words = sections.reduce((n, s) => n + String(s.body).split(/\s+/).length, 0);
+  const quiz = [
+    ...related.slice(0, 3).map((q) => ({ question: q.question, options: q.options, answer: q.answer, explanation: q.explanation })),
+    {
+      question: `What is the strongest way to begin a ${title} problem?`,
+      options: ['Memorise a final answer', 'State the model, inputs, assumptions, and success condition', 'Optimise before checking correctness', 'Ignore the smallest example'],
+      answer: 1,
+      explanation: `The local method for ${title} starts with an explicit model and preconditions; that makes the procedure, trade-off, and edge cases checkable.`,
+    },
+    {
+      question: `Which habit best protects against the common ${title} mistake?`,
+      options: ['Choose the familiar-looking option first', 'Test only a large happy-path example', 'Name the assumption and test a boundary or failure case', 'Skip source documentation'],
+      answer: 2,
+      explanation: `The key trap is: ${knowledge.trap} Making assumptions and boundaries explicit is the quickest way to catch it.`,
+    },
+  ].slice(0, depth === 'eli5' ? 4 : 5);
+
+  const cheatSheet = [
+    `Purpose: ${knowledge.focus}.`,
+    `Mental model: ${knowledge.mentalModel}`,
+    ...knowledge.mechanics.slice(0, 3),
+    `Trap: ${knowledge.trap}`,
+    `Recall check: ${knowledge.check}`,
+  ].slice(0, 7);
+  const words = sections.reduce((total, section) => total + String(section.body).trim().split(/\s+/).length, 0);
+
   return {
-    topicId, title: T, depth, generatedAt: new Date().toISOString(), readingMinutes: Math.max(6, Math.round(words / 200)),
+    topicId,
+    title,
+    depth,
+    generatedAt: new Date().toISOString(),
+    readingMinutes: Math.max(4, Math.round(words / 190)),
     verification: {
-      status: 'fallback', evidenceMode: 'local-fallback', provider: 'local-mastery-templates',
-      fallbackReason: 'Agent runtime or provider was unavailable',
-      sources: ['MIT OpenCourseWare', 'NPTEL', 'MDN Web Docs', 'EduSwarm question bank'],
+      status: 'fallback',
+      evidenceMode: 'local-fallback',
+      provider: 'local-curated-tutorials',
+      fallbackReason: 'The agent runtime or provider was unavailable; this original source-linked local tutorial is ready to study.',
+      sources: references.map((reference) => `${reference.publisher}: ${reference.title}`),
+      sourceRefs: references,
       claimsChecked: related.length,
     },
     notes: { sections },
-    codeExamples: snippets.map((s) => ({ title: s.title, language: s.language, code: s.code, explanation: s.explanation })),
-    diagrams: diagrams.map((d) => ({ title: d.title, caption: d.caption, mermaid: d.mermaid })),
-    cheatSheet: cheatBullets(T, related),
-    videos: [
-      { title: `${T} — NPTEL lecture`, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${T} NPTEL lecture`)}`, timestamp: '00:00' },
-      { title: `${T} — MIT OpenCourseWare`, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${T} MIT OpenCourseWare`)}`, timestamp: '00:00' },
-      { title: `${T} — practical walkthrough`, url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${T} tutorial`)}`, timestamp: '00:00' },
-    ],
-    flashcards, quiz,
+    codeExamples,
+    diagrams,
+    cheatSheet,
+    videos: references.map((reference) => ({ title: `${reference.publisher}: ${reference.title}`, url: reference.url, timestamp: 'Read next' })),
+    flashcards,
+    quiz,
     pyqs: related.slice(0, 3).map((q) => ({ year: q.year, question: q.question, difficulty: q.difficulty })),
   };
-}
-
-function cheatBullets(T: string, related: Question[]): string[] {
-  const bullets = [
-    `Define ${T} in one sentence before solving anything.`,
-    'Invariant first: name what stays true after every step.',
-    'Trace a tiny example by hand; then grow it.',
-    'State time + space with best/average/worst labeled.',
-    'Run the edge-case checklist: empty, single, duplicate, max, invalid.',
-  ];
-  if (related[0]) bullets.push(`Anchor pattern: ${related[0].topic} — ${related[0].explanation}`);
-  if (related[1]) bullets.push(`Second pattern: ${related[1].topic} — ${related[1].explanation}`);
-  return bullets.slice(0, 7);
 }

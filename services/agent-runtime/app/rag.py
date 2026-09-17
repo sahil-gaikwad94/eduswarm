@@ -87,7 +87,7 @@ class OpenRouterRag:
         # The API key is required for generation, but Qdrant-only operations
         # (ingest/search) work without it so knowledge tooling stays usable.
         self.qdrant = QdrantClient(url=self.settings.qdrant_url, api_key=self.settings.qdrant_api_key or None)
-        self.request_timeout = max(30, int(os.getenv("OPENROUTER_REQUEST_TIMEOUT_SECONDS", "300")))
+        self.request_timeout = max(20, int(os.getenv("OPENROUTER_REQUEST_TIMEOUT_SECONDS", "75")))
 
     def _require_key(self) -> None:
         if not self.settings.api_key:
@@ -185,30 +185,39 @@ class OpenRouterRag:
 
     def structured_generate(self, prompt: str) -> dict[str, Any]:
         self._require_key()
-        payload = json.dumps(
-            {
-                "model": self.settings.model,
-                "messages": [
-                    {"role": "system", "content": "Return valid JSON only. Do not use Markdown fences."},
-                    {"role": "user", "content": prompt},
-                ],
-                "temperature": 0.2,
-                "response_format": {"type": "json_object"},
-            }
-        ).encode("utf-8")
-        request = urllib.request.Request(
-            f"{self.settings.base_url}/chat/completions",
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {self.settings.api_key}",
-                "Content-Type": "application/json",
-                "HTTP-Referer": "https://eduswarm-web.onrender.com",
-                "X-Title": "EduSwarm",
-            },
-            method="POST",
-        )
-        last_error: Exception | None = None
-        for attempt in range(3):
+        # Structured lesson output includes notes and practice in one response.
+        # A bounded output prevents a single verbose model turn from turning a
+        # compact lesson into the old three-page experience. Individual deploys
+        # may raise this deliberately, but cannot request an unbounded reply.
+        max_tokens = max(500, min(2800, int(os.getenv("OPENROUTER_STRUCTURED_MAX_TOKENS", "2200"))))
+        base_payload = {
+            "messages": [
+                {"role": "system", "content": "Return valid JSON only. Do not use Markdown fences."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.2,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        headers = {
+            "Authorization": f"Bearer {self.settings.api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://eduswarm-web.onrender.com",
+            "X-Title": "EduSwarm",
+        }
+        failures: list[str] = []
+        # Free model ids churn. Keep the compact-package path as resilient as
+        # chat by trying one alternate configured model only when the first
+        # cannot return valid JSON. The bounded attempt count keeps failures
+        # fast enough to reach the local companion instead of hanging a job.
+        max_models = max(1, min(5, int(os.getenv("OPENROUTER_STRUCTURED_MAX_MODELS", "2"))))
+        for model in self.model_chain()[:max_models]:
+            request = urllib.request.Request(
+                f"{self.settings.base_url}/chat/completions",
+                data=json.dumps({**base_payload, "model": model}).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
             try:
                 with urllib.request.urlopen(request, timeout=self.request_timeout) as response:
                     body = json.loads(response.read().decode("utf-8"))
@@ -219,16 +228,16 @@ class OpenRouterRag:
                 if content.startswith("```"):
                     content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
                 return json.loads(content)
-            except (urllib.error.HTTPError, urllib.error.URLError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-                last_error = exc
-                if isinstance(exc, urllib.error.HTTPError) and exc.code not in {408, 429, 500, 502, 503, 504}:
-                    break
-                if attempt < 2:
-                    time.sleep(2 ** attempt)
-        if isinstance(last_error, urllib.error.HTTPError):
-            detail = last_error.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"OpenAI-compatible provider HTTP {last_error.code}: {detail[:1000]}") from last_error
-        raise RuntimeError(f"OpenAI-compatible provider request failed: {last_error}") from last_error
+            except urllib.error.HTTPError as exc:
+                detail = exc.read().decode("utf-8", errors="replace")[:300]
+                failures.append(f"{model} HTTP {exc.code}: {detail}")
+                # Invalid credentials/credits will not recover on another
+                # model, whereas model-specific errors often will.
+                if exc.code in {401, 402, 403}:
+                    raise RuntimeError("OpenAI-compatible provider request failed: " + failures[-1]) from exc
+            except (urllib.error.URLError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+                failures.append(f"{model} {type(exc).__name__}: {exc}")
+        raise RuntimeError("every configured model failed to return valid JSON — " + " | ".join(failures[:3]))
 
     def chat(self, messages: list[dict[str, str]], system: str) -> str:
         return self.chat_with_model(messages, system)[0]

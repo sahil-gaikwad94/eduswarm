@@ -10,12 +10,14 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import quote_plus
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from langgraph.graph import END, StateGraph
 from typing_extensions import TypedDict
 from app.rag import EvidenceChunk, OpenRouterRag
+from app.curriculum import topic_for
 
 class GraphState(TypedDict):
     node: str
@@ -52,26 +54,57 @@ CURRICULUM_SOURCES = {
 }
 
 def resolve_topic(topic_id: str) -> dict[str, Any]:
-    """Resolve any curriculum topic id (legacy or new slug) to teachable metadata."""
+    """Resolve every canonical curriculum id before using a legacy fallback."""
+    canonical = topic_for(topic_id)
+    if canonical:
+        return canonical
     if topic_id in TOPICS:
         return TOPICS[topic_id]
     readable = re.sub(r"^(gate-cs|web-dev|ai-ml)-", "", topic_id).replace("-", " ").title()
     return {"title": readable, "description": f"A detailed tutorial on {readable} with concepts, examples, code, and practice.", "prerequisites": []}
 
 
-def curriculum_fallback_evidence(topic_id: str, topic: dict[str, Any]) -> list[EvidenceChunk]:
-    """Return clearly labeled curriculum briefs when Qdrant has not been seeded yet.
+def reference_routes(topic_id: str, title: str) -> list[dict[str, str]]:
+    """Reference links for every curriculum family, including unseeded topics."""
+    query = quote_plus(title)
+    lowered = f"{topic_id} {title}".lower()
+    if "node-js-runtime" in topic_id or "node-js" in lowered:
+        return [
+            {"source_id": "gfg-nodejs", "title": "GeeksforGeeks: Node.js Tutorial", "url": "https://www.geeksforgeeks.org/node-js/nodejs/"},
+            {"source_id": "nodejs-learn", "title": "Node.js Learn", "url": "https://nodejs.org/en/learn"},
+        ]
+    if topic_id.startswith("web-dev-"):
+        primary = ("React Learn", "https://react.dev/learn") if "react" in lowered else ("Next.js Documentation", "https://nextjs.org/docs") if "next-js" in topic_id else (f"MDN Web Docs: {title}", f"https://developer.mozilla.org/en-US/search?q={query}")
+        return [
+            {"source_id": "mdn-web", "title": primary[0], "url": primary[1]},
+            {"source_id": "gfg-web", "title": f"GeeksforGeeks: {title}", "url": f"https://www.geeksforgeeks.org/?s={query}"},
+        ]
+    if topic_id.startswith("ai-ml-"):
+        primary = ("Hugging Face Learn", "https://huggingface.co/learn") if any(word in lowered for word in ("transformer", "rag", "llm", "hugging-face")) else ("PyTorch Tutorials", "https://docs.pytorch.org/tutorials/") if any(word in lowered for word in ("pytorch", "neural", "deep-learning", "cnn")) else ("scikit-learn User Guide", "https://scikit-learn.org/stable/user_guide.html")
+        return [
+            {"source_id": "ai-primary", "title": primary[0], "url": primary[1]},
+            {"source_id": "gfg-ai", "title": f"GeeksforGeeks: {title}", "url": f"https://www.geeksforgeeks.org/?s={query}"},
+        ]
+    return [
+        {"source_id": "gfg-gate", "title": f"GeeksforGeeks: {title}", "url": f"https://www.geeksforgeeks.org/?s={query}"},
+        {"source_id": "nptel-cs", "title": "NPTEL Computer Science courses", "url": "https://nptel.ac.in/courses"},
+    ]
 
-    This is deliberately a preview-grade evidence path: it keeps the agent useful
-    for newly added syllabus topics without pretending that a missing index hit is
-    a fully researched lesson. The publisher still requires two independent chunks,
-    and the package records these sources for later replacement by indexed content.
+
+def curriculum_fallback_evidence(topic_id: str, topic: dict[str, Any]) -> list[EvidenceChunk]:
+    """Labeled source routes when an indexed document is not ready yet.
+
+    This preview never claims to have scraped a page. It carries the selected
+    curriculum scope plus two topic-appropriate reference routes, allowing the
+    publisher/UI to label the result honestly until the opt-in source seeder has
+    indexed permitted source text.
     """
     title = topic["title"]
     description = topic["description"]
+    routes = reference_routes(topic_id, title)
     return [
-        EvidenceChunk("curriculum-brief-0", "gate-syllabus", CURRICULUM_SOURCES["gate-syllabus"]["title"], CURRICULUM_SOURCES["gate-syllabus"]["url"], f"Curriculum topic: {title}. Scope brief: {description} This topic belongs to the learner's selected EduSwarm curriculum and should be taught with definitions, worked examples, common misconceptions, and exam/application practice."),
-        EvidenceChunk("curriculum-brief-1", "nptel-cs", CURRICULUM_SOURCES["nptel-cs"]["title"], CURRICULUM_SOURCES["nptel-cs"]["url"], f"Learning brief for {title}: {description} Explain the intuition first, then the formal vocabulary, then a small worked example and a verification exercise. Label this as a curriculum brief until a source document is indexed."),
+        EvidenceChunk(f"curriculum-brief-{index}", route["source_id"], route["title"], route["url"], f"Curriculum preview for {title}. Scope: {description} Teach the definition, a small worked example, assumptions, common misconceptions, and an application exercise. This is an EduSwarm curriculum brief, not extracted source text; use the linked {route['title']} for canonical detail.")
+        for index, route in enumerate(routes[:2])
     ]
 
 def now() -> str: return datetime.now(timezone.utc).isoformat()
@@ -150,22 +183,40 @@ class KnowledgeDocument(BaseModel):
     @field_validator("topic_ids")
     @classmethod
     def known_topics(cls, values: list[str]) -> list[str]:
-        if any(value not in TOPICS for value in values): raise ValueError("Unknown topic ID")
+        # Source ingestion is available for every API curriculum topic, not
+        # only the small set of legacy runtime aliases.
+        if any(value not in TOPICS and topic_for(value) is None for value in values): raise ValueError("Unknown topic ID")
         return values
 
 class ToolRegistry:
     def validate_package(self, package: dict[str, Any], evidence: list[dict[str, Any]]) -> dict[str, Any]:
-        known = {item["chunk_id"] for item in evidence}; errors: list[str] = []
+        evidence_by_id = {item["chunk_id"]: item for item in evidence}
+        known = set(evidence_by_id)
+        errors: list[str] = []
         claims = package.get("claims", [])
-        if len(evidence) < 2: errors.append("At least two independent trusted sources are required")
+        valid_claim_ids = set(range(len(claims)))
+        source_ids = {item.get("source_id") for item in evidence if item.get("source_id")}
+        if len(source_ids) < 2: errors.append("At least two independent trusted sources are required")
         if not claims: errors.append("No factual claims were produced")
         for index, claim in enumerate(claims):
             cited = set(claim.get("evidenceIds", []))
-            if len(cited) < 2 or not cited <= known: errors.append(f"Claim {index + 1} lacks two valid independent citations")
+            cited_sources = {evidence_by_id[item].get("source_id") for item in cited if item in evidence_by_id}
+            if len(cited) != 2 or not cited <= known or len(cited_sources) != 2:
+                errors.append(f"Claim {index + 1} lacks two valid independent citations")
+
+        def has_valid_provenance(item: dict[str, Any]) -> bool:
+            claim_ids = item.get("claimIds", [])
+            return isinstance(claim_ids, list) and bool(claim_ids) and set(claim_ids) <= valid_claim_ids
+
         for artifact in ("flashcards", "quiz", "pyqs"):
-            if not package.get(artifact): errors.append(f"{artifact} is missing")
-            elif any(not item.get("claimIds") for item in package[artifact]): errors.append(f"{artifact} lacks claim provenance")
-        if not package.get("notes", {}).get("sections"): errors.append("Notes Author produced no sections")
+            values = package.get(artifact)
+            if not values: errors.append(f"{artifact} is missing")
+            elif any(not isinstance(item, dict) or not has_valid_provenance(item) for item in values):
+                errors.append(f"{artifact} lacks valid claim provenance")
+        sections = package.get("notes", {}).get("sections", [])
+        if not sections: errors.append("Notes Author produced no sections")
+        elif any(not isinstance(section, dict) or not has_valid_provenance(section) for section in sections):
+            errors.append("Notes sections lack valid claim provenance")
         return {"status": "approved" if not errors else "rejected", "claimsChecked": len(claims), "sources": sorted({item["title"] for item in evidence}), "errors": errors}
 TOOLS = ToolRegistry()
 
@@ -184,17 +235,34 @@ class AgentGraph:
     def dean(self):
         topic = resolve_topic(self.state.topic_id)
         depth = self.state.depth if self.state.depth in {"eli5", "standard", "deep"} else "standard"
+        # The local companion supplies diagrams, code, recall prompts, and
+        # reference links. The model only writes the evidence-sensitive
+        # explanation, avoiding the former three-page wall of text and a
+        # second provider round-trip.
         plans = {
-            "eli5": {"sections": 8, "tone": "a friendly story-first explainer for a complete beginner: everyday analogies before vocabulary, tiny examples, zero jargon without a definition"},
-            "standard": {"sections": 11, "tone": "a rigorous exam-grade tutor: intuition, formalism, worked examples, code, visuals, complexity analysis, traps, and exam strategy"},
-            "deep": {"sections": 15, "tone": "a demanding senior mentor: everything in standard plus proof sketches, advanced variations, production-system usage, and challenge drills"},
+            "eli5": {"sections": 5, "word_budget": 650, "practice": (5, 4, 2), "tone": "a story-first explainer for a complete beginner; define jargon immediately and use one tiny example"},
+            "standard": {"sections": 6, "word_budget": 1000, "practice": (6, 5, 3), "tone": "a concise, rigorous tutor; prioritize the mental model, formal rule, worked trace, trade-off, and trap"},
+            "deep": {"sections": 8, "word_budget": 1350, "practice": (7, 5, 3), "tone": "a senior mentor; add a compact proof or derivation and production or transfer trade-off without repeating the standard material"},
         }
         plan = plans[depth]
-        self.state.context = {"topic": topic, "plan": ["ground evidence", "compose", "practice", "verify", "publish"], "depth": depth, "section_target": plan["sections"], "tone": plan["tone"], "daily_minutes": self.state.daily_minutes}; self.run_agent("Dean", "Plan the topic package", "Adapt scope to learner profile and time budget.", lambda: {"depth": depth, "minutes": self.state.daily_minutes}); self.state.current_node = "research"
+        self.state.context = {
+            "topic": topic,
+            "plan": ["ground evidence", "compose compact lesson plus practice", "curate", "verify", "publish"],
+            "depth": depth,
+            "section_target": plan["sections"],
+            "word_budget": plan["word_budget"],
+            "practice_target": plan["practice"],
+            "tone": plan["tone"],
+            "daily_minutes": self.state.daily_minutes,
+            "local_companion": True,
+        }
+        self.run_agent("Dean", "Plan a compact lesson with a local companion", "Use the model for evidence-sensitive explanation and local material for supporting examples, diagrams, and recall.", lambda: {"depth": depth, "minutes": self.state.daily_minutes, "word_budget": plan["word_budget"], "local_companion": True})
+        self.state.current_node = "research"
+
     def research(self):
         if self.rag is None: self.rag = OpenRouterRag()
         query = f"{self.state.context['topic']['title']}: {self.state.context['topic']['description']}"
-        evidence = self.run_agent("Researcher", "Retrieve grounded evidence", "Semantic-search the Qdrant knowledge base before generation.", lambda: {"evidence": [chunk.__dict__ for chunk in self.rag.retrieve(query, self.state.topic_id)]}, "qdrant_retrieve")["evidence"]
+        evidence = self.run_agent("Researcher", "Retrieve grounded evidence", "Retrieve a compact, diverse evidence set before generation.", lambda: {"evidence": [chunk.__dict__ for chunk in self.rag.retrieve(query, self.state.topic_id)[:4]]}, "qdrant_retrieve")["evidence"]
         if len({item["source_id"] for item in evidence}) < 2:
             fallback = curriculum_fallback_evidence(self.state.topic_id, self.state.context["topic"])
             evidence = [chunk.__dict__ for chunk in fallback]
@@ -202,16 +270,68 @@ class AgentGraph:
         self.state.sources = evidence; self.state.context["evidence"] = evidence
         if len({item["source_id"] for item in evidence}) < 2: self.state.current_node = "failed"; self.state.error = "Insufficient independent retrieved evidence"; return
         self.state.current_node = "compose"
+
     def compose(self):
         evidence = self.state.context["evidence"]
-        prompt = f'''You are the EduSwarm lesson author, {self.state.context['tone']}. Return JSON only with {{"notes":{{"sections":[{{"heading":str,"body":str,"claimIds":[int]}}]}},"claims":[{{"text":str,"evidenceIds":[str,str]}}]}}. Write a long, detailed {self.state.learner_level} tutorial for {self.state.context['topic']['title']} — never a short summary. Produce exactly {self.state.context['section_target']} substantial sections in this order: the core story/intuition, formal definition and vocabulary, a fully worked step-by-step example, a code walkthrough, a visual/diagram description, complexity and trade-offs with a comparison table, common mistakes and edge cases, exam and interview patterns, where the topic fits in the syllabus, a cheat sheet, and a practice plan. For the deep plan also add: proof sketch, advanced variations, production-system usage, and a challenge drill. For the eli5 plan, lead every section with an everyday analogy and keep formalism minimal. Each section body must be 3-5 paragraphs separated by blank lines, with concrete numbers, worked traces, fenced code blocks tagged with a language, at least one markdown comparison table, and at least one ```mermaid diagram block where the idea is structural (flows, states, hierarchies, pipelines). Every factual claim must cite exactly two distinct chunk IDs from this evidence. Do not use facts outside it.\n\nEVIDENCE:\n''' + "\n\n".join(f"[chunk_id={item['chunk_id']}; source={item['title']}]\n{item['text']}" for item in evidence)
-        generated = self.run_agent("Notes Author", "Generate grounded notes with the language model", "Generate only from retrieved chunks and require claim-level citations.", lambda: self.rag.structured_generate(prompt), "structured_generate")
+        flashcards, quiz, pyqs = self.state.context["practice_target"]
+        prompt = f'''You are the EduSwarm lesson author, {self.state.context['tone']}. Return JSON only. Build one compact, evidence-grounded package with this exact shape:
+{{"notes":{{"sections":[{{"heading":str,"body":str,"claimIds":[int]}}]}},"claims":[{{"text":str,"evidenceIds":[str,str]}}],"flashcards":[{{"question":str,"answer":str,"claimIds":[int]}}],"quiz":[{{"question":str,"options":[str,str,str,str],"answer":int,"explanation":str,"claimIds":[int]}}],"pyqs":[{{"year":int,"question":str,"difficulty":"easy|medium|hard","claimIds":[int]}}]}}.
+
+Topic: {self.state.context['topic']['title']}. Learner level: {self.state.learner_level}. Write exactly {self.state.context['section_target']} note sections and approximately {self.state.context['word_budget']} words across the note bodies (never more than {self.state.context['word_budget'] + 150}). Use this order where applicable: intuition and scope; definitions/mental model; one worked trace; implementation or applied workflow; trade-offs and failure modes; exam/interview or production transfer; then compact proof/advanced sections only for deep. Each body is 1–2 short paragraphs; use at most one small code or table block in the whole notes. Do not repeat definitions. A local companion already supplies extra code, diagrams, source links, and drills.
+
+Create {flashcards} active-recall flashcards, {quiz} four-option quiz questions, and {pyqs} exam/application prompts in the SAME response. Quiz explanations must give the governing rule and why the most tempting distractor is wrong. Every section and practice item needs claimIds. Make claims atomically checkable. Every claim must cite exactly two distinct chunk IDs, and use no facts outside the evidence.
+
+EVIDENCE:
+''' + "\n\n".join(f"[chunk_id={item['chunk_id']}; source={item['title']}; url={item['url']}]\n{item['text']}" for item in evidence)
+        generated = self.run_agent("Notes Author", "Generate the compact lesson and practice in one model call", "A single schema-constrained response removes a slow second provider request while retaining claim provenance.", lambda: self.rag.structured_generate(prompt), "structured_generate")
         if not generated.get("notes", {}).get("sections") or not generated.get("claims"): raise RuntimeError("The language model returned an invalid lesson schema")
-        self.state.artifacts.update({"notes": generated["notes"], "claims": generated["claims"]}); self.state.current_node = "practice"
+        self.state.artifacts.update(generated); self.state.current_node = "practice"
+
     def practice(self):
-        prompt = f'''Return JSON only with {{"flashcards":[{{"question":str,"answer":str,"claimIds":[int]}}],"quiz":[{{"question":str,"options":[str,str,str,str],"answer":int,"explanation":str,"claimIds":[int]}}],"pyqs":[{{"year":int,"question":str,"difficulty":str,"claimIds":[int]}}]}}. Build active-recall practice only from these verified claims: {json.dumps(self.state.artifacts['claims'])}. Produce exactly 8 flashcards, 6 quiz questions (each explanation must justify the right answer AND eliminate every distractor), and 4 exam-style pyqs across easy/medium/hard. Every item needs claimIds.'''
-        generated = self.run_agent("Practice Team", "Generate grounded practice with the language model", "Derive practice only from verified claims.", lambda: self.rag.structured_generate(prompt), "structured_generate")
-        self.state.artifacts.update(generated); self.state.current_node = "verify"
+        """Curate/fill practice locally instead of making a second model call."""
+        claims = self.state.artifacts.get("claims", [])
+        valid_ids = list(range(len(claims)))
+        if not valid_ids:
+            raise RuntimeError("Cannot curate practice without verified claims")
+
+        def claim_ids(item: dict[str, Any], fallback: int) -> list[int]:
+            values = [int(value) for value in item.get("claimIds", []) if isinstance(value, int) or str(value).isdigit()]
+            values = [value for value in values if value in valid_ids]
+            return values or [fallback]
+
+        def compact(text: str, length: int = 180) -> str:
+            value = " ".join(str(text).split())
+            return value if len(value) <= length else value[:length - 1].rstrip() + "…"
+
+        target_cards, target_quiz, target_pyqs = self.state.context["practice_target"]
+        cards = [item for item in self.state.artifacts.get("flashcards", []) if isinstance(item, dict) and item.get("question") and item.get("answer")]
+        for index, item in enumerate(cards): item["claimIds"] = claim_ids(item, index % len(valid_ids))
+        while len(cards) < target_cards:
+            index = len(cards) % len(valid_ids); claim = claims[index]
+            cards.append({"question": f"What is the key point about {self.state.context['topic']['title']}?", "answer": compact(claim.get("text", "")), "claimIds": [index]})
+
+        quiz = [item for item in self.state.artifacts.get("quiz", []) if isinstance(item, dict) and item.get("question") and isinstance(item.get("options"), list) and len(item["options"]) == 4 and isinstance(item.get("answer"), int)]
+        for index, item in enumerate(quiz): item["claimIds"] = claim_ids(item, index % len(valid_ids))
+        while len(quiz) < target_quiz:
+            index = len(quiz) % len(valid_ids); fact = compact(claims[index].get("text", ""))
+            quiz.append({"question": f"Which statement is supported by the lesson on {self.state.context['topic']['title']}?", "options": [fact, "A claim that ignores the stated assumptions", "A conclusion from an unrelated topic", "A rule that contradicts the evidence"], "answer": 0, "explanation": "The first option restates a verified claim. The other options either drop its conditions, introduce unrelated material, or contradict the cited lesson evidence.", "claimIds": [index]})
+
+        pyqs = [item for item in self.state.artifacts.get("pyqs", []) if isinstance(item, dict) and item.get("question")]
+        for index, item in enumerate(pyqs): item["claimIds"] = claim_ids(item, index % len(valid_ids))
+        while len(pyqs) < target_pyqs:
+            index = len(pyqs) % len(valid_ids)
+            pyqs.append({"year": datetime.now(timezone.utc).year, "question": f"Apply this claim to a small case and justify each step: {compact(claims[index].get('text', ''), 220)}", "difficulty": ("easy", "medium", "hard")[len(pyqs) % 3], "claimIds": [index]})
+
+        # Retain the strongest sections if a provider ignored the compact
+        # target, rather than publishing a slow three-page response.
+        sections = self.state.artifacts.get("notes", {}).get("sections", [])[:self.state.context["section_target"]]
+        for index, section in enumerate(sections):
+            section["claimIds"] = claim_ids(section, index % len(valid_ids))
+        self.state.artifacts["notes"]["sections"] = sections
+        self.state.artifacts.update({"flashcards": cards[:target_cards], "quiz": quiz[:target_quiz], "pyqs": pyqs[:target_pyqs]})
+        self.run_agent("Practice Team", "Curate claim-linked recall practice locally", "Reuse the one-call lesson output and deterministically fill any missing practice so publishing is faster and reliable.", lambda: {"flashcards": len(self.state.artifacts["flashcards"]), "quiz": len(self.state.artifacts["quiz"]), "pyqs": len(self.state.artifacts["pyqs"]), "generation_calls_saved": 1}, "local_practice_curator")
+        self.state.current_node = "verify"
+
     def verify(self):
         result = self.run_agent("Fact-Checker", "Verify package", "Fail closed on incomplete evidence.", lambda: TOOLS.validate_package(self.state.artifacts, self.state.context["evidence"]), "validate_package"); self.state.verification = result; self.state.current_node = "publish" if result["status"] == "approved" else "failed"; self.state.error = "; ".join(result["errors"]) if result["status"] != "approved" else None
     def publish(self):

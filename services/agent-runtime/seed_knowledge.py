@@ -10,13 +10,24 @@ adds new chunk versions; the collection can be dropped and rebuilt anytime).
 """
 from __future__ import annotations
 
+import argparse
+import html
 import os
 import re
 import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import urllib.robotparser
+from html.parser import HTMLParser
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))) if False else ".")
 
 from app.rag import OpenRouterRag  # noqa: E402
+from app.main import reference_routes  # noqa: E402
+from app.curriculum import curriculum_topics as curriculum_topic_map  # noqa: E402
 
 
 def slug(value: str) -> str:
@@ -125,8 +136,111 @@ BRIEFS: list[tuple[str, str, str, str, str]] = [
 ]
 
 
-def main() -> int:
-    rag = OpenRouterRag()
+
+class _VisibleText(HTMLParser):
+    """Conservative text extractor for opt-in, publicly accessible references."""
+    def __init__(self):
+        super().__init__()
+        self.parts: list[str] = []
+        self.skip = 0
+
+    def handle_starttag(self, tag: str, attrs):  # type: ignore[no-untyped-def]
+        if tag in {"script", "style", "noscript", "svg", "nav", "footer", "header"}:
+            self.skip += 1
+
+    def handle_endtag(self, tag: str):
+        if tag in {"script", "style", "noscript", "svg", "nav", "footer", "header"} and self.skip:
+            self.skip -= 1
+
+    def handle_data(self, data: str):
+        if not self.skip:
+            cleaned = " ".join(html.unescape(data).split())
+            if cleaned:
+                self.parts.append(cleaned)
+
+
+def curriculum_topics() -> list[tuple[str, str, str, str]]:
+    """Expose the canonical runtime/API topic map in deterministic order."""
+    return [
+        (topic_id, str(topic["module"]), str(topic["title"]), str(topic["description"]))
+        for topic_id, topic in curriculum_topic_map().items()
+    ]
+
+
+def allowed_by_robots(url: str, user_agent: str) -> bool:
+    """Never bypass a publisher's crawler policy."""
+    parsed = urllib.parse.urlparse(url)
+    robots = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+    parser = urllib.robotparser.RobotFileParser()
+    parser.set_url(robots)
+    try:
+        parser.read()
+    except Exception:
+        # Unknown policy is not consent. Use linked references without ingestion.
+        return False
+    return parser.can_fetch(user_agent, url)
+
+
+def fetch_visible_text(url: str, user_agent: str, limit: int = 12_000) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": user_agent, "Accept": "text/html,application/xhtml+xml"})
+    with urllib.request.urlopen(request, timeout=20) as response:
+        content_type = response.headers.get_content_type()
+        if content_type not in {"text/html", "application/xhtml+xml"}:
+            return ""
+        raw = response.read(1_500_000).decode(response.headers.get_content_charset() or "utf-8", errors="replace")
+    parser = _VisibleText()
+    parser.feed(raw)
+    # Keep meaningful source text but not a complete mirrored page. Qdrant chunks
+    # this further during ingestion; the source URL remains with every chunk.
+    return " ".join(parser.parts)[:limit]
+
+
+def seed_reference_sources(rag: OpenRouterRag, limit: int | None = None) -> int:
+    """Ingest permitted public reference text for every live curriculum topic.
+
+    This is deliberately opt-in because publishers control their pages and
+    robots policies. It does not write any downloaded material to the Git
+    checkout; Qdrant contains attributed, chunked search context only.
+    """
+    user_agent = "EduSwarmKnowledgeSeeder/1.0 (+https://github.com/sahil-gaikwad94/eduswarm)"
+    cache: dict[str, str] = {}
+    total = 0
+    indexed = 0
+    skipped = 0
+    topics = curriculum_topics()[:limit]
+    for index, (tid, _module, title, description) in enumerate(topics, start=1):
+        routes = reference_routes(tid, title)[:2]
+        for route_index, route in enumerate(routes):
+            url = route["url"]
+            if url not in cache:
+                if not allowed_by_robots(url, user_agent):
+                    print(f"[{index}] skip robots: {route['title']} ({url})")
+                    cache[url] = ""
+                else:
+                    try:
+                        cache[url] = fetch_visible_text(url, user_agent)
+                        time.sleep(0.4)  # polite pacing for distinct public pages
+                    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as exc:
+                        print(f"[{index}] skip fetch: {route['title']} ({type(exc).__name__})")
+                        cache[url] = ""
+            source_text = cache[url]
+            if len(source_text) < 300:
+                skipped += 1
+                continue
+            document = (
+                f"Topic scope: {title}. {description}\n\n"
+                f"Attributed reference extract from {route['title']} ({url}):\n{source_text}"
+            )
+            source_id = f"reference-{slug(title)}-{route_index}"
+            chunks = rag.ingest(source_id=source_id, title=f"{route['title']} — {title}", url=url, text=document, topic_ids=[tid])
+            total += chunks
+            indexed += 1
+        print(f"[{index}/{len(topics)}] {title} -> {tid}")
+    print(f"Indexed {indexed} attributed reference documents ({total} chunks); skipped {skipped} documents due to robots, fetch, or short content.")
+    return total
+
+
+def seed_curated_briefs(rag: OpenRouterRag) -> int:
     total = 0
     for index, (module, title, source_title, url, text) in enumerate(BRIEFS):
         tid = topic_id(module, title)
@@ -134,9 +248,19 @@ def main() -> int:
         chunks = rag.ingest(source_id=source_id, title=f"{source_title} — {title}", url=url, text=text, topic_ids=[tid])
         total += chunks
         print(f"[{index + 1}/{len(BRIEFS)}] {title} -> {tid} ({chunks} chunks)")
-    print(f"Seeded {total} chunks across {len(BRIEFS)} topics into '{os.getenv('QDRANT_COLLECTION', 'eduswarm_knowledge')}'.")
+    print(f"Seeded {total} curated brief chunks across {len(BRIEFS)} topics into '{os.getenv('QDRANT_COLLECTION', 'eduswarm_knowledge')}'.")
+    return total
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Seed EduSwarm's attributed Qdrant knowledge base.")
+    parser.add_argument("--fetch-references", action="store_true", help="Fetch and index public source text for every live topic only when robots.txt permits it.")
+    parser.add_argument("--limit", type=int, default=None, help="Limit curriculum topics; useful for a smoke run.")
+    args = parser.parse_args()
+    rag = OpenRouterRag()
+    if args.fetch_references:
+        seed_reference_sources(rag, max(1, args.limit) if args.limit else None)
+    else:
+        seed_curated_briefs(rag)
+        print("Tip: run `python seed_knowledge.py --fetch-references` to ingest permitted, attributed reference text for every curriculum topic.")
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

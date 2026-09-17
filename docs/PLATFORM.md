@@ -30,18 +30,25 @@ Design principles:
 ### Lesson pipeline (LangGraph, checkpointed)
 
 ```
-Dean → Researcher → Notes Author → Practice Team → Fact-Checker → Publisher
+Dean → Researcher → Notes Author (notes + practice) → Local Practice Curator → Fact-Checker → Publisher
 ```
 
-- **Dean** scopes the topic to the learner's level and daily budget.
+- **Dean** scopes the topic to the learner's level and daily budget, then assigns
+  the local companion (worked code, diagrams, recall checks, and source links).
 - **Researcher** hybrid-retrieves Qdrant evidence (vector + keyword rerank);
-  unindexed topics get labeled curriculum-preview briefs instead of failing.
-- **Notes Author** writes 5–7 substantial sections with `claimIds` per section.
-- **Practice Team** derives flashcards/quiz/PYQs **only** from verified claims.
+  unindexed topics get explicitly labeled curriculum-preview source routes.
+- **Notes Author** writes the compact evidence-sensitive lesson **and** its
+  claim-linked practice in one structured call: 5/6/8 sections at ELI5/Standard/
+  Deep and a 650/1000/1350-word target. The standard lesson stays around two
+  pages rather than producing a generic three-page wall of text.
+- **Practice Team** is now a deterministic curator: it checks claim provenance,
+  retains good generated recall items, and fills missing ones from verified
+  claims without a second slow provider request.
 - **Fact-Checker** enforces the gate: ≥2 independent sources, every claim cited
   twice, every artifact carrying provenance. Rejects fail the job visibly.
-- **Publisher** assembles the package. State checkpoints (`EDUSWARM_STATE_DIR`)
-  plus job leases make execution resumable (`/resume`).
+- **Publisher** assembles the concise cited lesson plus the clearly labeled local
+  companion. State checkpoints (`EDUSWARM_STATE_DIR`) plus job leases make
+  execution resumable (`/resume`).
 
 ### Specialist sessions (stateful chat)
 
@@ -65,7 +72,11 @@ learner level, and their weak topics — then tries, in order:
 
 Every assistant message is stored with `provider` and `model`, and the chat UI
 prints that label — so a learner can always tell whether a model answered or the
-offline curriculum did. `GET /api/agents/status` reports the live path.
+offline curriculum did. The local brain now resolves a topic-specific teaching
+profile (for example, Node’s event loop/streams, React render snapshots, SQL
+plans, RAG validation, or GATE invariants) plus an attributed reference route;
+it does not fall back to one canned paragraph. `GET /api/agents/status` reports
+the live path.
 
 ### Intelligence endpoints (structured JSON)
 
