@@ -25,8 +25,8 @@ Set these environment variables on **eduswarm-agent**:
 
 ```text
 OPENROUTER_API_KEY=<your own OpenRouter key>
-OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
-OPENROUTER_FALLBACK_MODELS=deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
+OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
+OPENROUTER_FALLBACK_MODELS=inclusionai/ling-3.0-flash-vl:free,qwen/qwen3.8-27b:free,deepseek/deepseek-v4-flash:free,thinkingmachines/inkling-small:free
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 QDRANT_URL=https://<your-qdrant-cluster-host>
 QDRANT_API_KEY=<your-qdrant-key>
@@ -60,8 +60,8 @@ MONGODB_URI=<atlas or render mongo>
 REDIS_URL=<render redis>
 OPENROUTER_API_KEY=<same key as the agent service>
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
-OPENROUTER_FALLBACK_MODELS=deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
+OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
+OPENROUTER_FALLBACK_MODELS=inclusionai/ling-3.0-flash-vl:free,qwen/qwen3.8-27b:free,deepseek/deepseek-v4-flash:free,thinkingmachines/inkling-small:free
 LLM_TIMEOUT_MS=90000
 ```
 
@@ -91,8 +91,8 @@ health response, and `mode: langgraph-openrouter-qdrant` from `/ready`.
 `/api/agents/status` tells you which brain will answer specialists:
 
 ```json
-{"runtime":{"online":true,"model":"meta-llama/llama-3.3-70b-instruct:free"},
- "directLlm":true,"models":["…"],"answerPath":"runtime"}
+{"runtime":{"online":true,"model":"nvidia/nemotron-3.5-lightning:free"},
+ "directLlm":true,"models":["nvidia/nemotron-3.5-lightning:free","…"],"answerPath":"runtime"}
 ```
 
 - `answerPath: "runtime"` — best case, retrieval-grounded answers.

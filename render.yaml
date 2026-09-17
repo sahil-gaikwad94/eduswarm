@@ -42,9 +42,9 @@ services:
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
       - key: OPENROUTER_MODEL
-        value: meta-llama/llama-3.3-70b-instruct:free
+        value: nvidia/nemotron-3.5-lightning:free
       - key: OPENROUTER_FALLBACK_MODELS
-        value: deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
+        value: inclusionai/ling-3.0-flash-vl:free,qwen/qwen3.8-27b:free,deepseek/deepseek-v4-flash:free,thinkingmachines/inkling-small:free
       - key: LLM_TIMEOUT_MS
         value: '240000'
       - key: AGENT_RUNTIME_TIMEOUT_MS
@@ -70,15 +70,15 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: meta-llama/llama-3.3-70b-instruct:free
+        value: nvidia/nemotron-3.5-lightning:free
       - key: OPENROUTER_FALLBACK_MODELS
-        value: deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
+        value: inclusionai/ling-3.0-flash-vl:free,qwen/qwen3.8-27b:free,deepseek/deepseek-v4-flash:free,thinkingmachines/inkling-small:free
       - key: OPENROUTER_REQUEST_TIMEOUT_SECONDS
-        value: 240
+        value: 120
       - key: OPENROUTER_STRUCTURED_MAX_TOKENS
         value: 2200
       - key: OPENROUTER_STRUCTURED_MAX_MODELS
-        value: 2
+        value: 4
       - key: OPENROUTER_STRUCTURED_RETRY_BACKOFF_SECONDS
         value: 2
       - key: OPENROUTER_BASE_URL
