@@ -62,9 +62,14 @@ const authMode = process.env.AUTH_MODE || (process.env.NODE_ENV === 'production'
 const allowLocalFallback =
   process.env.ALLOW_LOCAL_FALLBACK === 'true' ||
   (process.env.ALLOW_LOCAL_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
-const runtimeTimeoutMs = Math.max(3000, Number(process.env.AGENT_RUNTIME_TIMEOUT_MS || 10000));
-const runtimeMaxWaitMs = Math.max(5000, Number(process.env.AGENT_RUNTIME_MAX_WAIT_MS || 180000));
-const agentChatTimeoutMs = Math.max(10000, Number(process.env.AGENT_CHAT_TIMEOUT_MS || 300000));
+// Topic generation is intentionally allowed a longer window than a normal API
+// request: a structured lesson can take several provider/tool steps.
+const runtimeTimeoutMs = Math.max(3000, Number(process.env.AGENT_RUNTIME_TIMEOUT_MS || 30_000));
+const runtimeMaxWaitMs = Math.max(5000, Number(process.env.AGENT_RUNTIME_MAX_WAIT_MS || 600_000));
+const agentChatTimeoutMs = Math.max(10_000, Number(process.env.AGENT_CHAT_TIMEOUT_MS || 240_000));
+// A stale browser reconnect must not trigger recovery before the active runtime
+// job receives its configured generation window.
+const staleJobRecoveryMs = runtimeMaxWaitMs + 60_000;
 const recoverWithLocalFallback = allowLocalFallback || process.env.NODE_ENV === 'production';
 const sessionSecret = process.env.SESSION_SECRET || 'development-only-session-secret';
 const sessionCookie = 'eduswarm_session';
@@ -497,7 +502,7 @@ app.get('/api/jobs/:id', async (req: Request, res: Response) => {
   const job = await store.getJob(param(req.params.id));
   if (!job || job.ownerId !== user.id) return res.status(404).json({ error: 'Job not found' });
   const age = Date.now() - new Date(job.updatedAt || job.createdAt).getTime();
-  if (['queued', 'running'].includes(job.status) && age > 2 * 60 * 1000) {
+  if (['queued', 'running'].includes(job.status) && age > staleJobRecoveryMs) {
     if (recoverWithLocalFallback) void runLocalFallback(job.id, job.topicId);
     else void dispatchJob(job.id, job.topicId);
   }
@@ -512,10 +517,17 @@ app.get('/api/jobs/:id/events', async (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  // Keep job progress streaming through proxies while a model is composing a
+  // response. The browser already consumes this as an EventSource stream.
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders?.();
   res.write(`data: ${JSON.stringify(job)}\n\n`);
+  const heartbeat = setInterval(() => res.write(': keep-alive\n\n'), 15_000);
   const unsubscribe = await store.subscribe(param(req.params.id), (event) => res.write(`data: ${JSON.stringify(event)}\n\n`));
-  req.on('close', () => void unsubscribe());
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    void unsubscribe();
+  });
 });
 
 app.post('/api/jobs', async (req: Request, res: Response) => {
@@ -767,7 +779,7 @@ app.post('/api/agents/sessions/:id/messages', async (req: Request, res: Response
         topic_id: session.topicId || null, topic_title: topic?.title || null, goal,
         system, messages: history.concat({ role: 'user', text }),
       }),
-      signal: AbortSignal.timeout(Math.min(agentChatTimeoutMs, 120_000)),
+      signal: AbortSignal.timeout(agentChatTimeoutMs),
     });
     if (ai.ok) {
       const data = (await ai.json()) as any;

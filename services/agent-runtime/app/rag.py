@@ -87,7 +87,15 @@ class OpenRouterRag:
         # The API key is required for generation, but Qdrant-only operations
         # (ingest/search) work without it so knowledge tooling stays usable.
         self.qdrant = QdrantClient(url=self.settings.qdrant_url, api_key=self.settings.qdrant_api_key or None)
-        self.request_timeout = max(20, int(os.getenv("OPENROUTER_REQUEST_TIMEOUT_SECONDS", "75")))
+        self.request_timeout = max(20, int(os.getenv("OPENROUTER_REQUEST_TIMEOUT_SECONDS", "240")))
+        try:
+            configured_backoff = float(os.getenv("OPENROUTER_STRUCTURED_RETRY_BACKOFF_SECONDS", "2"))
+        except ValueError:
+            configured_backoff = 2.0
+        # Structured generation makes one alternate-model retry after a short
+        # bounded backoff. This absorbs transient free-tier/provider errors
+        # without turning a learner's job into an unbounded retry loop.
+        self.structured_retry_backoff_seconds = min(30.0, max(0.0, configured_backoff))
 
     def _require_key(self) -> None:
         if not self.settings.api_key:
@@ -206,12 +214,12 @@ class OpenRouterRag:
             "X-Title": "EduSwarm",
         }
         failures: list[str] = []
-        # Free model ids churn. Keep the compact-package path as resilient as
-        # chat by trying one alternate configured model only when the first
-        # cannot return valid JSON. The bounded attempt count keeps failures
-        # fast enough to reach the local companion instead of hanging a job.
-        max_models = max(1, min(5, int(os.getenv("OPENROUTER_STRUCTURED_MAX_MODELS", "2"))))
-        for model in self.model_chain()[:max_models]:
+        # Make one alternate-model retry when the primary cannot return valid
+        # JSON. It has a small backoff so a transient 429/5xx does not cause an
+        # immediate repeat request.
+        max_models = max(1, min(2, int(os.getenv("OPENROUTER_STRUCTURED_MAX_MODELS", "2"))))
+        models_to_try = self.model_chain()[:max_models]
+        for attempt, model in enumerate(models_to_try):
             request = urllib.request.Request(
                 f"{self.settings.base_url}/chat/completions",
                 data=json.dumps({**base_payload, "model": model}).encode("utf-8"),
@@ -237,6 +245,10 @@ class OpenRouterRag:
                     raise RuntimeError("OpenAI-compatible provider request failed: " + failures[-1]) from exc
             except (urllib.error.URLError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
                 failures.append(f"{model} {type(exc).__name__}: {exc}")
+
+            if attempt < len(models_to_try) - 1 and self.structured_retry_backoff_seconds:
+                time.sleep(self.structured_retry_backoff_seconds)
+
         raise RuntimeError("every configured model failed to return valid JSON — " + " | ".join(failures[:3]))
 
     def chat(self, messages: list[dict[str, str]], system: str) -> str:

@@ -118,7 +118,11 @@ adds Qdrant retrieval and is the preferred brain, but it is a separate service:
 when it is asleep or erroring, the API calls the model directly so specialists
 still answer with a real model instead of degrading silently. Model ids are a
 comma-separated chain (`OPENROUTER_MODEL`, then `OPENROUTER_FALLBACK_MODELS`);
-the first model that answers wins. Bring your own key — the repo ships none.
+the first model that answers wins. Structured lessons have a four-minute
+per-provider attempt window, make one retry after a two-second backoff, and the
+API keeps the learner's streamed job active for up to ten minutes before local
+recovery. Topic jobs use SSE (`/api/jobs/:id/events`) for live browser-facing
+progress and keep-alive heartbeats. Bring your own key — the repo ships none.
 
 ## API surface
 
