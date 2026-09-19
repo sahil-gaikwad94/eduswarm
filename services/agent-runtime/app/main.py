@@ -204,13 +204,25 @@ class KnowledgeDocument(BaseModel):
 
 # Every published lesson carries at least MIN_SECTIONS note sections, whichever
 # model wrote it: a model that returns two paragraphs is a weak reply, not a
-# lesson. Deep deliberately runs longer than the 5-6 section standard window.
+# lesson. Deep is a genuinely different artifact — a long-form treatment, not
+# the standard lesson with two extra headings — so it gets its own window and
+# is generated in two calls (see AgentGraph.compose).
 MIN_SECTIONS = 5
 MAX_SECTIONS = 6
-DEEP_MAX_SECTIONS = 9
+DEEP_MIN_SECTIONS = 10
+DEEP_MAX_SECTIONS = 14
 
 
-def check_lesson_shape(package: Any) -> None:
+def lesson_shape_checker(minimum: int = MIN_SECTIONS) -> Callable[[Any], None]:
+    """Build a validator that also enforces a depth-specific section floor."""
+
+    def check(package: Any) -> None:
+        check_lesson_shape(package, minimum=minimum)
+
+    return check
+
+
+def check_lesson_shape(package: Any, minimum: int = MIN_SECTIONS) -> None:
     """Reject a structurally unusable lesson so the router tries another model.
 
     This runs *inside* the model chain (as `structured_generate`'s validator),
@@ -226,10 +238,10 @@ def check_lesson_shape(package: Any) -> None:
     usable = [section for section in sections if isinstance(section, dict) and str(section.get("heading", "")).strip() and str(section.get("body", "")).strip()]
     if not usable:
         raise ValueError("no note section has both a heading and a body")
-    if len(usable) < MIN_SECTIONS:
+    if len(usable) < minimum:
         # A model that ignored the section count produces a thin lesson, so try
         # the next one rather than publishing two paragraphs.
-        raise ValueError(f"only {len(usable)} usable note sections; at least {MIN_SECTIONS} are required")
+        raise ValueError(f"only {len(usable)} usable note sections; at least {minimum} are required")
     package["notes"]["sections"] = usable
     claims = package.get("claims")
     if not isinstance(claims, list) or not claims:
@@ -303,7 +315,7 @@ class AgentGraph:
         plans = {
             "eli5": {"sections": 5, "word_budget": 620, "practice": (5, 4, 2), "tone": "a story-first explainer for a complete beginner; define jargon immediately and use one tiny example"},
             "standard": {"sections": 6, "word_budget": 900, "practice": (5, 4, 3), "tone": "a concise, rigorous tutor; prioritize the mental model, formal rule, worked trace, trade-off, and trap"},
-            "deep": {"sections": 9, "word_budget": 1700, "practice": (6, 5, 3), "tone": "a senior mentor; add a compact proof or derivation and production or transfer trade-off without repeating the standard material"},
+            "deep": {"sections": 12, "word_budget": 3000, "practice": (10, 8, 5), "tone": "a senior mentor writing a definitive long-form treatment; derive results rather than asserting them, and cover the material an interviewer or examiner would probe after the obvious answer"},
         }
         plan = plans[depth]
         self.state.context = {
@@ -347,22 +359,84 @@ class AgentGraph:
         if len({item["source_id"] for item in evidence}) < 2: self.state.current_node = "failed"; self.state.error = "Insufficient independent retrieved evidence"; return
         self.state.current_node = "compose"
 
-    def compose(self):
-        evidence = self.state.context["evidence"]
-        flashcards, quiz, pyqs = self.state.context["practice_target"]
-        prompt = f'''You are the EduSwarm lesson author, {self.state.context['tone']}. Return JSON only. Build one compact, evidence-grounded package with this exact shape:
-{{"notes":{{"sections":[{{"heading":str,"body":str,"claimIds":[int]}}]}},"claims":[{{"text":str,"evidenceIds":[str,str]}}],"flashcards":[{{"question":str,"answer":str,"claimIds":[int]}}],"quiz":[{{"question":str,"options":[str,str,str,str],"answer":int,"explanation":str,"claimIds":[int]}}],"pyqs":[{{"year":int,"question":str,"difficulty":"easy|medium|hard","claimIds":[int]}}]}}.
+    SHAPE = '{"notes":{"sections":[{"heading":str,"body":str,"claimIds":[int]}]},"claims":[{"text":str,"evidenceIds":[str,str]}],"flashcards":[{"question":str,"answer":str,"claimIds":[int]}],"quiz":[{"question":str,"options":[str,str,str,str],"answer":int,"explanation":str,"claimIds":[int]}],"pyqs":[{"year":int,"question":str,"difficulty":"easy|medium|hard","claimIds":[int]}]}'
 
-Topic: {self.state.context['topic']['title']}. Learner level: {self.state.learner_level}. Write exactly {self.state.context['section_target']} note sections and approximately {self.state.context['word_budget']} words across the note bodies (never more than {self.state.context['word_budget'] + 150}). Use this order where applicable: intuition and scope; definitions/mental model; one worked trace; implementation or applied workflow; trade-offs and failure modes; exam/interview or production transfer; then compact proof/advanced sections only for deep. Each body is 1–2 short paragraphs; use at most one small code or table block in the whole notes. Do not repeat definitions. A local companion already supplies extra code, diagrams, source links, and drills.
+    def evidence_block(self) -> str:
+        return "EVIDENCE:\n" + "\n\n".join(
+            f"[chunk_id={item['chunk_id']}; source={item['title']}; url={item['url']}]\n{item['text']}"
+            for item in self.state.context["evidence"]
+        )
+
+    def compose(self):
+        """Author the lesson. Deep is split into two calls; the rest use one.
+
+        A 3000-word long-form treatment plus 10 flashcards, 8 quiz items and 5
+        prompts cannot fit one free-tier response without truncating, and a
+        truncated deep lesson is worse than a shorter one. So deep asks for
+        notes and claims first, then practice against those claims. Standard and
+        ELI5 stay on the single call, which is faster and has always fit.
+        """
+        if self.state.context.get("depth") == "deep":
+            return self.compose_deep()
+
+        context = self.state.context
+        flashcards, quiz, pyqs = context["practice_target"]
+        prompt = f'''You are the EduSwarm lesson author, {context['tone']}. Return JSON only. Build one compact, evidence-grounded package with this exact shape:
+{self.SHAPE}.
+
+Topic: {context['topic']['title']}. Learner level: {self.state.learner_level}. Write exactly {context['section_target']} note sections and approximately {context['word_budget']} words across the note bodies (never more than {context['word_budget'] + 150}). Use this order where applicable: intuition and scope; definitions/mental model; one worked trace; implementation or applied workflow; trade-offs and failure modes; exam/interview or production transfer. Each body is 1-2 short paragraphs; use at most one small code or table block in the whole notes. Do not repeat definitions. A local companion already supplies extra code, diagrams, source links, and drills.
 
 Create {flashcards} active-recall flashcards, {quiz} four-option quiz questions, and {pyqs} exam/application prompts in the SAME response. Quiz explanations must give the governing rule and why the most tempting distractor is wrong. Every section and practice item needs claimIds. Make claims atomically checkable. Write 8 to 10 claims in total. Every claim must cite exactly two distinct chunk IDs from two different sources, and use no facts outside the evidence. Output only the JSON object, keys in order notes, claims, flashcards, quiz, pyqs.
 
-EVIDENCE:
-''' + "\n\n".join(f"[chunk_id={item['chunk_id']}; source={item['title']}; url={item['url']}]\n{item['text']}" for item in evidence)
+''' + self.evidence_block()
         # The shape check runs inside the model chain: a structurally wrong
         # reply costs one model attempt instead of failing the learner's job.
-        generated = self.run_agent("Notes Author", "Generate the compact lesson and practice in one model call", "A single schema-constrained response removes a slow second provider request while retaining claim provenance.", lambda: self.rag.structured_generate(prompt, validator=check_lesson_shape, long=self.state.context.get("depth") == "deep"), "structured_generate")
-        self.state.artifacts.update(generated); self.state.current_node = "practice"
+        generated = self.run_agent("Notes Author", "Generate the compact lesson and practice in one model call", "A single schema-constrained response removes a slow second provider request while retaining claim provenance.", lambda: self.rag.structured_generate(prompt, validator=lesson_shape_checker(MIN_SECTIONS)), "structured_generate")
+        self.state.artifacts.update(generated)
+        self.state.current_node = "practice"
+
+    def compose_deep(self):
+        """Two-call long-form authoring: notes and claims, then practice."""
+        context = self.state.context
+        flashcards, quiz, pyqs = context["practice_target"]
+        notes_prompt = f'''You are the EduSwarm lesson author, {context['tone']}. Return JSON only with this exact shape:
+{{"notes":{{"sections":[{{"heading":str,"body":str,"claimIds":[int]}}]}},"claims":[{{"text":str,"evidenceIds":[str,str]}}]}}.
+
+Topic: {context['topic']['title']}. Learner level: {self.state.learner_level}. This is the DEEP treatment: write exactly {context['section_target']} note sections totalling roughly {context['word_budget']} words. Go well beyond an introduction. Cover, in a sensible order: intuition and scope; precise definitions and the mental model; a fully worked trace with intermediate state; the formal statement and a compact derivation or proof sketch; complexity or cost analysis; implementation with the decisions that matter; edge cases and failure modes; trade-offs against at least two named alternatives and when each wins; how the idea generalises or transfers; what an examiner or interviewer probes after the obvious answer; and common misconceptions with the reason each is wrong.
+
+Each body is 2-3 substantial paragraphs. Derive results rather than asserting them, and do not repeat a definition once given. Write 10 to 14 claims in total, each atomically checkable and citing exactly two distinct chunk IDs from two different sources. Use no facts outside the evidence. Output only the JSON object, keys in order notes, claims.
+
+''' + self.evidence_block()
+        notes = self.run_agent("Notes Author", f"Write the deep lesson ({context['section_target']} sections)", "A long-form treatment needs its own call; sharing one response with practice would truncate the JSON.", lambda: self.rag.structured_generate(notes_prompt, validator=lesson_shape_checker(DEEP_MIN_SECTIONS), long=True), "structured_generate")
+        self.state.artifacts.update(notes)
+
+        claims = self.state.artifacts.get("claims", [])
+        claim_list = "\n".join(f"{index}. {claim.get('text', '')}" for index, claim in enumerate(claims))
+        practice_prompt = f'''Return JSON only with this exact shape:
+{{"flashcards":[{{"question":str,"answer":str,"claimIds":[int]}}],"quiz":[{{"question":str,"options":[str,str,str,str],"answer":int,"explanation":str,"claimIds":[int]}}],"pyqs":[{{"year":int,"question":str,"difficulty":"easy|medium|hard","claimIds":[int]}}]}}.
+
+Topic: {context['topic']['title']}. Build exam-grade practice for the deep lesson whose verified claims are listed below. Create exactly {flashcards} active-recall flashcards, {quiz} four-option quiz questions, and {pyqs} application or exam prompts.
+
+Make the quiz discriminating: test the reasoning, not recall of a phrase. Every explanation must give the governing rule and say why the most tempting distractor is wrong. At least two prompts must require multi-step work. Every item needs claimIds referring to the numbered claims below, and must stay within what those claims support.
+
+CLAIMS:
+{claim_list}
+'''
+
+        def check_practice(package: Any) -> None:
+            if not isinstance(package, dict) or not package.get("flashcards") or not package.get("quiz"):
+                raise ValueError("the practice reply is missing flashcards or quiz items")
+
+        try:
+            practice = self.run_agent("Practice Author", f"Write deep practice ({flashcards} cards, {quiz} quiz, {pyqs} prompts)", "Deep practice is generated against the finished claims so it can be harder and multi-step.", lambda: self.rag.structured_generate(practice_prompt, validator=check_practice, long=True), "structured_generate")
+        except Exception:
+            # Practice is recoverable: the local curator fills it from the
+            # claims. Losing the long-form notes to a practice failure is not.
+            practice = {}
+        for key in ("flashcards", "quiz", "pyqs"):
+            if practice.get(key):
+                self.state.artifacts[key] = practice[key]
+        self.state.current_node = "practice"
 
     def practice(self):
         """Curate/fill practice locally instead of making a second model call."""
@@ -402,8 +476,10 @@ EVIDENCE:
         # Retain the strongest sections if a provider ignored the compact
         # target, rather than publishing a slow three-page response. The floor
         # is enforced upstream by check_lesson_shape, so this only trims.
-        ceiling = DEEP_MAX_SECTIONS if self.state.context.get("depth") == "deep" else MAX_SECTIONS
-        sections = self.state.artifacts.get("notes", {}).get("sections", [])[:max(MIN_SECTIONS, min(ceiling, self.state.context["section_target"]))]
+        deep = self.state.context.get("depth") == "deep"
+        ceiling = DEEP_MAX_SECTIONS if deep else MAX_SECTIONS
+        floor = DEEP_MIN_SECTIONS if deep else MIN_SECTIONS
+        sections = self.state.artifacts.get("notes", {}).get("sections", [])[:max(floor, min(ceiling, self.state.context["section_target"]))]
         for index, section in enumerate(sections):
             section["claimIds"] = claim_ids(section, index % len(valid_ids))
         self.state.artifacts["notes"]["sections"] = sections

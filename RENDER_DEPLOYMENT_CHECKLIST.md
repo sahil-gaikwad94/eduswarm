@@ -33,7 +33,7 @@ EDUSWARM_STATE_DIR=/tmp/eduswarm-state
 EDUSWARM_LOCAL_KITS_DIR=/tmp/eduswarm-state/local-kits
 ```
 
-### Seed the offline study kits
+### Seed the runtime's offline evidence (Qdrant tier)
 
 Local kits are the evidence tier between Qdrant and the thin curriculum preview:
 attributed tutorial extracts stored on the mounted disk, so a topic stays
@@ -177,3 +177,28 @@ curated blog library is static reference data served from
 
 Never commit provider keys, Qdrant keys, database credentials, OAuth secrets, or
 session secrets.
+
+
+## Licensed tutorial kits (the offline lesson path)
+
+When the model chain fails, the API serves a local lesson. Seed the licensed
+kits so that lesson carries the publisher's real explanation instead of generic
+curated prose:
+
+```bash
+npm run seed:kits                       # all 237 topics
+node scripts/seed-kits.mjs --limit 5    # smoke run
+npm run kits:report                     # coverage, no fetching
+```
+
+Set `EDUSWARM_KITS_DIR` to a path on a mounted disk (`/var/data/kits` in
+`render.yaml`) so kits survive a redeploy, and re-run the seeder when the
+curriculum grows.
+
+Only GeeksforGeeks, MDN and W3Schools are enabled, because those are the rights
+we hold — the allow-list lives in `scripts/seed-kits.mjs` and any other host is
+skipped, never silently cached. Extracted text stays out of Git entirely
+(`.data/` is ignored) and every section renders its source link and licence
+note. Topics without a kit fall back to the curated tutorial, so partial
+coverage is completely safe: seed what you have rights to today and re-run as
+the rest land.

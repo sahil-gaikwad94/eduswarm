@@ -107,6 +107,31 @@ treats them as discovered infrastructure:
 Regression coverage lives in `services/agent-runtime/test_llm_router.py` and
 `apps/api/src/llm.test.ts`, both driven by a fake OpenRouter on localhost.
 
+### Offline lesson path: licensed tutorial kits
+
+When every model fails, `buildLocalPack` still has to hand back a real lesson.
+It has two tiers:
+
+1. **Seeded kit** (`apps/api/src/kitStore.ts`, `evidenceMode: local-kit`) — the
+   publisher's actual explanation for that exact topic, extracted into sections,
+   code samples, definitions and key points, each tagged with the source it came
+   from. Produced by `npm run seed:kits`, which:
+   - only fetches from an explicit allow-list (GeeksforGeeks, MDN, W3Schools —
+     the publishers we hold rights for). Any other host is skipped and reported.
+   - obeys `robots.txt` per origin and paces requests.
+   - writes to `EDUSWARM_KITS_DIR` (gitignored `.data/kits` locally, a Render
+     disk in production). **No third-party article text is ever committed.**
+   - records the URL and a licence note on every extract, which the lesson
+     renders as a `*Source: …*` line under each section and surfaces in
+     `verification.licenseNotes`.
+   A kit needs ≥3 substantial sections to be used; thinner ones are rejected.
+2. **Curated tutorial** (`evidenceMode: local-fallback`) — the original
+   hand-written profiles. Always available, used for any topic without a kit.
+
+Both tiers emit the same lesson shape and the same 5-6 section window (more at
+deep), so the UI and the learner see one consistent artifact regardless of which
+path produced it. `npm run kits:report` prints coverage.
+
 ### Specialist sessions (stateful chat)
 
 Seven persistent personas share one grounded chat endpoint: Socratic Tutor, PYQ

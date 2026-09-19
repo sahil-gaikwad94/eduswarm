@@ -348,8 +348,9 @@ test('local study kits are compact, topic-aware, and source-linked', async () =>
   assert.equal(pack.verification.sourceRefs.length >= 2, true);
   assert.equal(pack.readingMinutes > 0, true);
   const deep = buildLocalPack('algo-complexity', topic, 'deep');
-  assert.equal(deep.notes.sections.length > pack.notes.sections.length, true, 'deep genuinely teaches more than standard');
-  assert.equal(deep.notes.sections.length <= 9, true);
+  assert.equal(deep.notes.sections.length >= 10, true, 'deep is a long-form treatment, not standard plus a heading');
+  assert.equal(deep.notes.sections.length >= 2 * pack.notes.sections.length - 1, true, 'deep is substantially deeper than standard');
+  assert.equal(deep.notes.sections.length <= 14, true);
 
   const node = getTopic('web-dev-backend-with-node-js-node-js-runtime')!;
   const nodePack = buildLocalPack(node.id, node, 'standard');
@@ -540,4 +541,103 @@ test('regeneration fails loudly and keeps the saved kit when the runtime is offl
   const after = await request('/api/learning/content/algo-sorting', { headers });
   assert.equal(after.status, 200);
   assert.deepEqual(after.body, saved.body, 'the saved kit is byte-identical after a failed regen');
+});
+
+test('a seeded licensed kit supplies real extracted tutorial content', async () => {
+  const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'eduswarm-kits-'));
+  mkdirSync(dir, { recursive: true });
+  const previous = process.env.EDUSWARM_KITS_DIR;
+  process.env.EDUSWARM_KITS_DIR = dir;
+
+  writeFileSync(join(dir, 'algo-complexity.json'), JSON.stringify({
+    topicId: 'algo-complexity', title: 'Time and Space Complexity', fetchedAt: new Date().toISOString(),
+    sources: [{ publisher: 'GeeksforGeeks', title: 'Binary Search', url: 'https://www.geeksforgeeks.org/binary-search/', licenseNote: 'Licensed for offline study.' }],
+    sections: [
+      { heading: 'What is Binary Search?', body: 'Binary Search is a searching algorithm used in a sorted array by repeatedly dividing the search interval in half, reducing the time complexity to O(log N) overall.', sourceIndex: 0 },
+      { heading: 'Algorithm Steps', body: 'Divide the search space in half by computing the middle index, then compare the middle element against the key you are searching for right now.', sourceIndex: 0 },
+      { heading: 'Time Complexity', body: 'Time complexity is O(log N) because the search space halves each iteration until it becomes empty, and auxiliary space is O(1) iteratively.', sourceIndex: 0 },
+    ],
+    codeExamples: [{ title: 'Binary search', language: 'python', code: 'def bs(a, x):\n    lo, hi = 0, len(a) - 1\n    return -1', explanation: 'Worked example from the tutorial.', sourceIndex: 0 }],
+    keyPoints: ['The array must always be sorted before applying binary search, or the result is undefined.'],
+    definitions: [{ term: 'Binary Search', meaning: 'a searching algorithm that halves a sorted interval until the key is found.', sourceIndex: 0 }],
+  }));
+
+  const { clearKitCache } = await import('./kitStore.js');
+  clearKitCache();
+  const { buildLocalPack } = await import('./localPack.js');
+  const { getTopic } = await import('./curriculum.js');
+  const pack = buildLocalPack('algo-complexity', getTopic('algo-complexity')!, 'standard');
+
+  assert.equal(pack.verification.evidenceMode, 'local-kit');
+  assert.equal(pack.verification.provider, 'licensed-tutorial-kits');
+  assert.equal(pack.verification.licenseNotes.includes('Licensed for offline study.'), true, 'the licence note reaches the UI');
+
+  // The publisher's real explanation, not our generic prose.
+  const bodies = pack.notes.sections.map((section: any) => section.body).join('\n');
+  assert.equal(bodies.includes('repeatedly dividing the search interval in half'), true, 'extracted prose is used verbatim');
+  assert.equal(bodies.includes('*Source: [GeeksforGeeks'), true, 'every extract stays attributed');
+  assert.equal(pack.notes.sections.length >= 5 && pack.notes.sections.length <= 6, true);
+  const headings = pack.notes.sections.map((section: any) => section.heading);
+  assert.equal(headings[0].startsWith('Introduction to'), true, 'kits keep the same teaching flow as curated packs');
+  assert.equal(headings.includes('What is Binary Search?'), true);
+  assert.equal(pack.codeExamples[0].language, 'python');
+  assert.equal(pack.flashcards.length > 0 && pack.quiz.length > 0, true);
+  assert.equal(pack.cheatSheet.some((line: string) => line.includes('Binary Search')), true);
+
+  // A deep kit lesson uses more of the extracted material.
+  const deep = buildLocalPack('algo-complexity', getTopic('algo-complexity')!, 'deep');
+  assert.equal(deep.flashcards.length >= pack.flashcards.length, true);
+
+  process.env.EDUSWARM_KITS_DIR = previous;
+  clearKitCache();
+});
+
+test('an unseeded or unusable kit falls back to the curated tutorial', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'eduswarm-kits-'));
+  const previous = process.env.EDUSWARM_KITS_DIR;
+  process.env.EDUSWARM_KITS_DIR = dir;
+
+  // Too thin to teach from: must be ignored rather than published.
+  writeFileSync(join(dir, 'algo-sorting.json'), JSON.stringify({
+    topicId: 'algo-sorting', title: 'Searching and Sorting', fetchedAt: new Date().toISOString(),
+    sources: [{ publisher: 'GeeksforGeeks', title: 'Sorting', url: 'https://www.geeksforgeeks.org/sorting-algorithms/' }],
+    sections: [{ heading: 'Intro', body: 'Too short.', sourceIndex: 0 }], codeExamples: [], keyPoints: [], definitions: [],
+  }));
+
+  const { clearKitCache, hasKit } = await import('./kitStore.js');
+  clearKitCache();
+  assert.equal(hasKit('algo-sorting'), false, 'a thin kit is rejected');
+  assert.equal(hasKit('algo-graphs'), false, 'a missing kit is simply absent');
+
+  const { buildLocalPack } = await import('./localPack.js');
+  const { getTopic } = await import('./curriculum.js');
+  for (const id of ['algo-sorting', 'algo-graphs']) {
+    const pack = buildLocalPack(id, getTopic(id)!, 'standard');
+    assert.equal(pack.verification.evidenceMode, 'local-fallback', `${id} uses the curated tutorial`);
+    assert.equal(pack.notes.sections.length >= 5, true);
+  }
+
+  process.env.EDUSWARM_KITS_DIR = previous;
+  clearKitCache();
+});
+
+test('the kit seeder only accepts publishers we hold rights for', async () => {
+  // The seeder is plain JS tooling outside the API's type graph.
+  const seeder: any = await import(/* @vite-ignore */ '../../../scripts/seed-kits.mjs' as any);
+  const { publisherFor, parseRobots } = seeder;
+  assert.equal(publisherFor('https://www.geeksforgeeks.org/binary-search/')?.publisher, 'GeeksforGeeks');
+  assert.equal(publisherFor('https://developer.mozilla.org/en-US/docs/Web/CSS')?.publisher, 'MDN Web Docs');
+  assert.equal(publisherFor('https://www.w3schools.com/css/default.asp')?.publisher, 'W3Schools');
+  assert.equal(publisherFor('https://example.com/tutorial'), null, 'unlicensed publishers are refused');
+  assert.equal(publisherFor('https://stackoverflow.com/questions/1'), null);
+  assert.equal(publisherFor('https://www.geeksforgeeks.org/x/')?.licenseNote?.length > 10, true, 'a licence note is recorded');
+
+  const rules = parseRobots('User-agent: *\nDisallow: /private\nAllow: /private/ok\n');
+  assert.equal(rules.length, 2);
 });

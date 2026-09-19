@@ -12,6 +12,7 @@
 
 import { QUESTION_BANK, type Question } from './questionBank.js';
 import { localKnowledgeFor, referencesFor } from './localKnowledge.js';
+import { loadKit, type StudyKit } from './kitStore.js';
 
 export type PackDepth = 'eli5' | 'standard' | 'deep';
 export type TopicRef = { title: string; description: string; module?: string };
@@ -238,6 +239,11 @@ function pickDiagrams(topic: TopicRef, count = 3): Diagram[] {
  * in one focused sitting while the linked docs remain available for detail.
  */
 export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDepth = 'standard'): any {
+  // A seeded kit carries the publisher's actual explanation for this exact
+  // topic, which beats a curated profile matched on keywords. Absent one, the
+  // original curated path below runs unchanged.
+  const kit = loadKit(topicId);
+  if (kit) return buildKitPack(topicId, topic, depth, kit);
   const knowledge = localKnowledgeFor({ ...topic, id: topicId });
   const references = referencesFor({ ...topic, id: topicId });
   const related = relatedQuestions(topic, 6);
@@ -279,6 +285,11 @@ export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDept
     sections.splice(4, 0,
       S('Trade-offs and transfer', `Strong answers compare alternatives instead of presenting one technique as magic. For ${title}, name the precondition that makes the standard approach valid, the resource it consumes (time, memory, complexity, or operational risk), and the signal that tells you to choose a different approach.\n\nTransfer drill: take the guided example and change its scale, ordering, failure mode, or correctness requirement. Re-state the invariant or contract before deciding whether the same solution still holds.`),
       S('Prove it, test it, teach it', `Use a four-beat proof or review: **initialization** (why the starting state is valid), **maintenance** (why each step preserves the rule), **termination** (why progress cannot continue forever), and **conclusion** (why the final state solves the original problem).\n\nThen teach ${title} in two minutes using one diagram, one example, and the trap above. A clear explanation under this constraint is a stronger signal of mastery than a longer summary.`),
+      S('Cost and complexity analysis', `State the cost before optimising it. For ${title}, write down what you are counting (operations, comparisons, allocations, round trips, or wall-clock time), then the cost in the best, average, and worst case, and say which input shape produces each.\n\nSeparate the resource you spend from the resource you save — extra memory for speed, precomputation for query time, or consistency for availability. An answer that names the exchange is worth more than one that quotes a single figure, because the figure changes with the assumptions.`),
+      S('Edge cases and failure modes', `Work the boundaries deliberately: the empty input, a single element, all-equal elements, the maximum size you support, and a malformed or hostile input. For each, state what your approach does and whether that is the behaviour you want.\n\nThen ask how it fails under load or partial failure: what happens when the input is ten times larger, when a dependency times out, or when two operations run concurrently. Most production and exam mistakes live here rather than in the happy path.`),
+      S('Alternatives and when each wins', `Name at least two competing approaches for ${title} and the condition that decides between them. A technique is rarely better in general — it is better given a data shape, a size, a read/write ratio, or a correctness requirement.\n\nWrite the decision as a rule you could apply under time pressure: "use A when …, switch to B once …". ${knowledge.trap} Being able to defend the choice is what separates a strong answer from a memorised one.`),
+      S('How examiners and interviewers probe this', `The first question checks whether you know the result. The follow-ups check whether you understand it: expect to be asked to justify a step, change an assumption and redo the reasoning, give the cost, or produce an input that breaks the obvious approach.\n\nRehearse the second layer explicitly. Take the worked example above, change one assumption, and narrate the new reasoning aloud. If your explanation collapses when an assumption moves, you have memorised the answer rather than the method.`),
+      S('Common misconceptions, and why they are wrong', `Collect the plausible-but-wrong statements about ${title} and, for each, the single counterexample that kills it. A misconception you can refute with a concrete case will not survive to the exam; one you have only been told is wrong usually does.\n\nThe most common failure is applying the technique outside its preconditions because the surface pattern looked familiar. Before you apply it, restate the precondition and check it holds — that habit prevents most of these errors at once.`),
     );
   }
 
@@ -315,7 +326,7 @@ export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDept
   ].slice(0, 7);
   // Hard guarantee, matching the AI lesson: 5-6 sections at eli5/standard, and
   // genuinely more at deep rather than the same lesson with a different label.
-  const maxSections = depth === 'deep' ? 9 : 6;
+  const maxSections = depth === 'deep' ? 14 : 6;
   if (sections.length > maxSections) sections.length = maxSections;
   while (sections.length < 5) {
     sections.push(S(`Retrieval practice for ${title}`, `Close the page and write down, from memory: the mental model, the procedure you would follow, and the trap that makes a plausible answer wrong. Then reopen the lesson and mark the part you could not reproduce.\n\n**Check yourself:** ${knowledge.check}`));
@@ -345,5 +356,118 @@ export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDept
     flashcards,
     quiz,
     pyqs: related.slice(0, 3).map((q) => ({ year: q.year, question: q.question, difficulty: q.difficulty })),
+  };
+}
+
+// ------------------------------------------------------- seeded kit builder
+
+/**
+ * Build a lesson from a seeded kit: the publisher's real explanation, arranged
+ * into the same teaching flow as the curated pack (overview → concepts →
+ * worked example → practice) so the UI and the learner see one consistent
+ * shape whichever path produced the lesson.
+ *
+ * Every section keeps an attribution line naming the publisher it came from,
+ * because this is extracted third-party text rather than our own prose.
+ */
+function buildKitPack(topicId: string, topic: TopicRef, depth: PackDepth, kit: StudyKit): any {
+  const title = topic.title || kit.title;
+  const S = (heading: string, body: string) => ({ heading, body });
+  const credit = (index: number) => {
+    const source = kit.sources[index] || kit.sources[0];
+    return source ? `\n\n*Source: [${source.publisher} — ${source.title}](${source.url})*` : '';
+  };
+  const budget = depth === 'eli5' ? 5 : depth === 'deep' ? 14 : 6;
+
+  const sections: any[] = [];
+  sections.push(S(
+    `Introduction to ${title}`,
+    `${topic.description || kit.sections[0]?.body.slice(0, 220) || ''}\n\n**How to use this kit:** the explanations below are extracted from ${
+      [...new Set(kit.sources.map((source) => source.publisher))].join(', ')
+    }, which we licence for offline study. Read once, work the example, then follow the source links for the full article.`,
+  ));
+
+  if (kit.definitions.length) {
+    sections.push(S('Key terms', kit.definitions.map((item) => `**${item.term}** — ${item.meaning}`).join('\n\n') + credit(kit.definitions[0].sourceIndex)));
+  }
+
+  // The extracted article body is the substance of the lesson.
+  for (const section of kit.sections) {
+    if (sections.length >= budget - 1) break;
+    sections.push(S(section.heading, section.body + credit(section.sourceIndex)));
+  }
+
+  if (kit.keyPoints.length) {
+    sections.push(S(
+      `Key points to remember`,
+      kit.keyPoints.map((point) => `• ${point}`).join('\n') +
+      `\n\n**Exit check:** explain ${title} without the page, work the smallest non-trivial example, then name one input or assumption where the standard approach fails.`,
+    ));
+  }
+
+  const related = relatedQuestions(topic, 6);
+  if (related[0] && sections.length < budget) {
+    sections.push(S(
+      'Practice anchor',
+      `**${related[0].subject}, ${related[0].year}:** ${related[0].question}\n\nChoose an option and state the rule you used before reading on. **Answer:** ${related[0].options[related[0].answer]}. ${related[0].explanation}`,
+    ));
+  }
+  if (sections.length > budget) sections.length = budget;
+  while (sections.length < 5) {
+    sections.push(S(
+      `Retrieval practice for ${title}`,
+      `Close the page and write down the definition, the procedure, and the mistake that makes a plausible answer wrong. Reopen the kit and mark whichever one you could not reproduce — that is the part to re-read.`,
+    ));
+  }
+
+  const flashcards = [
+    ...kit.definitions.map((item) => ({ question: `What does "${item.term}" mean in ${title}?`, answer: item.meaning })),
+    ...kit.keyPoints.map((point, index) => ({ question: `${title}: key point ${index + 1}?`, answer: point })),
+    ...related.slice(0, 2).map((question) => ({ question: question.question, answer: `${question.options[question.answer]} — ${question.explanation}` })),
+  ].slice(0, depth === 'eli5' ? 5 : depth === 'deep' ? 10 : 7);
+
+  const quiz = [
+    ...related.slice(0, depth === 'deep' ? 6 : 3).map((question) => ({ question: question.question, options: question.options, answer: question.answer, explanation: question.explanation })),
+    ...kit.definitions.slice(0, 2).map((item) => ({
+      question: `Which statement best describes "${item.term}"?`,
+      options: [item.meaning.slice(0, 160), `A restatement that drops the conditions on ${item.term}`, 'A definition borrowed from an unrelated topic', `The opposite of how ${item.term} behaves`],
+      answer: 0,
+      explanation: `${item.meaning} The other options either drop the stated conditions, belong to another topic, or invert the behaviour.`,
+    })),
+  ].slice(0, depth === 'eli5' ? 4 : depth === 'deep' ? 8 : 5);
+
+  const cheatSheet = [
+    ...kit.definitions.map((item) => `${item.term}: ${item.meaning}`),
+    ...kit.keyPoints,
+  ].slice(0, 8);
+
+  const words = sections.reduce((total, section) => total + String(section.body).trim().split(/\s+/).length, 0);
+  const references = kit.sources.map((source) => ({ title: source.title, publisher: source.publisher, url: source.url, kind: 'reference' as const }));
+
+  return {
+    topicId,
+    title,
+    depth,
+    generatedAt: new Date().toISOString(),
+    readingMinutes: Math.max(4, Math.round(words / 190)),
+    verification: {
+      status: 'fallback',
+      evidenceMode: 'local-kit',
+      provider: 'licensed-tutorial-kits',
+      fallbackReason: 'The AI team was unavailable, so this lesson was built from licensed tutorial sources already stored offline.',
+      sources: kit.sources.map((source) => `${source.publisher}: ${source.title}`),
+      sourceRefs: references,
+      licenseNotes: [...new Set(kit.sources.map((source) => source.licenseNote).filter(Boolean))],
+      kitFetchedAt: kit.fetchedAt,
+      claimsChecked: kit.sections.length,
+    },
+    notes: { sections },
+    codeExamples: kit.codeExamples.map((item) => ({ title: item.title, language: item.language, code: item.code, explanation: item.explanation })),
+    diagrams: pickDiagrams(topic, 1).map((item: any) => ({ title: item.title, caption: item.caption, mermaid: item.mermaid })),
+    cheatSheet,
+    videos: references.map((reference) => ({ title: `${reference.publisher}: ${reference.title}`, url: reference.url, timestamp: 'Read next' })),
+    flashcards,
+    quiz,
+    pyqs: related.slice(0, depth === 'deep' ? 5 : 3).map((question) => ({ year: question.year, question: question.question, difficulty: question.difficulty })),
   };
 }

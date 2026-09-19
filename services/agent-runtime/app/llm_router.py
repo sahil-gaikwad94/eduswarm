@@ -85,9 +85,10 @@ COOLDOWN_SECONDS = {
 # JSON, six models is enough to survive a bad day on the free tier, and 480s
 # keeps the job inside the API's 600s wait window.
 STRUCTURED_MAX_TOKENS = 4096
-# A deep lesson asks for ~1700 words of notes plus the same practice payload, so
-# it needs more room than the standard budget or the JSON truncates.
-STRUCTURED_MAX_TOKENS_LONG = 6000
+# The deep lesson is long form: ~3000 words of notes in its own call needs far
+# more room than the standard budget, or the JSON truncates mid-object. Deep
+# splits notes and practice across two calls so each one fits this budget.
+STRUCTURED_MAX_TOKENS_LONG = 9000
 STRUCTURED_MAX_ATTEMPTS = 6
 STRUCTURED_ATTEMPT_TIMEOUT = 150
 STRUCTURED_TOTAL_BUDGET = 480

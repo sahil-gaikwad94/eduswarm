@@ -17,6 +17,10 @@ services:
         value: https://eduswarm-web.onrender.com
       - key: ALLOW_LOCAL_FALLBACK
         value: 'true'
+      # Licensed tutorial kits for the offline lesson path. Seed with
+      # `npm run seed:kits`; topics without one use the curated tutorial.
+      - key: EDUSWARM_KITS_DIR
+        value: /var/data/kits
       - key: AUTH_MODE
         value: google
       - key: PUBLIC_API_URL
