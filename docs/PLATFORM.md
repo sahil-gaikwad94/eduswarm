@@ -35,20 +35,102 @@ Dean → Researcher → Notes Author (notes + practice) → Local Practice Curat
 
 - **Dean** scopes the topic to the learner's level and daily budget, then assigns
   the local companion (worked code, diagrams, recall checks, and source links).
-- **Researcher** hybrid-retrieves Qdrant evidence (vector + keyword rerank);
-  unindexed topics get explicitly labeled curriculum-preview source routes.
+- **Researcher** hybrid-retrieves Qdrant evidence (vector + keyword rerank).
+  Three evidence tiers, in order: indexed Qdrant chunks → **seeded local study
+  kits** (`app/local_kits.py`, `evidence_mode: local-kit`) → an explicitly
+  labeled curriculum preview. A kit is attributed tutorial text stored as JSON
+  outside the checkout (`EDUSWARM_LOCAL_KITS_DIR`), written by
+  `python seed_knowledge.py --local-kits`, which fetches only robots-permitted
+  pages and keeps the source URL with every extract. A kit is used only when it
+  carries two independent sources, which is the citation gate's threshold, so a
+  topic stays teachable with Qdrant empty and no network.
 - **Notes Author** writes the compact evidence-sensitive lesson **and** its
-  claim-linked practice in one structured call: 5/6/8 sections at ELI5/Standard/
-  Deep and a 650/1000/1350-word target. The standard lesson stays around two
-  pages rather than producing a generic three-page wall of text.
+  claim-linked practice in one structured call: 5/6/9 sections at ELI5/Standard/
+  Deep and a 620/900/1700-word target. Five sections is a hard floor enforced by
+  `check_lesson_shape`, so a model that returns two paragraphs is skipped rather
+  than published; deep also gets a larger 6000-token output budget so its extra
+  sections cannot truncate the JSON. The local kit follows the same shape. The standard lesson stays around two
+  pages rather than producing a generic three-page wall of text, and the smaller
+  budget leaves room inside `max_tokens` for the practice JSON so replies are not
+  truncated. A reply that fails the shape check costs one model attempt, not the
+  job — `structured_generate(prompt, validator=check_lesson_shape)` tells the
+  router to move on.
 - **Practice Team** is now a deterministic curator: it checks claim provenance,
   retains good generated recall items, and fills missing ones from verified
   claims without a second slow provider request.
 - **Fact-Checker** enforces the gate: ≥2 independent sources, every claim cited
-  twice, every artifact carrying provenance. Rejects fail the job visibly.
+  with two distinct chunk ids from two different sources, every artifact carrying
+  provenance. Weaker free models routinely miscite, so a citation failure earns
+  **one** repair call that lists the valid chunk ids and their sources and asks
+  for corrected claims only — citations are never invented locally. If the repair
+  also fails validation, the job still fails closed and visibly.
 - **Publisher** assembles the concise cited lesson plus the clearly labeled local
   companion. State checkpoints (`EDUSWARM_STATE_DIR`) plus job leases make
   execution resumable (`/resume`).
+
+### Model routing (`app/llm_router.py`, mirrored in `apps/api/src/llm.ts`)
+
+Free model ids are not configuration — they are a moving target, so the platform
+treats them as discovered infrastructure:
+
+- **Catalogue.** `GET {base}/models` is cached for 20 minutes; a failed fetch
+  keeps the previous cache and retries after 60s. Generation never blocks on it,
+  and `/health` reads the cache only (`model_chain(fetch=False)`) so Render's
+  health check cannot be slowed by a provider incident.
+- **Eligibility.** Free (prompt and completion priced at 0), text-only output,
+  not expired, ≥32k context, ≥20B parameters when the size is discoverable, and
+  the id must not look like a guard/embedding/media/tiny model. Models that
+  advertise `response_format` or `structured_outputs` are preferred, then newest.
+- **Order.** env hints that still exist → last-known-good → curated list →
+  up to 8 newest discovered free models → `openrouter/free` → the optional paid
+  model. Cool-down ledger: 404/410 → 6h, 400/422 → 1h, 402/403 → 1h, 429 → 2m
+  (3h for a per-day limit), 5xx/timeout → 2m, empty or invalid output → 15m.
+  Cooled models move to the end rather than being removed, so a total outage
+  still has something to attempt. Only a 401 aborts the chain.
+- **Per-model request policy.** JSON mode with `reasoning: {enabled: false}`; a
+  400/422 triggers a bare resend; an empty reply triggers one retry with
+  `reasoning: {effort: "low"}`; an HTTP 200 carrying an `error` body is an error;
+  a `content` that is null, a list, or drained into `message.reasoning` is all
+  handled.
+- **Budgets are fixed constants**, not settings: `max_tokens` 4096 (6000 for a
+  deep lesson), 6 attempts,
+  150s per attempt and 480s total for a lesson (1400 / 75s / 200s for chat) —
+  comfortably inside `AGENT_RUNTIME_MAX_WAIT_MS=600000`. Nothing about model
+  behaviour is read from the environment, so no deployment can mistune it and a
+  stale variable left over from an older deploy is inert.
+- **Tolerant parsing.** `<think>` blocks and Markdown fences are stripped, the
+  parser starts at the first `{` and uses `raw_decode` (so trailing prose is
+  ignored), trailing commas are removed, and a reply truncated by the token limit
+  is repaired by dropping the dangling tail and closing open quotes/brackets. A
+  repaired reply is only accepted when the validator passes.
+
+Regression coverage lives in `services/agent-runtime/test_llm_router.py` and
+`apps/api/src/llm.test.ts`, both driven by a fake OpenRouter on localhost.
+
+### Offline lesson path: licensed tutorial kits
+
+When every model fails, `buildLocalPack` still has to hand back a real lesson.
+It has two tiers:
+
+1. **Seeded kit** (`apps/api/src/kitStore.ts`, `evidenceMode: local-kit`) — the
+   publisher's actual explanation for that exact topic, extracted into sections,
+   code samples, definitions and key points, each tagged with the source it came
+   from. Produced by `npm run seed:kits`, which:
+   - only fetches from an explicit allow-list (GeeksforGeeks, MDN, W3Schools —
+     the publishers we hold rights for). Any other host is skipped and reported.
+   - obeys `robots.txt` per origin and paces requests.
+   - writes to `EDUSWARM_KITS_DIR` (gitignored `.data/kits` locally, a Render
+     disk in production). **No third-party article text is ever committed.**
+   - records the URL and a licence note on every extract, which the lesson
+     renders as a `*Source: …*` line under each section and surfaces in
+     `verification.licenseNotes`.
+   A kit needs ≥3 substantial sections to be used; thinner ones are rejected.
+2. **Curated tutorial** (`evidenceMode: local-fallback`) — the original
+   hand-written profiles. Always available, used for any topic without a kit.
+
+Both tiers emit the same lesson shape and the same 5-6 section window (more at
+deep), so the UI and the learner see one consistent artifact regardless of which
+path produced it. `npm run kits:report` prints coverage.
 
 ### Specialist sessions (stateful chat)
 
@@ -61,9 +143,9 @@ system prompt in `apps/api/src/agentBrain.ts` — persona, open lesson, universe
 learner level, and their weak topics — then tries, in order:
 
 1. **Agent runtime** (`/v1/agent-chat`): the same prompt plus Qdrant retrieval.
-2. **Direct model from the API** (`apps/api/src/llm.ts`): walks the
-   `OPENROUTER_MODEL` → `OPENROUTER_FALLBACK_MODELS` chain, so an asleep or
-   misconfigured runtime cannot silently downgrade the learner's answers.
+2. **Direct model from the API** (`apps/api/src/llm.ts`): walks the chain
+   discovered from OpenRouter's live catalogue, so an asleep or misconfigured
+   runtime cannot silently downgrade the learner's answers.
 3. **Curriculum brain** (`localSpecialistReply`): not a canned paragraph — a
    pasted PYQ is matched against the question bank and answered with its real
    explanation and option eliminations, pasted code gets a structural review,

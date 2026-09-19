@@ -25,21 +25,62 @@ Set these environment variables on **eduswarm-agent**:
 
 ```text
 OPENROUTER_API_KEY=<your own OpenRouter key>
-OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
-OPENROUTER_FALLBACK_MODELS=deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 QDRANT_URL=https://<your-qdrant-cluster-host>
 QDRANT_API_KEY=<your-qdrant-key>
 QDRANT_COLLECTION=eduswarm_knowledge
 EDUSWARM_STATE_DIR=/tmp/eduswarm-state
+EDUSWARM_LOCAL_KITS_DIR=/tmp/eduswarm-state/local-kits
 ```
 
-`OPENROUTER_MODEL` and `OPENROUTER_FALLBACK_MODELS` are comma-separated chains:
-the first model that answers wins. Avoid leaving the model at
-`openrouter/free` — that is the auto-router, which hands each request to an
-arbitrary free model and is the usual cause of vague specialist answers. Pick a
-specific `:free` model from the OpenRouter model list and keep two or three
-fallbacks behind it. Keys must be created by the account owner at
+### Seed the runtime's offline evidence (Qdrant tier)
+
+Local kits are the evidence tier between Qdrant and the thin curriculum preview:
+attributed tutorial extracts stored on the mounted disk, so a topic stays
+teachable when nothing is indexed. Seed them once per deploy (or whenever the
+curriculum grows) from a shell on the agent service:
+
+```bash
+python seed_knowledge.py --local-kits          # every live topic
+python seed_knowledge.py --local-kits --limit 5  # smoke run
+```
+
+It fetches only pages whose robots.txt permits it, stores a bounded extract with
+its source URL, and skips any topic that cannot reach two independent permitted
+sources — those are listed at the end of the run, so you can revisit them as the
+remaining source rights land. No kit is ever invented.
+
+### Switching models is safe (and optional)
+
+Set `OPENROUTER_MODEL` (and optionally a comma-separated
+`OPENROUTER_FALLBACK_MODELS`) on **both** services whenever you want to steer
+which model answers. It is honoured ahead of everything else and applies on the
+next request after the service restarts — no code change, no redeploy of this
+repo. It is a preference, not a dependency: if the id is retired, rate-limited
+or returns junk, the chain automatically carries on.
+
+Leaving it empty is equally fine. Either way, token budgets, timeouts and retry
+counts are decided by the code, and both services discover their model chain
+from OpenRouter's live `/models` catalogue (cached 20 minutes), so:
+
+- a free model that is retired simply disappears from the chain;
+- an id you pin is used only while it still exists in the catalogue;
+- failures are remembered in a cool-down ledger (404 → 6h, 402/403 → 1h,
+  429 → 2m, per-day 429 → 3h, empty/invalid output → 15m), so a dead model sinks
+  to the back of the chain instead of burning the first attempt of every job;
+- the model that last answered successfully is tried first next time.
+
+Old `OPENROUTER_STRUCTURED_MAX_TOKENS`, `OPENROUTER_STRUCTURED_MAX_MODELS` and
+`LLM_TIMEOUT_MS` values left in the Render dashboard are **harmless** — dead ids are filtered out against the catalogue and the budget
+variables are no longer read at all. You can delete them whenever you feel like
+tidying up; nothing breaks either way, and a dying free model never needs a
+redeploy again.
+
+Optionally set `OPENROUTER_PAID_FALLBACK_MODEL` to **one** cheap paid model. It
+is tried only after every free model in the chain has failed, which is the only
+way to make lesson generation effectively guaranteed — free tiers never can be.
+
+Keys must be created by the account owner at
 [OpenRouter](https://openrouter.ai/); the repository ships none.
 
 For Qdrant Cloud, use the cluster HTTPS URL without `:6333` or a path such as
@@ -60,9 +101,6 @@ MONGODB_URI=<atlas or render mongo>
 REDIS_URL=<render redis>
 OPENROUTER_API_KEY=<same key as the agent service>
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_MODEL=meta-llama/llama-3.3-70b-instruct:free
-OPENROUTER_FALLBACK_MODELS=deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
-LLM_TIMEOUT_MS=90000
 ```
 
 `WEB_URL` matters because it is where the OAuth callback sends the single-use
@@ -88,10 +126,15 @@ curl -s https://eduswarm-api.onrender.com/api/agents/status
 Expected: HTTP 200 from the first three, `providerConfigured: true` in the agent
 health response, and `mode: langgraph-openrouter-qdrant` from `/ready`.
 
+`/health` answers from the cached catalogue only and never waits on OpenRouter,
+so Render's health check cannot be slowed down by a provider incident. Its
+`models` array shows the first four ids in the current chain — if it lists ids
+you never configured, that is the discovery working as intended.
+
 `/api/agents/status` tells you which brain will answer specialists:
 
 ```json
-{"runtime":{"online":true,"model":"meta-llama/llama-3.3-70b-instruct:free"},
+{"runtime":{"online":true,"model":""},
  "directLlm":true,"models":["…"],"answerPath":"runtime"}
 ```
 
@@ -134,3 +177,28 @@ curated blog library is static reference data served from
 
 Never commit provider keys, Qdrant keys, database credentials, OAuth secrets, or
 session secrets.
+
+
+## Licensed tutorial kits (the offline lesson path)
+
+When the model chain fails, the API serves a local lesson. Seed the licensed
+kits so that lesson carries the publisher's real explanation instead of generic
+curated prose:
+
+```bash
+npm run seed:kits                       # all 237 topics
+node scripts/seed-kits.mjs --limit 5    # smoke run
+npm run kits:report                     # coverage, no fetching
+```
+
+Set `EDUSWARM_KITS_DIR` to a path on a mounted disk (`/var/data/kits` in
+`render.yaml`) so kits survive a redeploy, and re-run the seeder when the
+curriculum grows.
+
+Only GeeksforGeeks, MDN and W3Schools are enabled, because those are the rights
+we hold — the allow-list lives in `scripts/seed-kits.mjs` and any other host is
+skipped, never silently cached. Extracted text stays out of Git entirely
+(`.data/` is ignored) and every section renders its source link and licence
+note. Topics without a kit fall back to the curated tutorial, so partial
+coverage is completely safe: seed what you have rights to today and re-run as
+the rest land.

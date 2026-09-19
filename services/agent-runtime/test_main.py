@@ -1,3 +1,4 @@
+import re
 import time
 
 import pytest
@@ -18,9 +19,18 @@ class FakeProviderRag:
             EvidenceChunk('nptel-0', 'nptel', 'NPTEL Algorithms', 'https://nptel.ac.in/example', 'Asymptotic analysis describes growth as input size increases.'),
         ]
 
-    def structured_generate(self, prompt):
+    @staticmethod
+    def sections_requested(prompt, default=6):
+        """Behave like a compliant model: write the number of sections asked for."""
+        match = re.search(r'write exactly (\d+) note sections', prompt, re.IGNORECASE)
+        return int(match.group(1)) if match else default
+
+    def structured_generate(self, prompt, validator=None, long=False):
         if '"notes"' in prompt:
-            return {'notes': {'sections': [{'heading': 'Core idea', 'body': 'Use the retrieved evidence.', 'claimIds': [0]}]}, 'claims': [{'text': 'A supported claim.', 'evidenceIds': ['mit-0', 'nptel-0']}]}
+            package = {'notes': {'sections': [{'heading': f'Core idea {index}', 'body': 'Use the retrieved evidence.', 'claimIds': [0]} for index in range(self.sections_requested(prompt))]}, 'claims': [{'text': 'A supported claim.', 'evidenceIds': ['mit-0', 'nptel-0']}]}
+            if validator:
+                validator(package)
+            return package
         return {'flashcards': [{'question': 'Q?', 'answer': 'A.', 'claimIds': [0]}], 'quiz': [{'question': 'Quiz?', 'options': ['A', 'B', 'C', 'D'], 'answer': 0, 'explanation': 'Evidence-backed.', 'claimIds': [0]}], 'pyqs': [{'year': 2023, 'question': 'Apply it.', 'difficulty': 'beginner', 'claimIds': [0]}]}
 
 
@@ -65,7 +75,7 @@ def test_topic_job_runs_agents_and_publishes_verified_package():
     assert len(result['package']['verification']['sources']) >= 2
     assert result['package']['notes']['sections']
     assert result['context']['section_target'] == 6
-    assert result['context']['word_budget'] == 1000
+    assert result['context']['word_budget'] == 900
 
     trace = client.get(f'/v1/topic-jobs/{job_id}/trace').json()
     agents = [run['agent'] for run in trace['trace']]
@@ -112,9 +122,9 @@ def test_unindexed_curriculum_topic_uses_safe_preview_evidence(monkeypatch):
         def retrieve(self, _query, _topic_id):
             return []
 
-        def structured_generate(self, prompt):
+        def structured_generate(self, prompt, validator=None, long=False):
             if '"notes"' in prompt:
-                return {'notes': {'sections': [{'heading': 'Preview', 'body': 'Use the curriculum brief.', 'claimIds': [0]}]}, 'claims': [{'text': 'A preview claim.', 'evidenceIds': ['curriculum-brief-0', 'curriculum-brief-1']}]}
+                return {'notes': {'sections': [{'heading': f'Preview {index}', 'body': 'Use the curriculum brief.', 'claimIds': [0]} for index in range(self.sections_requested(prompt))]}, 'claims': [{'text': 'A preview claim.', 'evidenceIds': ['curriculum-brief-0', 'curriculum-brief-1']}]}
             return {'flashcards': [{'question': 'Q?', 'answer': 'A.', 'claimIds': [0]}], 'quiz': [{'question': 'Quiz?', 'options': ['A', 'B', 'C', 'D'], 'answer': 0, 'explanation': 'Preview-backed.', 'claimIds': [0]}], 'pyqs': [{'year': 2023, 'question': 'Apply it.', 'difficulty': 'beginner', 'claimIds': [0]}]}
 
     monkeypatch.setattr('app.main.OpenRouterRag', EmptyEvidenceRag)
@@ -146,7 +156,7 @@ class FakeSpecialistRag(FakeProviderRag):
         FakeSpecialistRag.last_system = system
         return f"Grounded answer to: {latest[:60]}", "fake-model:free"
 
-    def model_chain(self):
+    def model_chain(self, fetch=True):
         return ["fake-model:free"]
 
 
@@ -167,7 +177,7 @@ def test_doubt_solve_degrades_to_503_without_provider(monkeypatch):
 
 def test_study_plan_returns_timeboxed_blocks(monkeypatch):
     class PlanRag(FakeSpecialistRag):
-        def structured_generate(self, prompt):
+        def structured_generate(self, prompt, validator=None, long=False):
             return {"totalMinutes": 60, "intensity": "focused", "blocks": [{"kind": "review", "title": "Review due cards", "detail": "SRS", "minutes": 15}, {"kind": "learn", "title": "New kit", "detail": "Study", "minutes": 45}]}
 
     monkeypatch.setattr("app.main.OpenRouterRag", PlanRag)
@@ -180,7 +190,7 @@ def test_study_plan_returns_timeboxed_blocks(monkeypatch):
 
 def test_evaluate_code_returns_rubric(monkeypatch):
     class ReviewRag(FakeSpecialistRag):
-        def structured_generate(self, prompt):
+        def structured_generate(self, prompt, validator=None, long=False):
             return {"verdict": "Good", "score": 82, "findings": ["Missing empty-input guard"], "strengths": ["Clean loop"], "complexity": "O(n) time, O(1) space", "corrected_code": None}
 
     monkeypatch.setattr("app.main.OpenRouterRag", ReviewRag)
@@ -191,7 +201,7 @@ def test_evaluate_code_returns_rubric(monkeypatch):
 
 def test_mock_analysis_returns_next_steps(monkeypatch):
     class ExamRag(FakeSpecialistRag):
-        def structured_generate(self, prompt):
+        def structured_generate(self, prompt, validator=None, long=False):
             return {"summary": "Solid", "strengths": ["Accuracy"], "weaknesses": ["Speed"], "next_steps": ["Drill CN subnetting"]}
 
     monkeypatch.setattr("app.main.OpenRouterRag", ExamRag)
@@ -243,3 +253,155 @@ def test_agent_chat_falls_back_to_its_own_prompt_without_a_system(monkeypatch):
     assert response.status_code == 200
     assert "Socratic Tutor" in FakeSpecialistRag.last_system
     assert "generic study advice" in FakeSpecialistRag.last_system
+
+
+def test_an_unreachable_index_falls_through_instead_of_failing_the_topic(monkeypatch):
+    """Qdrant is an optimisation, not a dependency: an outage must not fail jobs."""
+    class DeadIndexRag(FakeProviderRag):
+        def retrieve(self, _query, _topic_id):
+            raise ConnectionRefusedError('[Errno 111] Connection refused')
+
+        def structured_generate(self, prompt, validator=None, long=False):
+            package = {'notes': {'sections': [{'heading': f'Preview {index}', 'body': 'From the brief.', 'claimIds': [0]} for index in range(self.sections_requested(prompt))]},
+                       'claims': [{'text': 'A preview claim.', 'evidenceIds': ['curriculum-brief-0', 'curriculum-brief-1']}]}
+            if validator:
+                validator(package)
+            return package
+
+    monkeypatch.setattr('app.main.OpenRouterRag', DeadIndexRag)
+    job_id = 'dead-index-regression'
+    (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+
+    client.post('/v1/topic-jobs', json={'job_id': job_id, 'topic_id': 'algo-complexity'})
+
+    result = client.get(f'/v1/topic-jobs/{job_id}').json()
+    assert result['status'] == 'completed', result.get('error')
+    assert result['package']['verification']['status'] == 'approved'
+    assert result['context']['evidence_mode'] == 'curriculum-preview'
+    researcher = next(run for run in result['trace'] if run['agent'] == 'Researcher')
+    assert 'Connection refused' in researcher['output']['index_unavailable'], 'the outage is reported, not hidden'
+    (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+
+
+def test_every_depth_publishes_at_least_five_sections_and_deep_gives_more():
+    """5-6 sections at eli5/standard; deep genuinely teaches more."""
+    from app.main import DEEP_MIN_SECTIONS, MAX_SECTIONS, MIN_SECTIONS
+
+    counts = {}
+    for depth in ('eli5', 'standard', 'deep'):
+        job_id = f'depth-{depth}'
+        (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+        client.post('/v1/topic-jobs', json={'job_id': job_id, 'topic_id': 'algo-complexity', 'depth': depth})
+        result = client.get(f'/v1/topic-jobs/{job_id}').json()
+        assert result['status'] == 'completed', result.get('error')
+        counts[depth] = len(result['package']['notes']['sections'])
+        assert result['context']['section_target'] >= MIN_SECTIONS
+        (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+
+    assert all(count >= MIN_SECTIONS for count in counts.values()), counts
+    assert counts['eli5'] <= MAX_SECTIONS and counts['standard'] <= MAX_SECTIONS, counts
+    assert counts['deep'] >= DEEP_MIN_SECTIONS, f"deep must be a long-form treatment: {counts}"
+    assert counts['deep'] >= 2 * counts['standard'], f"deep should be substantially deeper, not marginally: {counts}"
+
+
+def test_a_deep_lesson_asks_for_a_larger_output_budget():
+    """Deep needs more tokens than standard, or its extra sections truncate."""
+    from app.llm_router import STRUCTURED_MAX_TOKENS, STRUCTURED_MAX_TOKENS_LONG
+
+    seen: list[bool] = []
+
+    class BudgetRag(FakeProviderRag):
+        def structured_generate(self, prompt, validator=None, long=False):
+            seen.append(long)
+            return FakeProviderRag.structured_generate(self, prompt, validator)
+
+    assert STRUCTURED_MAX_TOKENS_LONG > STRUCTURED_MAX_TOKENS
+
+    import app.main as main_module
+    original = main_module.OpenRouterRag
+    main_module.OpenRouterRag = BudgetRag
+    try:
+        for depth, expected in (('standard', False), ('deep', True)):
+            job_id = f'budget-{depth}'
+            (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+            seen.clear()
+            client.post('/v1/topic-jobs', json={'job_id': job_id, 'topic_id': 'algo-complexity', 'depth': depth})
+            assert seen and seen[0] is expected, f'{depth} should request long={expected}'
+            (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+    finally:
+        main_module.OpenRouterRag = original
+
+
+def test_deep_splits_notes_and_practice_into_two_calls():
+    """Deep is long form, so its notes get a whole response to themselves.
+
+    One call cannot hold ~3000 words of notes plus 10 cards, 8 quiz items and 5
+    prompts without truncating, and a truncated deep lesson is worse than a
+    short one.
+    """
+    calls: list[str] = []
+
+    class TwoCallRag(FakeProviderRag):
+        def structured_generate(self, prompt, validator=None, long=False):
+            calls.append('notes' if '"notes"' in prompt else 'practice')
+            assert long, 'both deep calls need the long output budget'
+            if '"notes"' in prompt:
+                package = {'notes': {'sections': [{'heading': f'H{index}', 'body': 'Body.', 'claimIds': [0]} for index in range(self.sections_requested(prompt))]},
+                           'claims': [{'text': f'Claim {index}.', 'evidenceIds': ['mit-0', 'nptel-0']} for index in range(10)]}
+                if validator:
+                    validator(package)
+                return package
+            package = {'flashcards': [{'question': f'Q{i}?', 'answer': 'A.', 'claimIds': [0]} for i in range(10)],
+                       'quiz': [{'question': f'Quiz {i}?', 'options': ['A', 'B', 'C', 'D'], 'answer': 0, 'explanation': 'Rule.', 'claimIds': [0]} for i in range(8)],
+                       'pyqs': [{'year': 2024, 'question': f'Apply {i}.', 'difficulty': 'hard', 'claimIds': [0]} for i in range(5)]}
+            if validator:
+                validator(package)
+            return package
+
+    import app.main as main_module
+    original = main_module.OpenRouterRag
+    main_module.OpenRouterRag = TwoCallRag
+    job_id = 'deep-two-call'
+    try:
+        (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+        client.post('/v1/topic-jobs', json={'job_id': job_id, 'topic_id': 'algo-complexity', 'depth': 'deep'})
+        result = client.get(f'/v1/topic-jobs/{job_id}').json()
+    finally:
+        main_module.OpenRouterRag = original
+
+    assert result['status'] == 'completed', result.get('error')
+    assert calls == ['notes', 'practice'], calls
+    package = result['package']
+    assert len(package['notes']['sections']) >= 12
+    assert len(package['flashcards']) == 10 and len(package['quiz']) == 8 and len(package['pyqs']) == 5
+    assert [run['agent'] for run in result['trace']][:4] == ['Dean', 'Researcher', 'Notes Author', 'Practice Author']
+    (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+
+
+def test_deep_keeps_its_notes_when_the_practice_call_fails():
+    """A practice outage must not throw away an expensive long-form lesson."""
+    class FlakyPracticeRag(FakeProviderRag):
+        def structured_generate(self, prompt, validator=None, long=False):
+            if '"notes"' not in prompt:
+                raise RuntimeError('Every free AI model was busy (tried 6).')
+            package = {'notes': {'sections': [{'heading': f'H{index}', 'body': 'Body.', 'claimIds': [0]} for index in range(self.sections_requested(prompt))]},
+                       'claims': [{'text': f'Claim {index}.', 'evidenceIds': ['mit-0', 'nptel-0']} for index in range(10)]}
+            if validator:
+                validator(package)
+            return package
+
+    import app.main as main_module
+    original = main_module.OpenRouterRag
+    main_module.OpenRouterRag = FlakyPracticeRag
+    job_id = 'deep-practice-outage'
+    try:
+        (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+        client.post('/v1/topic-jobs', json={'job_id': job_id, 'topic_id': 'algo-complexity', 'depth': 'deep'})
+        result = client.get(f'/v1/topic-jobs/{job_id}').json()
+    finally:
+        main_module.OpenRouterRag = original
+
+    assert result['status'] == 'completed', result.get('error')
+    assert len(result['package']['notes']['sections']) >= 12, 'the long-form notes survived'
+    assert result['package']['flashcards'], 'the local curator filled practice from the claims'
+    (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)

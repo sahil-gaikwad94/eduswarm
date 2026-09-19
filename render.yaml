@@ -3,7 +3,10 @@ services:
     name: eduswarm-api
     runtime: node
     rootDir: apps/api
-    buildCommand: npm install && npm run build
+    # Kits are seeded into the build output: no disk required, and every
+    # deploy refreshes the extracted tutorial content. Seeding never fails the
+    # build - topics without a kit use the curated tutorial.
+    buildCommand: npm install && npm run build && node ../../scripts/seed-kits.mjs --budget-minutes 6 || true
     startCommand: npm start
     healthCheckPath: /health
     envVars:
@@ -17,6 +20,11 @@ services:
         value: https://eduswarm-web.onrender.com
       - key: ALLOW_LOCAL_FALLBACK
         value: 'true'
+      # Licensed tutorial kits for the offline lesson path, written by the
+      # build command above. Point this at a mounted disk instead if you add
+      # one, so kits survive a redeploy without re-fetching.
+      - key: EDUSWARM_KITS_DIR
+        value: /opt/render/project/src/apps/api/.data/kits
       - key: AUTH_MODE
         value: google
       - key: PUBLIC_API_URL
@@ -41,12 +49,11 @@ services:
         sync: false
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
-      - key: OPENROUTER_MODEL
-        value: meta-llama/llama-3.3-70b-instruct:free
-      - key: OPENROUTER_FALLBACK_MODELS
-        value: deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
-      - key: LLM_TIMEOUT_MS
-        value: '240000'
+      # No model settings. The chain, token budgets and timeouts are chosen by
+      # the code from OpenRouter's live catalogue.
+      # Optional cheap PAID model, tried only after every free model failed.
+      - key: OPENROUTER_PAID_FALLBACK_MODEL
+        sync: false
       - key: AGENT_RUNTIME_TIMEOUT_MS
         value: '30000'
       - key: AGENT_RUNTIME_MAX_WAIT_MS
@@ -67,20 +74,15 @@ services:
     envVars:
       - key: EDUSWARM_STATE_DIR
         value: /tmp/eduswarm-state
+      # Offline evidence tier: seeded local study kits keep a topic teachable
+      # when Qdrant is empty. Seed with `python seed_knowledge.py --local-kits`.
+      - key: EDUSWARM_LOCAL_KITS_DIR
+        value: /tmp/eduswarm-state/local-kits
       - key: OPENROUTER_API_KEY
         sync: false
-      - key: OPENROUTER_MODEL
-        value: meta-llama/llama-3.3-70b-instruct:free
-      - key: OPENROUTER_FALLBACK_MODELS
-        value: deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free,openrouter/free
-      - key: OPENROUTER_REQUEST_TIMEOUT_SECONDS
-        value: 240
-      - key: OPENROUTER_STRUCTURED_MAX_TOKENS
-        value: 2200
-      - key: OPENROUTER_STRUCTURED_MAX_MODELS
-        value: 2
-      - key: OPENROUTER_STRUCTURED_RETRY_BACKOFF_SECONDS
-        value: 2
+      # No model settings here either — see the API service note above.
+      - key: OPENROUTER_PAID_FALLBACK_MODEL
+        sync: false
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
       - key: QDRANT_URL
