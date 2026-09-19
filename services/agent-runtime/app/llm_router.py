@@ -80,41 +80,17 @@ COOLDOWN_SECONDS = {
 }
 
 
-def _int_env(name: str, default: int, floor: int, cap: int) -> int:
-    """Read an int env var and clamp it, so a stale dashboard value is inert."""
-    raw = os.getenv(name, "")
-    try:
-        value = int(float(str(raw).strip())) if str(raw).strip() else default
-    except (TypeError, ValueError):
-        value = default
-    return max(floor, min(cap, value))
-
-
-def structured_max_tokens() -> int:
-    """Output budget for one lesson. Small values truncate JSON, so floor it."""
-    return _int_env("OPENROUTER_STRUCTURED_MAX_TOKENS", 4096, 3000, 6000)
-
-
-def structured_max_attempts() -> int:
-    """How many models a single structured request may walk."""
-    return _int_env("OPENROUTER_STRUCTURED_MAX_MODELS", 6, 4, 10)
-
-
-def structured_attempt_timeout() -> int:
-    return _int_env("OPENROUTER_REQUEST_TIMEOUT_SECONDS", 150, 45, 240)
-
-
-def structured_total_budget() -> int:
-    """Total wall-clock budget; must stay under AGENT_RUNTIME_MAX_WAIT_MS."""
-    return _int_env("OPENROUTER_STRUCTURED_TOTAL_BUDGET_SECONDS", 480, 120, 540)
-
-
-def chat_attempt_timeout() -> int:
-    return _int_env("OPENROUTER_CHAT_TIMEOUT_SECONDS", 75, 20, 150)
-
-
-def chat_total_budget() -> int:
-    return _int_env("OPENROUTER_CHAT_TOTAL_BUDGET_SECONDS", 200, 60, 400)
+# Fixed budgets. These are NOT configurable: the whole point of this module is
+# that a deployment never has to tune model behaviour. A lesson is ~3k tokens of
+# JSON, six models is enough to survive a bad day on the free tier, and 480s
+# keeps the job inside the API's 600s wait window.
+STRUCTURED_MAX_TOKENS = 4096
+STRUCTURED_MAX_ATTEMPTS = 6
+STRUCTURED_ATTEMPT_TIMEOUT = 150
+STRUCTURED_TOTAL_BUDGET = 480
+CHAT_MAX_TOKENS = 1400
+CHAT_ATTEMPT_TIMEOUT = 75
+CHAT_TOTAL_BUDGET = 200
 
 
 def paid_fallback_model() -> str:

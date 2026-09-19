@@ -41,20 +41,11 @@ services:
         sync: false
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
-      # Optional hints only: the chain is discovered from OpenRouter's live
-      # catalogue. Empty is the safe default — a pinned id that dies is simply
-      # ignored, so a model change can never take the platform down.
-      # NOTE: clear any leftover values in the Render dashboard for BOTH
-      # services; dashboard values override this file.
-      - key: OPENROUTER_MODEL
-        value: ''
-      - key: OPENROUTER_FALLBACK_MODELS
-        value: ''
+      # No model settings. The chain, token budgets and timeouts are chosen by
+      # the code from OpenRouter's live catalogue.
       # Optional cheap PAID model, tried only after every free model failed.
       - key: OPENROUTER_PAID_FALLBACK_MODEL
         sync: false
-      - key: LLM_TIMEOUT_MS
-        value: '75000'
       - key: AGENT_RUNTIME_TIMEOUT_MS
         value: '30000'
       - key: AGENT_RUNTIME_MAX_WAIT_MS
@@ -81,23 +72,9 @@ services:
         value: /tmp/eduswarm-state/local-kits
       - key: OPENROUTER_API_KEY
         sync: false
-      # Optional hints only — see the API service note above. Clear these in
-      # the Render dashboard too, or a stale id keeps winning over the code.
-      - key: OPENROUTER_MODEL
-        value: ''
-      - key: OPENROUTER_FALLBACK_MODELS
-        value: ''
+      # No model settings here either — see the API service note above.
       - key: OPENROUTER_PAID_FALLBACK_MODEL
         sync: false
-      - key: OPENROUTER_REQUEST_TIMEOUT_SECONDS
-        value: 150
-      - key: OPENROUTER_STRUCTURED_MAX_TOKENS
-        value: 4096
-      - key: OPENROUTER_STRUCTURED_MAX_MODELS
-        value: 6
-      # Total lesson budget, kept below AGENT_RUNTIME_MAX_WAIT_MS (600000ms).
-      - key: OPENROUTER_STRUCTURED_TOTAL_BUDGET_SECONDS
-        value: 480
       - key: OPENROUTER_BASE_URL
         value: https://openrouter.ai/api/v1
       - key: QDRANT_URL

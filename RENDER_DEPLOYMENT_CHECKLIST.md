@@ -26,9 +26,6 @@ Set these environment variables on **eduswarm-agent**:
 ```text
 OPENROUTER_API_KEY=<your own OpenRouter key>
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_STRUCTURED_MAX_TOKENS=4096
-OPENROUTER_STRUCTURED_MAX_MODELS=6
-OPENROUTER_REQUEST_TIMEOUT_SECONDS=150
 QDRANT_URL=https://<your-qdrant-cluster-host>
 QDRANT_API_KEY=<your-qdrant-key>
 QDRANT_COLLECTION=eduswarm_knowledge
@@ -53,11 +50,11 @@ its source URL, and skips any topic that cannot reach two independent permitted
 sources — those are listed at the end of the run, so you can revisit them as the
 remaining source rights land. No kit is ever invented.
 
-### Do not pin a model
+### There is nothing to configure
 
-`OPENROUTER_MODEL` and `OPENROUTER_FALLBACK_MODELS` are **optional hints, and the
-recommended value is empty**. Both services discover their model chain from
-OpenRouter's live `/models` catalogue (cached 20 minutes), so:
+The API key is the only AI setting. Model ids, token budgets, timeouts and retry
+counts are all decided by the code: both services discover their model chain
+from OpenRouter's live `/models` catalogue (cached 20 minutes), so:
 
 - a free model that is retired simply disappears from the chain;
 - an id you pin is used only while it still exists in the catalogue;
@@ -66,12 +63,12 @@ OpenRouter's live `/models` catalogue (cached 20 minutes), so:
   to the back of the chain instead of burning the first attempt of every job;
 - the model that last answered successfully is tried first next time.
 
-> **Action required once:** delete `OPENROUTER_MODEL` and
-> `OPENROUTER_FALLBACK_MODELS` from the Render dashboard on **both**
-> `eduswarm-api` and `eduswarm-agent`, and set
-> `OPENROUTER_STRUCTURED_MAX_TOKENS=4096` and `OPENROUTER_STRUCTURED_MAX_MODELS=6`.
-> Dashboard values override `render.yaml`, so a stale id left there keeps
-> winning over the code. After that, a dying free model never needs a redeploy.
+Old `OPENROUTER_MODEL`, `OPENROUTER_FALLBACK_MODELS`,
+`OPENROUTER_STRUCTURED_MAX_TOKENS` and friends left in the Render dashboard are
+**harmless** — dead ids are filtered out against the catalogue and the budget
+variables are no longer read at all. You can delete them whenever you feel like
+tidying up; nothing breaks either way, and a dying free model never needs a
+redeploy again.
 
 Optionally set `OPENROUTER_PAID_FALLBACK_MODEL` to **one** cheap paid model. It
 is tried only after every free model in the chain has failed, which is the only
@@ -98,7 +95,6 @@ MONGODB_URI=<atlas or render mongo>
 REDIS_URL=<render redis>
 OPENROUTER_API_KEY=<same key as the agent service>
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-LLM_TIMEOUT_MS=75000
 ```
 
 `WEB_URL` matters because it is where the OAuth callback sends the single-use

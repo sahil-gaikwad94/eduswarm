@@ -38,9 +38,7 @@ services:
       # Same key as the runtime: the API calls the model directly whenever the
       # runtime is down, so specialists never degrade to canned guidance.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      # Optional hints: the chain is discovered from OpenRouter's live catalogue.
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
-      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-}
+      # No model settings: the chain comes from OpenRouter's live catalogue.
       OPENROUTER_PAID_FALLBACK_MODEL: ${OPENROUTER_PAID_FALLBACK_MODEL:-}
       OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
     depends_on:
@@ -59,9 +57,7 @@ services:
       QDRANT_URL: http://qdrant:6333
       QDRANT_COLLECTION: eduswarm_knowledge
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      # Optional hints: the chain is discovered from OpenRouter's live catalogue.
-      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-}
-      OPENROUTER_FALLBACK_MODELS: ${OPENROUTER_FALLBACK_MODELS:-}
+      # No model settings: the chain comes from OpenRouter's live catalogue.
       OPENROUTER_PAID_FALLBACK_MODEL: ${OPENROUTER_PAID_FALLBACK_MODEL:-}
       OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
       EDUSWARM_STATE_DIR: /tmp/eduswarm-state

@@ -126,10 +126,14 @@ enough to write a lesson, and orders them last-known-good → live env hints →
 curated list → newest discovered → `openrouter/free`. Failures feed a cool-down
 ledger (404 → 6h, 402/403 → 1h, 429 → 2m, empty or unparseable output → 15m), so
 a dead model sinks to the back of the chain instead of wasting the first attempt
-of every job. `OPENROUTER_MODEL` and `OPENROUTER_FALLBACK_MODELS` are optional
-hints that are ignored once the id leaves the catalogue — **changing or removing
-them cannot cause an outage**. Set `OPENROUTER_PAID_FALLBACK_MODEL` to one cheap
-paid model if you want a guaranteed tier behind the free chain.
+of every job.
+
+**The API key is the only AI setting.** There is no model, token-budget, timeout
+or retry variable to maintain — those are constants in the code. Any leftover
+`OPENROUTER_MODEL` / `OPENROUTER_STRUCTURED_MAX_TOKENS` values in an environment
+are inert: dead ids are filtered against the catalogue and the budgets are not
+read from the environment at all. Optionally set `OPENROUTER_PAID_FALLBACK_MODEL`
+to one cheap paid model for a guaranteed tier behind the free chain.
 
 A lesson walks up to six models within a 480-second budget (150s per attempt),
 parses replies tolerantly (`<think>` blocks, Markdown fences, surrounding prose,

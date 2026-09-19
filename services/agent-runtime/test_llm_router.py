@@ -130,11 +130,7 @@ def fake_openrouter():
 
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
-    for name in (
-        "OPENROUTER_MODEL", "OPENROUTER_FALLBACK_MODELS", "OPENROUTER_STRUCTURED_MAX_TOKENS",
-        "OPENROUTER_STRUCTURED_MAX_MODELS", "OPENROUTER_PAID_FALLBACK_MODEL",
-        "OPENROUTER_REQUEST_TIMEOUT_SECONDS",
-    ):
+    for name in ("OPENROUTER_MODEL", "OPENROUTER_FALLBACK_MODELS", "OPENROUTER_PAID_FALLBACK_MODEL"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -308,19 +304,23 @@ def test_a_401_fails_fast_without_walking_the_chain(fake_openrouter):
 
 
 def test_stale_env_values_and_dead_slugs_still_produce_a_lesson(fake_openrouter, monkeypatch):
-    """The exact production configuration that broke: two dead slugs, tiny budget."""
+    """The exact production configuration that broke: dead slugs, stale tuning.
+
+    Leftover dashboard variables must be inert, not fatal — nobody should have
+    to clean up their environment for a lesson to generate.
+    """
     monkeypatch.setenv("OPENROUTER_MODEL", "deepseek/deepseek-v4-flash-0731:free")
     monkeypatch.setenv("OPENROUTER_FALLBACK_MODELS", "deepseek/deepseek-chat-v3-0324:free,qwen/qwen-2.5-72b-instruct:free")
     monkeypatch.setenv("OPENROUTER_STRUCTURED_MAX_TOKENS", "2200")
     monkeypatch.setenv("OPENROUTER_STRUCTURED_MAX_MODELS", "2")
+    monkeypatch.setenv("OPENROUTER_REQUEST_TIMEOUT_SECONDS", "240")
     FakeOpenRouter.models = [catalogue_entry("a/live-70b:free")]
     FakeOpenRouter.behaviour = {"a/live-70b:free": "good"}
 
     lesson = build_rag(fake_openrouter).structured_generate("write a lesson", validator=check_lesson_shape)
 
     assert lesson["claims"], "a lesson must be produced with zero manual model edits"
-    assert FakeOpenRouter.requests[0]["max_tokens"] == 3000, "a stale token budget is clamped up to the floor"
-    assert llm_router.structured_max_attempts() == 4, "a stale attempt cap is clamped up to the floor"
+    assert FakeOpenRouter.requests[0]["max_tokens"] == 4096, "budgets are code constants, not env values"
 
 
 def test_the_error_message_shown_to_a_learner_is_readable(fake_openrouter):
@@ -352,11 +352,12 @@ def test_chat_falls_back_across_models_too(fake_openrouter):
     assert model == "b/good-70b:free" and len(text) >= 40
 
 
-def test_budgets_stay_inside_the_api_wait_window():
-    assert llm_router.structured_total_budget() == 480
-    assert llm_router.structured_total_budget() * 1000 < 600_000, "must finish before AGENT_RUNTIME_MAX_WAIT_MS"
-    assert llm_router.structured_attempt_timeout() == 150 and llm_router.chat_attempt_timeout() == 75
-    assert llm_router.structured_max_tokens() == 4096 and llm_router.structured_max_attempts() == 6
+def test_budgets_are_fixed_constants_inside_the_api_wait_window():
+    assert llm_router.STRUCTURED_TOTAL_BUDGET * 1000 < 600_000, "must finish before AGENT_RUNTIME_MAX_WAIT_MS"
+    assert llm_router.STRUCTURED_ATTEMPT_TIMEOUT * llm_router.STRUCTURED_MAX_ATTEMPTS >= llm_router.STRUCTURED_TOTAL_BUDGET
+    assert llm_router.CHAT_TOTAL_BUDGET < llm_router.STRUCTURED_TOTAL_BUDGET
+    assert not [name for name in dir(llm_router) if name.startswith(("structured_", "chat_")) and callable(getattr(llm_router, name))], \
+        "budgets must not be readable from the environment"
 
 
 def test_the_health_chain_never_triggers_a_catalogue_fetch(fake_openrouter):

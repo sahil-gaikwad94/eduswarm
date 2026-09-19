@@ -30,16 +30,16 @@ from typing import Any, Callable
 from qdrant_client import QdrantClient, models
 
 from app.llm_router import (
+    CHAT_ATTEMPT_TIMEOUT,
+    CHAT_MAX_TOKENS,
+    CHAT_TOTAL_BUDGET,
     ROUTER,
-    _int_env,
-    chat_attempt_timeout,
-    chat_total_budget,
+    STRUCTURED_ATTEMPT_TIMEOUT,
+    STRUCTURED_MAX_ATTEMPTS,
+    STRUCTURED_MAX_TOKENS,
+    STRUCTURED_TOTAL_BUDGET,
     loads_object,
     paid_fallback_model,
-    structured_attempt_timeout,
-    structured_max_attempts,
-    structured_max_tokens,
-    structured_total_budget,
 )
 
 EMBEDDING_SIZE = 3072
@@ -104,9 +104,9 @@ class OpenRouterRag:
         # The API key is required for generation, but Qdrant-only operations
         # (ingest/search) work without it so knowledge tooling stays usable.
         self.qdrant = QdrantClient(url=self.settings.qdrant_url, api_key=self.settings.qdrant_api_key or None)
-        # Per-attempt and total budgets are clamped in `llm_router`, so a stale
-        # dashboard value can no longer starve or overrun a lesson job.
-        self.request_timeout = structured_attempt_timeout()
+        # Budgets are fixed constants in `llm_router` — there is nothing to
+        # tune, and nothing a stale dashboard value can break.
+        self.request_timeout = STRUCTURED_ATTEMPT_TIMEOUT
 
     def _require_key(self) -> None:
         if not self.settings.api_key:
@@ -370,12 +370,12 @@ class OpenRouterRag:
 
         result, _model = self._run_chain(
             messages=messages,
-            max_tokens=structured_max_tokens(),
+            max_tokens=STRUCTURED_MAX_TOKENS,
             temperature=0.2,
             json_mode=True,
-            attempt_timeout=structured_attempt_timeout(),
-            total_budget=structured_total_budget(),
-            max_attempts=structured_max_attempts(),
+            attempt_timeout=STRUCTURED_ATTEMPT_TIMEOUT,
+            total_budget=STRUCTURED_TOTAL_BUDGET,
+            max_attempts=STRUCTURED_MAX_ATTEMPTS,
             handle=handle,
         )
         return result
@@ -400,12 +400,12 @@ class OpenRouterRag:
 
         return self._run_chain(
             messages=[{"role": "system", "content": reinforced_system}, *normalized],
-            max_tokens=_int_env("OPENROUTER_MAX_TOKENS", 1400, 600, 4000),
+            max_tokens=CHAT_MAX_TOKENS,
             temperature=0.35,
             json_mode=False,
-            attempt_timeout=chat_attempt_timeout(),
-            total_budget=chat_total_budget(),
-            max_attempts=max(3, structured_max_attempts() - 1),
+            attempt_timeout=CHAT_ATTEMPT_TIMEOUT,
+            total_budget=CHAT_TOTAL_BUDGET,
+            max_attempts=STRUCTURED_MAX_ATTEMPTS - 1,
             handle=handle,
         )
 

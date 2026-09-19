@@ -71,11 +71,14 @@ function splitList(value: string | undefined): string[] {
   return String(value || '').split(',').map((part) => part.trim()).filter(Boolean);
 }
 
-function clampedInt(name: string, fallback: number, floor: number, cap: number): number {
-  const parsed = Number(process.env[name]);
-  const value = Number.isFinite(parsed) && parsed !== 0 ? Math.trunc(parsed) : fallback;
-  return Math.max(floor, Math.min(cap, value));
-}
+/**
+ * Fixed budgets. Deliberately NOT configurable: a deployment should never have
+ * to tune model behaviour, and a stale value must not be able to break a reply.
+ */
+const CHAT_MAX_TOKENS = 1400;
+const ATTEMPT_TIMEOUT_MS = 75_000;
+const TOTAL_BUDGET_MS = 200_000;
+const MAX_ATTEMPTS = 6;
 
 export function llmConfigured(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY);
@@ -87,20 +90,6 @@ function baseUrl(): string {
 
 function apiKey(): string {
   return process.env.OPENROUTER_API_KEY || process.env.OPENAI_API_KEY || '';
-}
-
-/** Per-attempt timeout. Kept well under the caller's own request budget. */
-function timeoutMs(): number {
-  return clampedInt('LLM_TIMEOUT_MS', 75_000, 20_000, 150_000);
-}
-
-/** Total wall clock for one chat, across every model attempt. */
-function totalBudgetMs(): number {
-  return clampedInt('LLM_TOTAL_BUDGET_MS', 200_000, 60_000, 400_000);
-}
-
-function maxAttempts(): number {
-  return clampedInt('OPENROUTER_STRUCTURED_MAX_MODELS', 6, 4, 10);
 }
 
 function paidFallbackModel(): string {
@@ -315,7 +304,7 @@ async function post(payload: Record<string, unknown>, budgetMs: number): Promise
         'X-Title': 'EduSwarm',
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(Math.max(5_000, Math.min(timeoutMs(), budgetMs))),
+      signal: AbortSignal.timeout(Math.max(5_000, Math.min(ATTEMPT_TIMEOUT_MS, budgetMs))),
     });
   } catch (error: any) {
     throw new ModelError(String(error?.message || error), null, 'transient');
@@ -340,7 +329,7 @@ async function post(payload: Record<string, unknown>, budgetMs: number): Promise
  * the token budget, so it is retried with an explicit low effort.
  */
 async function callModel(model: string, messages: ChatMessage[], temperature: number, budgetMs: number): Promise<string> {
-  const base = { model, messages, temperature, max_tokens: clampedInt('OPENROUTER_MAX_TOKENS', 1400, 600, 4000), stream: false };
+  const base = { model, messages, temperature, max_tokens: CHAT_MAX_TOKENS, stream: false };
   const variants: Record<string, unknown>[] = [{ ...base, reasoning: { enabled: false } }];
   let lastDetail = '';
   for (let index = 0; index < 3 && index < variants.length; index += 1) {
@@ -379,9 +368,9 @@ export async function completeChat(
   await ensureCatalogue();
   const paid = paidFallbackModel();
   const chain = modelChain({ includePaid: true });
-  const free = chain.filter((model) => model !== paid).slice(0, Math.max(1, options.maxModels ?? maxAttempts()));
+  const free = chain.filter((model) => model !== paid).slice(0, Math.max(1, options.maxModels ?? MAX_ATTEMPTS));
   const attempts = paid && !free.includes(paid) ? [...free, paid] : free;
-  const deadline = Date.now() + totalBudgetMs();
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
   const failures: string[] = [];
 
   for (const model of attempts) {

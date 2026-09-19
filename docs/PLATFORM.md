@@ -89,10 +89,11 @@ treats them as discovered infrastructure:
   `reasoning: {effort: "low"}`; an HTTP 200 carrying an `error` body is an error;
   a `content` that is null, a list, or drained into `message.reasoning` is all
   handled.
-- **Budgets** are clamped in code so a stale dashboard value is inert:
-  `max_tokens` 4096 (3000–6000), 6 attempts (4–10), 150s per attempt, 480s total
-  for a lesson (75s / 200s for chat) — comfortably inside
-  `AGENT_RUNTIME_MAX_WAIT_MS=600000`.
+- **Budgets are fixed constants**, not settings: `max_tokens` 4096, 6 attempts,
+  150s per attempt and 480s total for a lesson (1400 / 75s / 200s for chat) —
+  comfortably inside `AGENT_RUNTIME_MAX_WAIT_MS=600000`. Nothing about model
+  behaviour is read from the environment, so no deployment can mistune it and a
+  stale variable left over from an older deploy is inert.
 - **Tolerant parsing.** `<think>` blocks and Markdown fences are stripped, the
   parser starts at the first `{` and uses `raw_decode` (so trailing prose is
   ignored), trailing commas are removed, and a reply truncated by the token limit
