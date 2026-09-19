@@ -85,6 +85,9 @@ COOLDOWN_SECONDS = {
 # JSON, six models is enough to survive a bad day on the free tier, and 480s
 # keeps the job inside the API's 600s wait window.
 STRUCTURED_MAX_TOKENS = 4096
+# A deep lesson asks for ~1700 words of notes plus the same practice payload, so
+# it needs more room than the standard budget or the JSON truncates.
+STRUCTURED_MAX_TOKENS_LONG = 6000
 STRUCTURED_MAX_ATTEMPTS = 6
 STRUCTURED_ATTEMPT_TIMEOUT = 150
 STRUCTURED_TOTAL_BUDGET = 480
@@ -333,11 +336,16 @@ class ModelRouter:
             if model_id and model_id not in chain and exists(model_id):
                 chain.append(model_id)
 
-        last_good = self.last_good()
-        if last_good:
-            add(last_good)
-        for model_id in configured_hints():
+        # Explicit configuration wins. An operator who sets OPENROUTER_MODEL is
+        # making a deliberate choice and must see it take effect on the very
+        # next request — otherwise the last-known-good memory would silently
+        # keep serving the previous model and the change would look ignored.
+        hints = configured_hints()
+        for model_id in hints:
             add(model_id)
+        last_good = self.last_good()
+        if last_good and last_good not in hints:
+            add(last_good)
         for model_id in CURATED_MODELS:
             add(model_id)
         if entries:

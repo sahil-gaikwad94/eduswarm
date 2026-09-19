@@ -119,17 +119,21 @@ when it is asleep or erroring, the API calls the model directly so specialists
 still answer with a real model instead of degrading silently.
 
 **You never have to name a model.** Free-tier ids churn constantly, so the model
-chain is *discovered*, not configured: `services/agent-runtime/app/llm_router.py`
+chain is *discovered*, not hard-coded: `services/agent-runtime/app/llm_router.py`
 (mirrored in `apps/api/src/llm.ts`) reads OpenRouter's live `/models` catalogue
 every 20 minutes, keeps only free text models that are large and long-context
-enough to write a lesson, and orders them last-known-good → live env hints →
-curated list → newest discovered → `openrouter/free`. Failures feed a cool-down
+enough to write a lesson, and orders them live env hints → last-known-good →
+curated list → newest discovered → `openrouter/free`. Setting `OPENROUTER_MODEL`
+therefore takes effect on the very next request, but stays a *preference*: if
+that id is retired or rate-limited the chain carries on without it. Failures feed a cool-down
 ledger (404 → 6h, 402/403 → 1h, 429 → 2m, empty or unparseable output → 15m), so
 a dead model sinks to the back of the chain instead of wasting the first attempt
 of every job.
 
-**The API key is the only AI setting.** There is no model, token-budget, timeout
-or retry variable to maintain — those are constants in the code. Any leftover
+**You can pin a model if you want to.** `OPENROUTER_MODEL` /
+`OPENROUTER_FALLBACK_MODELS` are honoured first and can be changed in the Render
+dashboard at any time without a code change or an outage. There is no
+token-budget, timeout or retry variable to maintain — those are constants in the code. Any leftover
 `OPENROUTER_MODEL` / `OPENROUTER_STRUCTURED_MAX_TOKENS` values in an environment
 are inert: dead ids are filtered against the catalogue and the budgets are not
 read from the environment at all. Optionally set `OPENROUTER_PAID_FALLBACK_MODEL`

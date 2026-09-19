@@ -17,8 +17,9 @@ from app.llm_router import ROUTER, loads_object, repair_truncated
 from app.main import check_lesson_shape
 from app.rag import OpenRouterRag, Settings
 
+# A realistic reply: published lessons always carry at least MIN_SECTIONS.
 GOOD_LESSON = {
-    "notes": {"sections": [{"heading": "Core idea", "body": "A body.", "claimIds": [0]}]},
+    "notes": {"sections": [{"heading": f"Section {index}", "body": f"Body text for section {index}.", "claimIds": [0]} for index in range(5)]},
     "claims": [{"text": "A supported claim.", "evidenceIds": ["mit-0", "nptel-0"]}],
     "flashcards": [{"question": "Q?", "answer": "A.", "claimIds": [0]}],
     "quiz": [],
@@ -46,6 +47,7 @@ class FakeOpenRouter(BaseHTTPRequestHandler):
     behaviour: dict[str, str] = {}
     catalogue_status: int = 200
     requests: list[dict] = []
+    custom_body: str = "{}"
 
     def log_message(self, *_args):  # keep pytest output clean
         pass
@@ -103,7 +105,11 @@ class FakeOpenRouter(BaseHTTPRequestHandler):
             body = json.dumps(GOOD_LESSON).replace('"quiz": []', '"quiz": [],')
             self._send(200, self._completion(f"<think>I should plan the JSON.</think>\n```json\n{body}\n```"))
         elif mode == "truncated":
+            # Cut inside the trailing practice arrays: notes and claims survive,
+            # so the repaired object still passes validation.
             self._send(200, self._completion(json.dumps(GOOD_LESSON)[:-24]))
+        elif mode == "custom":
+            self._send(200, self._completion(type(self).custom_body))
         elif mode == "error-200":
             self._send(200, {"error": {"code": 502, "message": "upstream provider gave up"}})
         elif mode == "bad-shape":
@@ -278,7 +284,7 @@ def test_fenced_and_truncated_replies_are_accepted_when_the_validator_passes(fak
         FakeOpenRouter.models = [catalogue_entry("a/messy-70b:free")]
         FakeOpenRouter.behaviour = {"a/messy-70b:free": mode}
         lesson = build_rag(fake_openrouter).structured_generate("write a lesson", validator=check_lesson_shape)
-        assert lesson["notes"]["sections"][0]["heading"] == "Core idea"
+        assert lesson["notes"]["sections"][0]["heading"] == "Section 0"
         assert lesson["claims"][0]["evidenceIds"] == ["mit-0", "nptel-0"]
 
 
@@ -401,3 +407,56 @@ def test_a_topic_id_from_a_request_cannot_escape_the_kits_directory(tmp_path, mo
     monkeypatch.setenv("EDUSWARM_LOCAL_KITS_DIR", str(tmp_path))
     path = local_kits.kit_path("../../etc/passwd")
     assert path.parent == tmp_path and ".." not in path.name
+
+
+# ------------------------------------------ operator-controlled model switching
+
+
+def test_a_newly_configured_model_wins_over_the_last_known_good_one(fake_openrouter, monkeypatch):
+    """Changing OPENROUTER_MODEL must take effect on the very next request.
+
+    The workflow is: keep the same API key, swap the model id in the Render
+    dashboard. If the last-known-good memory outranked the new hint, the switch
+    would look silently ignored.
+    """
+    FakeOpenRouter.models = [catalogue_entry("a/first-70b:free"), catalogue_entry("b/second-70b:free")]
+    FakeOpenRouter.behaviour = {"a/first-70b:free": "good", "b/second-70b:free": "good"}
+    monkeypatch.setenv("OPENROUTER_MODEL", "a/first-70b:free")
+
+    rag = build_rag(fake_openrouter)
+    rag.structured_generate("lesson", validator=check_lesson_shape)
+    assert ROUTER.last_good() == "a/first-70b:free"
+
+    # The operator switches the dashboard value to a different live model.
+    monkeypatch.setenv("OPENROUTER_MODEL", "b/second-70b:free")
+    FakeOpenRouter.requests.clear()
+    rag.structured_generate("lesson", validator=check_lesson_shape)
+
+    assert FakeOpenRouter.requests[0]["model"] == "b/second-70b:free", "the new hint leads the chain immediately"
+    assert ROUTER.model_chain(fake_openrouter, "test-key")[0] == "b/second-70b:free"
+
+
+def test_a_configured_model_is_a_preference_not_a_dependency(fake_openrouter, monkeypatch):
+    """A pinned id that dies still must not cause an outage."""
+    FakeOpenRouter.models = [catalogue_entry("b/healthy-70b:free")]
+    FakeOpenRouter.behaviour = {"b/healthy-70b:free": "good"}
+    monkeypatch.setenv("OPENROUTER_MODEL", "a/retired-70b:free")
+
+    lesson = build_rag(fake_openrouter).structured_generate("lesson", validator=check_lesson_shape)
+    assert lesson["claims"]
+    assert ROUTER.last_good() == "b/healthy-70b:free"
+
+
+def test_a_thin_lesson_is_rejected_so_the_next_model_is_tried(fake_openrouter):
+    """Fewer than five sections is a weak reply, not a publishable lesson."""
+    from app.main import MIN_SECTIONS
+
+    FakeOpenRouter.models = [catalogue_entry("a/terse-70b:free", created=9), catalogue_entry("b/full-70b:free", created=1)]
+    thin = {**GOOD_LESSON, "notes": {"sections": GOOD_LESSON["notes"]["sections"][:2]}}
+    FakeOpenRouter.behaviour = {"a/terse-70b:free": "custom", "b/full-70b:free": "good"}
+    FakeOpenRouter.custom_body = json.dumps(thin)
+
+    lesson = build_rag(fake_openrouter).structured_generate("lesson", validator=check_lesson_shape)
+
+    assert len(lesson["notes"]["sections"]) >= MIN_SECTIONS
+    assert ROUTER.last_good() == "b/full-70b:free", "the terse model was skipped"

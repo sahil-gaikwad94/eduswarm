@@ -45,8 +45,11 @@ Dean → Researcher → Notes Author (notes + practice) → Local Practice Curat
   carries two independent sources, which is the citation gate's threshold, so a
   topic stays teachable with Qdrant empty and no network.
 - **Notes Author** writes the compact evidence-sensitive lesson **and** its
-  claim-linked practice in one structured call: 4/5/7 sections at ELI5/Standard/
-  Deep and a 520/820/1120-word target. The standard lesson stays around two
+  claim-linked practice in one structured call: 5/6/9 sections at ELI5/Standard/
+  Deep and a 620/900/1700-word target. Five sections is a hard floor enforced by
+  `check_lesson_shape`, so a model that returns two paragraphs is skipped rather
+  than published; deep also gets a larger 6000-token output budget so its extra
+  sections cannot truncate the JSON. The local kit follows the same shape. The standard lesson stays around two
   pages rather than producing a generic three-page wall of text, and the smaller
   budget leaves room inside `max_tokens` for the practice JSON so replies are not
   truncated. A reply that fails the shape check costs one model attempt, not the
@@ -78,7 +81,7 @@ treats them as discovered infrastructure:
   not expired, ≥32k context, ≥20B parameters when the size is discoverable, and
   the id must not look like a guard/embedding/media/tiny model. Models that
   advertise `response_format` or `structured_outputs` are preferred, then newest.
-- **Order.** last-known-good → env hints that still exist → curated list →
+- **Order.** env hints that still exist → last-known-good → curated list →
   up to 8 newest discovered free models → `openrouter/free` → the optional paid
   model. Cool-down ledger: 404/410 → 6h, 400/422 → 1h, 402/403 → 1h, 429 → 2m
   (3h for a per-day limit), 5xx/timeout → 2m, empty or invalid output → 15m.
@@ -89,7 +92,8 @@ treats them as discovered infrastructure:
   `reasoning: {effort: "low"}`; an HTTP 200 carrying an `error` body is an error;
   a `content` that is null, a list, or drained into `message.reasoning` is all
   handled.
-- **Budgets are fixed constants**, not settings: `max_tokens` 4096, 6 attempts,
+- **Budgets are fixed constants**, not settings: `max_tokens` 4096 (6000 for a
+  deep lesson), 6 attempts,
   150s per attempt and 480s total for a lesson (1400 / 75s / 200s for chat) —
   comfortably inside `AGENT_RUNTIME_MAX_WAIT_MS=600000`. Nothing about model
   behaviour is read from the environment, so no deployment can mistune it and a

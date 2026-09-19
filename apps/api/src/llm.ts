@@ -228,7 +228,7 @@ export function resetRouter(): void {
 // ---------------------------------------------------------------------- chain
 
 /**
- * Ordered model ids to try: last-known-good, live env hints, curated list,
+ * Ordered model ids to try: live env hints, last-known-good, curated list,
  * newest discovered free models, then `openrouter/free`. Models on cool-down
  * are moved to the end, never removed — a total outage must still have
  * something to attempt. Uses the cached catalogue only, so this is synchronous
@@ -243,8 +243,11 @@ export function modelChain(options: { includePaid?: boolean } = {}): string[] {
     if (id && !chain.includes(id) && exists(id)) chain.push(id);
   };
 
-  if (lastGood) add(lastGood);
-  for (const id of [...splitList(process.env.OPENROUTER_MODEL), ...splitList(process.env.OPENROUTER_FALLBACK_MODELS)]) add(id);
+  // Explicit configuration wins, so changing OPENROUTER_MODEL in the dashboard
+  // takes effect on the next request instead of losing to the last-good memory.
+  const hints = [...splitList(process.env.OPENROUTER_MODEL), ...splitList(process.env.OPENROUTER_FALLBACK_MODELS)];
+  for (const id of hints) add(id);
+  if (lastGood && !hints.includes(lastGood)) add(lastGood);
   for (const id of CURATED_MODELS) add(id);
   if (entries) {
     const discovered = [...entries.values()]

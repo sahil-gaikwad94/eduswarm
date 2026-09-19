@@ -50,10 +50,17 @@ its source URL, and skips any topic that cannot reach two independent permitted
 sources — those are listed at the end of the run, so you can revisit them as the
 remaining source rights land. No kit is ever invented.
 
-### There is nothing to configure
+### Switching models is safe (and optional)
 
-The API key is the only AI setting. Model ids, token budgets, timeouts and retry
-counts are all decided by the code: both services discover their model chain
+Set `OPENROUTER_MODEL` (and optionally a comma-separated
+`OPENROUTER_FALLBACK_MODELS`) on **both** services whenever you want to steer
+which model answers. It is honoured ahead of everything else and applies on the
+next request after the service restarts — no code change, no redeploy of this
+repo. It is a preference, not a dependency: if the id is retired, rate-limited
+or returns junk, the chain automatically carries on.
+
+Leaving it empty is equally fine. Either way, token budgets, timeouts and retry
+counts are decided by the code, and both services discover their model chain
 from OpenRouter's live `/models` catalogue (cached 20 minutes), so:
 
 - a free model that is retired simply disappears from the chain;
@@ -63,9 +70,8 @@ from OpenRouter's live `/models` catalogue (cached 20 minutes), so:
   to the back of the chain instead of burning the first attempt of every job;
 - the model that last answered successfully is tried first next time.
 
-Old `OPENROUTER_MODEL`, `OPENROUTER_FALLBACK_MODELS`,
-`OPENROUTER_STRUCTURED_MAX_TOKENS` and friends left in the Render dashboard are
-**harmless** — dead ids are filtered out against the catalogue and the budget
+Old `OPENROUTER_STRUCTURED_MAX_TOKENS`, `OPENROUTER_STRUCTURED_MAX_MODELS` and
+`LLM_TIMEOUT_MS` values left in the Render dashboard are **harmless** — dead ids are filtered out against the catalogue and the budget
 variables are no longer read at all. You can delete them whenever you feel like
 tidying up; nothing breaks either way, and a dying free model never needs a
 redeploy again.

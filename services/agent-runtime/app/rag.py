@@ -37,6 +37,7 @@ from app.llm_router import (
     STRUCTURED_ATTEMPT_TIMEOUT,
     STRUCTURED_MAX_ATTEMPTS,
     STRUCTURED_MAX_TOKENS,
+    STRUCTURED_MAX_TOKENS_LONG,
     STRUCTURED_TOTAL_BUDGET,
     loads_object,
     paid_fallback_model,
@@ -347,13 +348,16 @@ class OpenRouterRag:
             "Please retry in a minute. — " + " | ".join(failures[:4])
         )
 
-    def structured_generate(self, prompt: str, validator: Callable[[dict[str, Any]], None] | None = None) -> dict[str, Any]:
+    def structured_generate(self, prompt: str, validator: Callable[[dict[str, Any]], None] | None = None, long: bool = False) -> dict[str, Any]:
         """Generate one JSON object, walking models until one is usable.
 
         `validator` may raise ValueError to reject a structurally wrong reply;
         the router then tries the next model instead of failing the job. A
         reply salvaged from a truncated response is only accepted when the
         validator passes, so a half-written lesson never reaches a learner.
+
+        Set `long` for a deep lesson, which needs a larger output budget than
+        the standard one to fit its extra sections without being truncated.
         """
         messages = [
             {"role": "system", "content": "You are a JSON API. Reply with one valid JSON object and nothing else: no Markdown fences, no commentary, no reasoning text."},
@@ -370,7 +374,7 @@ class OpenRouterRag:
 
         result, _model = self._run_chain(
             messages=messages,
-            max_tokens=STRUCTURED_MAX_TOKENS,
+            max_tokens=STRUCTURED_MAX_TOKENS_LONG if long else STRUCTURED_MAX_TOKENS,
             temperature=0.2,
             json_mode=True,
             attempt_timeout=STRUCTURED_ATTEMPT_TIMEOUT,

@@ -313,6 +313,13 @@ export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDept
     `Trap: ${knowledge.trap}`,
     `Recall check: ${knowledge.check}`,
   ].slice(0, 7);
+  // Hard guarantee, matching the AI lesson: 5-6 sections at eli5/standard, and
+  // genuinely more at deep rather than the same lesson with a different label.
+  const maxSections = depth === 'deep' ? 9 : 6;
+  if (sections.length > maxSections) sections.length = maxSections;
+  while (sections.length < 5) {
+    sections.push(S(`Retrieval practice for ${title}`, `Close the page and write down, from memory: the mental model, the procedure you would follow, and the trap that makes a plausible answer wrong. Then reopen the lesson and mark the part you could not reproduce.\n\n**Check yourself:** ${knowledge.check}`));
+  }
   const words = sections.reduce((total, section) => total + String(section.body).trim().split(/\s+/).length, 0);
 
   return {

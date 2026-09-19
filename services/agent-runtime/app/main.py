@@ -202,6 +202,14 @@ class KnowledgeDocument(BaseModel):
         if any(value not in TOPICS and topic_for(value) is None for value in values): raise ValueError("Unknown topic ID")
         return values
 
+# Every published lesson carries at least MIN_SECTIONS note sections, whichever
+# model wrote it: a model that returns two paragraphs is a weak reply, not a
+# lesson. Deep deliberately runs longer than the 5-6 section standard window.
+MIN_SECTIONS = 5
+MAX_SECTIONS = 6
+DEEP_MAX_SECTIONS = 9
+
+
 def check_lesson_shape(package: Any) -> None:
     """Reject a structurally unusable lesson so the router tries another model.
 
@@ -218,6 +226,10 @@ def check_lesson_shape(package: Any) -> None:
     usable = [section for section in sections if isinstance(section, dict) and str(section.get("heading", "")).strip() and str(section.get("body", "")).strip()]
     if not usable:
         raise ValueError("no note section has both a heading and a body")
+    if len(usable) < MIN_SECTIONS:
+        # A model that ignored the section count produces a thin lesson, so try
+        # the next one rather than publishing two paragraphs.
+        raise ValueError(f"only {len(usable)} usable note sections; at least {MIN_SECTIONS} are required")
     package["notes"]["sections"] = usable
     claims = package.get("claims")
     if not isinstance(claims, list) or not claims:
@@ -289,9 +301,9 @@ class AgentGraph:
         # explanation, avoiding the former three-page wall of text and a
         # second provider round-trip.
         plans = {
-            "eli5": {"sections": 4, "word_budget": 520, "practice": (5, 4, 2), "tone": "a story-first explainer for a complete beginner; define jargon immediately and use one tiny example"},
-            "standard": {"sections": 5, "word_budget": 820, "practice": (5, 4, 3), "tone": "a concise, rigorous tutor; prioritize the mental model, formal rule, worked trace, trade-off, and trap"},
-            "deep": {"sections": 7, "word_budget": 1120, "practice": (6, 5, 3), "tone": "a senior mentor; add a compact proof or derivation and production or transfer trade-off without repeating the standard material"},
+            "eli5": {"sections": 5, "word_budget": 620, "practice": (5, 4, 2), "tone": "a story-first explainer for a complete beginner; define jargon immediately and use one tiny example"},
+            "standard": {"sections": 6, "word_budget": 900, "practice": (5, 4, 3), "tone": "a concise, rigorous tutor; prioritize the mental model, formal rule, worked trace, trade-off, and trap"},
+            "deep": {"sections": 9, "word_budget": 1700, "practice": (6, 5, 3), "tone": "a senior mentor; add a compact proof or derivation and production or transfer trade-off without repeating the standard material"},
         }
         plan = plans[depth]
         self.state.context = {
@@ -349,7 +361,7 @@ EVIDENCE:
 ''' + "\n\n".join(f"[chunk_id={item['chunk_id']}; source={item['title']}; url={item['url']}]\n{item['text']}" for item in evidence)
         # The shape check runs inside the model chain: a structurally wrong
         # reply costs one model attempt instead of failing the learner's job.
-        generated = self.run_agent("Notes Author", "Generate the compact lesson and practice in one model call", "A single schema-constrained response removes a slow second provider request while retaining claim provenance.", lambda: self.rag.structured_generate(prompt, validator=check_lesson_shape), "structured_generate")
+        generated = self.run_agent("Notes Author", "Generate the compact lesson and practice in one model call", "A single schema-constrained response removes a slow second provider request while retaining claim provenance.", lambda: self.rag.structured_generate(prompt, validator=check_lesson_shape, long=self.state.context.get("depth") == "deep"), "structured_generate")
         self.state.artifacts.update(generated); self.state.current_node = "practice"
 
     def practice(self):
@@ -388,8 +400,10 @@ EVIDENCE:
             pyqs.append({"year": datetime.now(timezone.utc).year, "question": f"Apply this claim to a small case and justify each step: {compact(claims[index].get('text', ''), 220)}", "difficulty": ("easy", "medium", "hard")[len(pyqs) % 3], "claimIds": [index]})
 
         # Retain the strongest sections if a provider ignored the compact
-        # target, rather than publishing a slow three-page response.
-        sections = self.state.artifacts.get("notes", {}).get("sections", [])[:self.state.context["section_target"]]
+        # target, rather than publishing a slow three-page response. The floor
+        # is enforced upstream by check_lesson_shape, so this only trims.
+        ceiling = DEEP_MAX_SECTIONS if self.state.context.get("depth") == "deep" else MAX_SECTIONS
+        sections = self.state.artifacts.get("notes", {}).get("sections", [])[:max(MIN_SECTIONS, min(ceiling, self.state.context["section_target"]))]
         for index, section in enumerate(sections):
             section["claimIds"] = claim_ids(section, index % len(valid_ids))
         self.state.artifacts["notes"]["sections"] = sections

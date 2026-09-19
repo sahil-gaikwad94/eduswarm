@@ -348,7 +348,8 @@ test('local study kits are compact, topic-aware, and source-linked', async () =>
   assert.equal(pack.verification.sourceRefs.length >= 2, true);
   assert.equal(pack.readingMinutes > 0, true);
   const deep = buildLocalPack('algo-complexity', topic, 'deep');
-  assert.equal(deep.notes.sections.length > pack.notes.sections.length, true);
+  assert.equal(deep.notes.sections.length > pack.notes.sections.length, true, 'deep genuinely teaches more than standard');
+  assert.equal(deep.notes.sections.length <= 9, true);
 
   const node = getTopic('web-dev-backend-with-node-js-node-js-runtime')!;
   const nodePack = buildLocalPack(node.id, node, 'standard');
@@ -359,7 +360,7 @@ test('local study kits are compact, topic-aware, and source-linked', async () =>
     for (const current of curriculum) {
       const local = buildLocalPack(current.id, current, 'eli5');
       assert.equal(local.verification.sourceRefs.length >= 2, true, `${current.id} has reference routes`);
-      assert.equal(local.notes.sections.length >= 5, true, `${current.id} has a usable local tutorial`);
+      assert.equal(local.notes.sections.length >= 5 && local.notes.sections.length <= 6, true, `${current.id} has a 5-6 section standard local tutorial`);
     }
   }
 });
