@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))) i
 from app.rag import OpenRouterRag  # noqa: E402
 from app.main import reference_routes  # noqa: E402
 from app.curriculum import curriculum_topics as curriculum_topic_map  # noqa: E402
+from app.local_kits import kits_dir, write_kit  # noqa: E402
 
 
 def slug(value: str) -> str:
@@ -240,6 +241,62 @@ def seed_reference_sources(rag: OpenRouterRag, limit: int | None = None) -> int:
     return total
 
 
+def seed_local_kits(limit: int | None = None) -> int:
+    """Write on-disk local study kits for every live curriculum topic.
+
+    A kit is the offline evidence tier: attributed tutorial extracts from the
+    same public reference routes the lesson already links to (GeeksforGeeks,
+    MDN, W3Schools-style docs, NPTEL…), stored as JSON outside the Git checkout.
+    With kits seeded, a topic stays teachable when Qdrant is empty or the
+    network is unavailable — without inventing source text.
+
+    Rights: this fetches only pages whose robots.txt permits it, keeps the
+    source URL with every extract, and stores a bounded extract rather than a
+    mirrored page. Run it only for sources you are licensed to cache.
+    """
+    user_agent = "EduSwarmKnowledgeSeeder/1.0 (+https://github.com/sahil-gaikwad94/eduswarm)"
+    cache: dict[str, str] = {}
+    written = 0
+    incomplete: list[str] = []
+    topics = curriculum_topics()[:limit]
+    for index, (tid, _module, title, description) in enumerate(topics, start=1):
+        sources: list[dict[str, str]] = []
+        for route in reference_routes(tid, title)[:3]:
+            url = route["url"]
+            if url not in cache:
+                if not allowed_by_robots(url, user_agent):
+                    print(f"[{index}] skip robots: {route['title']} ({url})")
+                    cache[url] = ""
+                else:
+                    try:
+                        cache[url] = fetch_visible_text(url, user_agent)
+                        time.sleep(0.4)  # polite pacing for distinct public pages
+                    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as exc:
+                        print(f"[{index}] skip fetch: {route['title']} ({type(exc).__name__})")
+                        cache[url] = ""
+            text = cache[url]
+            if len(text) < 300:
+                continue
+            sources.append({
+                "source_id": route["source_id"],
+                "title": route["title"],
+                "url": url,
+                "text": f"Topic scope: {title}. {description} Attributed extract from {route['title']}: {text}",
+            })
+        # Two independent sources is the fact-checker's citation threshold, so a
+        # kit below it would not survive verification anyway.
+        if len(sources) < 2:
+            incomplete.append(tid)
+            continue
+        write_kit(tid, title, sources)
+        written += 1
+        print(f"[{index}/{len(topics)}] kit written for {title} -> {tid} ({len(sources)} sources)")
+    print(f"Wrote {written} local kits to {kits_dir()}; {len(incomplete)} topics lacked two permitted sources.")
+    if incomplete:
+        print("Topics still without a kit (rights or robots pending): " + ", ".join(incomplete[:10]) + ("…" if len(incomplete) > 10 else ""))
+    return written
+
+
 def seed_curated_briefs(rag: OpenRouterRag) -> int:
     total = 0
     for index, (module, title, source_title, url, text) in enumerate(BRIEFS):
@@ -255,12 +312,22 @@ def seed_curated_briefs(rag: OpenRouterRag) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Seed EduSwarm's attributed Qdrant knowledge base.")
     parser.add_argument("--fetch-references", action="store_true", help="Fetch and index public source text for every live topic only when robots.txt permits it.")
+    parser.add_argument("--local-kits", action="store_true", help="Write on-disk local study kits (offline evidence) for every live topic. Requires no Qdrant and no LLM key.")
     parser.add_argument("--limit", type=int, default=None, help="Limit curriculum topics; useful for a smoke run.")
     args = parser.parse_args()
+    if args.local_kits:
+        # Deliberately does not construct a Qdrant client: kits are files.
+        seed_local_kits(max(1, args.limit) if args.limit else None)
+        return 0
     rag = OpenRouterRag()
     if args.fetch_references:
         seed_reference_sources(rag, max(1, args.limit) if args.limit else None)
     else:
         seed_curated_briefs(rag)
         print("Tip: run `python seed_knowledge.py --fetch-references` to ingest permitted, attributed reference text for every curriculum topic.")
+        print("Tip: run `python seed_knowledge.py --local-kits` to write offline local study kits so topics stay teachable without Qdrant.")
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

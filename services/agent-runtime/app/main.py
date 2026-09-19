@@ -18,6 +18,7 @@ from langgraph.graph import END, StateGraph
 from typing_extensions import TypedDict
 from app.rag import EvidenceChunk, OpenRouterRag
 from app.curriculum import topic_for
+from app.local_kits import has_kit, kit_sources
 
 class GraphState(TypedDict):
     node: str
@@ -88,6 +89,19 @@ def reference_routes(topic_id: str, title: str) -> list[dict[str, str]]:
     return [
         {"source_id": "gfg-gate", "title": f"GeeksforGeeks: {title}", "url": f"https://www.geeksforgeeks.org/?s={query}"},
         {"source_id": "nptel-cs", "title": "NPTEL Computer Science courses", "url": "https://nptel.ac.in/courses"},
+    ]
+
+
+def local_kit_evidence(topic_id: str) -> list[EvidenceChunk]:
+    """Seeded, attributed tutorial text for a topic, or [] when none exists.
+
+    This is the middle evidence tier: real source extracts that were seeded
+    offline, used when Qdrant has nothing indexed. It keeps a topic teachable
+    (and citable by two independent sources) without the network.
+    """
+    return [
+        EvidenceChunk(f"local-kit-{index}", source["source_id"], source["title"], source["url"], source["text"])
+        for index, source in enumerate(kit_sources(topic_id)[:4])
     ]
 
 
@@ -188,6 +202,41 @@ class KnowledgeDocument(BaseModel):
         if any(value not in TOPICS and topic_for(value) is None for value in values): raise ValueError("Unknown topic ID")
         return values
 
+def check_lesson_shape(package: Any) -> None:
+    """Reject a structurally unusable lesson so the router tries another model.
+
+    This runs *inside* the model chain (as `structured_generate`'s validator),
+    not after it: a weak model that returns `{"notes": {}}` should cost one
+    attempt, not the whole job. Only the shape is enforced here — citation
+    quality is checked later by the fact-checker, which can ask for a repair.
+    """
+    if not isinstance(package, dict):
+        raise ValueError("the reply was not a JSON object")
+    sections = (package.get("notes") or {}).get("sections") if isinstance(package.get("notes"), dict) else None
+    if not isinstance(sections, list) or not sections:
+        raise ValueError("notes.sections is missing or empty")
+    usable = [section for section in sections if isinstance(section, dict) and str(section.get("heading", "")).strip() and str(section.get("body", "")).strip()]
+    if not usable:
+        raise ValueError("no note section has both a heading and a body")
+    package["notes"]["sections"] = usable
+    claims = package.get("claims")
+    if not isinstance(claims, list) or not claims:
+        raise ValueError("claims is missing or empty")
+    normalised: list[dict[str, Any]] = []
+    for claim in claims:
+        if not isinstance(claim, dict) or not str(claim.get("text", "")).strip():
+            continue
+        raw = claim.get("evidenceIds")
+        if isinstance(raw, (str, int)):
+            raw = [raw]
+        ids = list(dict.fromkeys(str(value).strip() for value in (raw or []) if str(value).strip()))
+        claim["evidenceIds"] = ids
+        normalised.append(claim)
+    if not normalised:
+        raise ValueError("no claim has usable text")
+    package["claims"] = normalised
+
+
 class ToolRegistry:
     def validate_package(self, package: dict[str, Any], evidence: list[dict[str, Any]]) -> dict[str, Any]:
         evidence_by_id = {item["chunk_id"]: item for item in evidence}
@@ -240,9 +289,9 @@ class AgentGraph:
         # explanation, avoiding the former three-page wall of text and a
         # second provider round-trip.
         plans = {
-            "eli5": {"sections": 5, "word_budget": 650, "practice": (5, 4, 2), "tone": "a story-first explainer for a complete beginner; define jargon immediately and use one tiny example"},
-            "standard": {"sections": 6, "word_budget": 1000, "practice": (6, 5, 3), "tone": "a concise, rigorous tutor; prioritize the mental model, formal rule, worked trace, trade-off, and trap"},
-            "deep": {"sections": 8, "word_budget": 1350, "practice": (7, 5, 3), "tone": "a senior mentor; add a compact proof or derivation and production or transfer trade-off without repeating the standard material"},
+            "eli5": {"sections": 4, "word_budget": 520, "practice": (5, 4, 2), "tone": "a story-first explainer for a complete beginner; define jargon immediately and use one tiny example"},
+            "standard": {"sections": 5, "word_budget": 820, "practice": (5, 4, 3), "tone": "a concise, rigorous tutor; prioritize the mental model, formal rule, worked trace, trade-off, and trap"},
+            "deep": {"sections": 7, "word_budget": 1120, "practice": (6, 5, 3), "tone": "a senior mentor; add a compact proof or derivation and production or transfer trade-off without repeating the standard material"},
         }
         plan = plans[depth]
         self.state.context = {
@@ -264,9 +313,15 @@ class AgentGraph:
         query = f"{self.state.context['topic']['title']}: {self.state.context['topic']['description']}"
         evidence = self.run_agent("Researcher", "Retrieve grounded evidence", "Retrieve a compact, diverse evidence set before generation.", lambda: {"evidence": [chunk.__dict__ for chunk in self.rag.retrieve(query, self.state.topic_id)[:4]]}, "qdrant_retrieve")["evidence"]
         if len({item["source_id"] for item in evidence}) < 2:
-            fallback = curriculum_fallback_evidence(self.state.topic_id, self.state.context["topic"])
-            evidence = [chunk.__dict__ for chunk in fallback]
-            self.state.context["evidence_mode"] = "curriculum-preview"
+            # Prefer seeded local kit text (real attributed tutorial extracts)
+            # over the thin curriculum brief whenever a kit exists for this topic.
+            if has_kit(self.state.topic_id):
+                evidence = [chunk.__dict__ for chunk in local_kit_evidence(self.state.topic_id)]
+                self.state.context["evidence_mode"] = "local-kit"
+            else:
+                fallback = curriculum_fallback_evidence(self.state.topic_id, self.state.context["topic"])
+                evidence = [chunk.__dict__ for chunk in fallback]
+                self.state.context["evidence_mode"] = "curriculum-preview"
         self.state.sources = evidence; self.state.context["evidence"] = evidence
         if len({item["source_id"] for item in evidence}) < 2: self.state.current_node = "failed"; self.state.error = "Insufficient independent retrieved evidence"; return
         self.state.current_node = "compose"
@@ -279,12 +334,13 @@ class AgentGraph:
 
 Topic: {self.state.context['topic']['title']}. Learner level: {self.state.learner_level}. Write exactly {self.state.context['section_target']} note sections and approximately {self.state.context['word_budget']} words across the note bodies (never more than {self.state.context['word_budget'] + 150}). Use this order where applicable: intuition and scope; definitions/mental model; one worked trace; implementation or applied workflow; trade-offs and failure modes; exam/interview or production transfer; then compact proof/advanced sections only for deep. Each body is 1–2 short paragraphs; use at most one small code or table block in the whole notes. Do not repeat definitions. A local companion already supplies extra code, diagrams, source links, and drills.
 
-Create {flashcards} active-recall flashcards, {quiz} four-option quiz questions, and {pyqs} exam/application prompts in the SAME response. Quiz explanations must give the governing rule and why the most tempting distractor is wrong. Every section and practice item needs claimIds. Make claims atomically checkable. Every claim must cite exactly two distinct chunk IDs, and use no facts outside the evidence.
+Create {flashcards} active-recall flashcards, {quiz} four-option quiz questions, and {pyqs} exam/application prompts in the SAME response. Quiz explanations must give the governing rule and why the most tempting distractor is wrong. Every section and practice item needs claimIds. Make claims atomically checkable. Write 8 to 10 claims in total. Every claim must cite exactly two distinct chunk IDs from two different sources, and use no facts outside the evidence. Output only the JSON object, keys in order notes, claims, flashcards, quiz, pyqs.
 
 EVIDENCE:
 ''' + "\n\n".join(f"[chunk_id={item['chunk_id']}; source={item['title']}; url={item['url']}]\n{item['text']}" for item in evidence)
-        generated = self.run_agent("Notes Author", "Generate the compact lesson and practice in one model call", "A single schema-constrained response removes a slow second provider request while retaining claim provenance.", lambda: self.rag.structured_generate(prompt), "structured_generate")
-        if not generated.get("notes", {}).get("sections") or not generated.get("claims"): raise RuntimeError("The language model returned an invalid lesson schema")
+        # The shape check runs inside the model chain: a structurally wrong
+        # reply costs one model attempt instead of failing the learner's job.
+        generated = self.run_agent("Notes Author", "Generate the compact lesson and practice in one model call", "A single schema-constrained response removes a slow second provider request while retaining claim provenance.", lambda: self.rag.structured_generate(prompt, validator=check_lesson_shape), "structured_generate")
         self.state.artifacts.update(generated); self.state.current_node = "practice"
 
     def practice(self):
@@ -332,8 +388,62 @@ EVIDENCE:
         self.run_agent("Practice Team", "Curate claim-linked recall practice locally", "Reuse the one-call lesson output and deterministically fill any missing practice so publishing is faster and reliable.", lambda: {"flashcards": len(self.state.artifacts["flashcards"]), "quiz": len(self.state.artifacts["quiz"]), "pyqs": len(self.state.artifacts["pyqs"]), "generation_calls_saved": 1}, "local_practice_curator")
         self.state.current_node = "verify"
 
+    def repair_citations(self) -> bool:
+        """Ask the model once to re-cite its claims against the real chunk ids.
+
+        Weaker free models routinely cite one chunk, invent an id, or use two
+        chunks from the same source. That is a fixable formatting error, not a
+        reason to throw away a good lesson — but the fix must come from the
+        model, never from us silently attaching citations to a claim. If the
+        repair also fails, verification stays failed (fail closed).
+        """
+        evidence = self.state.context["evidence"]
+        claims = self.state.artifacts.get("claims", [])
+        if not claims or len(({item.get("source_id") for item in evidence})) < 2:
+            return False
+        catalogue = "\n".join(f'- chunk_id "{item["chunk_id"]}" (source_id "{item["source_id"]}", {item["title"]})' for item in evidence)
+        prompt = (
+            'Return JSON only: {"claims": [{"text": str, "evidenceIds": [str, str]}]}.\n\n'
+            "These claims were written from the evidence below but their citations are invalid. "
+            "Re-cite every claim using ONLY the chunk_ids listed here. Each claim must cite exactly two "
+            "different chunk_ids that belong to two DIFFERENT source_ids. Keep the claim text and the claim "
+            "order unchanged; if a claim genuinely cannot be supported by two independent chunks, rewrite its "
+            "text so that it can be, without inventing facts.\n\n"
+            f"VALID CHUNKS:\n{catalogue}\n\nCLAIMS TO RE-CITE:\n"
+            + "\n".join(f"{index}. {claim.get('text', '')}" for index, claim in enumerate(claims))
+        )
+        valid_ids = {item["chunk_id"]: item.get("source_id") for item in evidence}
+
+        def validator(package: Any) -> None:
+            repaired = package.get("claims") if isinstance(package, dict) else None
+            if not isinstance(repaired, list) or len(repaired) != len(claims):
+                raise ValueError("the repair must return one entry per original claim")
+            for claim in repaired:
+                ids = list(dict.fromkeys(str(value) for value in (claim.get("evidenceIds") or []) if str(value).strip())) if isinstance(claim, dict) else []
+                if len(ids) != 2 or not set(ids) <= set(valid_ids) or len({valid_ids[item] for item in ids}) != 2:
+                    raise ValueError("every claim needs two valid chunk ids from two different sources")
+                claim["evidenceIds"] = ids
+
+        try:
+            repaired = self.rag.structured_generate(prompt, validator=validator)
+        except Exception:
+            return False
+        for original, fixed in zip(claims, repaired["claims"]):
+            original["evidenceIds"] = fixed["evidenceIds"]
+            if str(fixed.get("text", "")).strip():
+                original["text"] = str(fixed["text"]).strip()
+        return True
+
     def verify(self):
-        result = self.run_agent("Fact-Checker", "Verify package", "Fail closed on incomplete evidence.", lambda: TOOLS.validate_package(self.state.artifacts, self.state.context["evidence"]), "validate_package"); self.state.verification = result; self.state.current_node = "publish" if result["status"] == "approved" else "failed"; self.state.error = "; ".join(result["errors"]) if result["status"] != "approved" else None
+        result = self.run_agent("Fact-Checker", "Verify package", "Fail closed on incomplete evidence.", lambda: TOOLS.validate_package(self.state.artifacts, self.state.context["evidence"]), "validate_package")
+        if result["status"] != "approved" and any("citation" in error for error in result["errors"]):
+            # One bounded repair round: the model re-cites its own claims from
+            # the real chunk list. We never invent a citation on its behalf.
+            if self.run_agent("Fact-Checker", "Request corrected citations", "Invalid citations are a formatting failure; ask the author to re-cite before failing the topic.", lambda: {"repaired": self.repair_citations()}, "repair_citations")["repaired"]:
+                result = self.run_agent("Fact-Checker", "Re-verify repaired package", "Fail closed if the repaired citations are still invalid.", lambda: TOOLS.validate_package(self.state.artifacts, self.state.context["evidence"]), "validate_package")
+        self.state.verification = result
+        self.state.current_node = "publish" if result["status"] == "approved" else "failed"
+        self.state.error = "; ".join(result["errors"]) if result["status"] != "approved" else None
     def publish(self):
         self.state.artifacts.update({"topicId": self.state.topic_id, "title": self.state.context["topic"]["title"], "depth": self.state.context.get("depth", "standard"), "videos": [{"title": f"Trusted lecture search: {self.state.context['topic']['title']}", "url": "https://www.youtube.com/results?search_query=" + self.state.topic_id, "timestamp": "00:00"}], "verification": self.state.verification}); self.run_agent("Publisher", "Publish verified package", "Only approved packages are visible.", lambda: {"published": True}); self.state.current_node = "complete"
     def build_graph(self):
@@ -563,6 +673,15 @@ async def launch_agent(state: JobState):
     """Run blocking LangGraph/provider work outside FastAPI's event loop."""
     await asyncio.to_thread(lambda: asyncio.run(AgentGraph(state).execute()))
 
+def _cached_chain(rag: Any) -> list[str]:
+    try:
+        return rag.model_chain(fetch=False)
+    except TypeError:  # test doubles keep the old zero-argument signature
+        return rag.model_chain()
+    except Exception:
+        return []
+
+
 @app.get("/health")
 def health():
     rag = OpenRouterRag()
@@ -570,7 +689,9 @@ def health():
         "ok": True, "service": "agent-runtime", "mode": "langgraph-openrouter-qdrant",
         "providerConfigured": bool(os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")),
         "model": getattr(getattr(rag, "settings", None), "model", ""),
-        "models": (rag.model_chain()[:4] if hasattr(rag, "model_chain") else []),
+        # Cached catalogue only: Render's health check must never wait on a
+        # live OpenRouter request.
+        "models": (_cached_chain(rag)[:4] if hasattr(rag, "model_chain") else []),
     }
 @app.get("/ready")
 def ready():

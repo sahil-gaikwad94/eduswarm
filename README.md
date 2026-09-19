@@ -116,12 +116,26 @@ Keep `CORS_ORIGINS`, `VITE_API_URL`, `AGENT_RUNTIME_URL`, `PUBLIC_API_URL`,
 **Set `OPENROUTER_API_KEY` on both the API and the agent runtime.** The runtime
 adds Qdrant retrieval and is the preferred brain, but it is a separate service:
 when it is asleep or erroring, the API calls the model directly so specialists
-still answer with a real model instead of degrading silently. Model ids are a
-comma-separated chain (`OPENROUTER_MODEL`, then `OPENROUTER_FALLBACK_MODELS`);
-the first model that answers wins. Structured lessons have a four-minute
-per-provider attempt window, make one retry after a two-second backoff, and the
-API keeps the learner's streamed job active for up to ten minutes before local
-recovery. Topic jobs use SSE (`/api/jobs/:id/events`) for live browser-facing
+still answer with a real model instead of degrading silently.
+
+**You never have to name a model.** Free-tier ids churn constantly, so the model
+chain is *discovered*, not configured: `services/agent-runtime/app/llm_router.py`
+(mirrored in `apps/api/src/llm.ts`) reads OpenRouter's live `/models` catalogue
+every 20 minutes, keeps only free text models that are large and long-context
+enough to write a lesson, and orders them last-known-good → live env hints →
+curated list → newest discovered → `openrouter/free`. Failures feed a cool-down
+ledger (404 → 6h, 402/403 → 1h, 429 → 2m, empty or unparseable output → 15m), so
+a dead model sinks to the back of the chain instead of wasting the first attempt
+of every job. `OPENROUTER_MODEL` and `OPENROUTER_FALLBACK_MODELS` are optional
+hints that are ignored once the id leaves the catalogue — **changing or removing
+them cannot cause an outage**. Set `OPENROUTER_PAID_FALLBACK_MODEL` to one cheap
+paid model if you want a guaranteed tier behind the free chain.
+
+A lesson walks up to six models within a 480-second budget (150s per attempt),
+parses replies tolerantly (`<think>` blocks, Markdown fences, surrounding prose,
+trailing commas, and truncated JSON are all recovered), and rejects a model whose
+output fails the lesson shape check so the next one is tried. The API keeps the
+learner's streamed job active for up to ten minutes before local recovery. Topic jobs use SSE (`/api/jobs/:id/events`) for live browser-facing
 progress and keep-alive heartbeats. Bring your own key — the repo ships none.
 
 ## API surface

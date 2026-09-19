@@ -18,7 +18,7 @@ class FakeProviderRag:
             EvidenceChunk('nptel-0', 'nptel', 'NPTEL Algorithms', 'https://nptel.ac.in/example', 'Asymptotic analysis describes growth as input size increases.'),
         ]
 
-    def structured_generate(self, prompt):
+    def structured_generate(self, prompt, validator=None):
         if '"notes"' in prompt:
             return {'notes': {'sections': [{'heading': 'Core idea', 'body': 'Use the retrieved evidence.', 'claimIds': [0]}]}, 'claims': [{'text': 'A supported claim.', 'evidenceIds': ['mit-0', 'nptel-0']}]}
         return {'flashcards': [{'question': 'Q?', 'answer': 'A.', 'claimIds': [0]}], 'quiz': [{'question': 'Quiz?', 'options': ['A', 'B', 'C', 'D'], 'answer': 0, 'explanation': 'Evidence-backed.', 'claimIds': [0]}], 'pyqs': [{'year': 2023, 'question': 'Apply it.', 'difficulty': 'beginner', 'claimIds': [0]}]}
@@ -64,8 +64,8 @@ def test_topic_job_runs_agents_and_publishes_verified_package():
     assert result['package']['verification']['status'] == 'approved'
     assert len(result['package']['verification']['sources']) >= 2
     assert result['package']['notes']['sections']
-    assert result['context']['section_target'] == 6
-    assert result['context']['word_budget'] == 1000
+    assert result['context']['section_target'] == 5
+    assert result['context']['word_budget'] == 820
 
     trace = client.get(f'/v1/topic-jobs/{job_id}/trace').json()
     agents = [run['agent'] for run in trace['trace']]
@@ -112,7 +112,7 @@ def test_unindexed_curriculum_topic_uses_safe_preview_evidence(monkeypatch):
         def retrieve(self, _query, _topic_id):
             return []
 
-        def structured_generate(self, prompt):
+        def structured_generate(self, prompt, validator=None):
             if '"notes"' in prompt:
                 return {'notes': {'sections': [{'heading': 'Preview', 'body': 'Use the curriculum brief.', 'claimIds': [0]}]}, 'claims': [{'text': 'A preview claim.', 'evidenceIds': ['curriculum-brief-0', 'curriculum-brief-1']}]}
             return {'flashcards': [{'question': 'Q?', 'answer': 'A.', 'claimIds': [0]}], 'quiz': [{'question': 'Quiz?', 'options': ['A', 'B', 'C', 'D'], 'answer': 0, 'explanation': 'Preview-backed.', 'claimIds': [0]}], 'pyqs': [{'year': 2023, 'question': 'Apply it.', 'difficulty': 'beginner', 'claimIds': [0]}]}
@@ -146,7 +146,7 @@ class FakeSpecialistRag(FakeProviderRag):
         FakeSpecialistRag.last_system = system
         return f"Grounded answer to: {latest[:60]}", "fake-model:free"
 
-    def model_chain(self):
+    def model_chain(self, fetch=True):
         return ["fake-model:free"]
 
 
@@ -167,7 +167,7 @@ def test_doubt_solve_degrades_to_503_without_provider(monkeypatch):
 
 def test_study_plan_returns_timeboxed_blocks(monkeypatch):
     class PlanRag(FakeSpecialistRag):
-        def structured_generate(self, prompt):
+        def structured_generate(self, prompt, validator=None):
             return {"totalMinutes": 60, "intensity": "focused", "blocks": [{"kind": "review", "title": "Review due cards", "detail": "SRS", "minutes": 15}, {"kind": "learn", "title": "New kit", "detail": "Study", "minutes": 45}]}
 
     monkeypatch.setattr("app.main.OpenRouterRag", PlanRag)
@@ -180,7 +180,7 @@ def test_study_plan_returns_timeboxed_blocks(monkeypatch):
 
 def test_evaluate_code_returns_rubric(monkeypatch):
     class ReviewRag(FakeSpecialistRag):
-        def structured_generate(self, prompt):
+        def structured_generate(self, prompt, validator=None):
             return {"verdict": "Good", "score": 82, "findings": ["Missing empty-input guard"], "strengths": ["Clean loop"], "complexity": "O(n) time, O(1) space", "corrected_code": None}
 
     monkeypatch.setattr("app.main.OpenRouterRag", ReviewRag)
@@ -191,7 +191,7 @@ def test_evaluate_code_returns_rubric(monkeypatch):
 
 def test_mock_analysis_returns_next_steps(monkeypatch):
     class ExamRag(FakeSpecialistRag):
-        def structured_generate(self, prompt):
+        def structured_generate(self, prompt, validator=None):
             return {"summary": "Solid", "strengths": ["Accuracy"], "weaknesses": ["Speed"], "next_steps": ["Drill CN subnetting"]}
 
     monkeypatch.setattr("app.main.OpenRouterRag", ExamRag)
