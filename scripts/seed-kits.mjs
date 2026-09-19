@@ -10,6 +10,7 @@
  *   node scripts/seed-kits.mjs --limit 5        # smoke run
  *   node scripts/seed-kits.mjs --topic algo-dp  # one topic
  *   node scripts/seed-kits.mjs --report         # coverage only, no fetching
+ *   node scripts/seed-kits.mjs --budget-minutes 6   # stop after 6 minutes
  *
  * Guardrails, because this stores third-party article text:
  *  - ALLOWED_PUBLISHERS is an explicit allow-list. Only GeeksforGeeks, MDN and
@@ -55,8 +56,11 @@ async function robotsAllows(url) {
       const response = await fetch(`${origin}/robots.txt`, { headers: { 'user-agent': UA }, signal: AbortSignal.timeout(10_000) });
       if (response.ok) rules = parseRobots(await response.text());
       else rules = [];
-    } catch {
-      rules = null; // unknown policy is not consent
+    } catch (error) {
+      // Unknown policy is not consent, but say so plainly: a build with no
+      // network egress would otherwise look like a site-wide robots block.
+      console.log(`    ! could not read ${origin}/robots.txt (${error.message}); treating as disallowed`);
+      rules = null;
     }
     robotsCache.set(origin, rules);
   }
@@ -301,18 +305,30 @@ function report(topics) {
 async function main() {
   const args = process.argv.slice(2);
   const limit = Number(args[args.indexOf('--limit') + 1]) || null;
+  // A deploy build cannot run 237 paced fetches, so it seeds what fits and
+  // leaves the rest to the curated tutorial until the next deploy.
+  const budgetMs = args.includes('--budget-minutes') ? Number(args[args.indexOf('--budget-minutes') + 1]) * 60_000 : null;
+  const startedAt = Date.now();
   const only = args.includes('--topic') ? args[args.indexOf('--topic') + 1] : null;
   const topics = await curriculumTopics();
 
   if (args.includes('--report')) return report(topics);
 
   mkdirSync(OUT_DIR, { recursive: true });
-  const selected = only ? topics.filter((topic) => topic.id === only) : limit ? topics.slice(0, limit) : topics;
+  let selected = only ? topics.filter((topic) => topic.id === only) : limit ? topics.slice(0, limit) : topics;
+  if (!only && args.includes('--resume')) {
+    const done = new Set(readdirSync(OUT_DIR).filter((name) => name.endsWith('.json')).map((name) => name.replace(/\.json$/, '')));
+    selected = selected.filter((topic) => !done.has(topic.id.replace(/[^A-Za-z0-9_-]/g, '-')));
+  }
   console.log(`Seeding ${selected.length} topic(s) into ${OUT_DIR}`);
   console.log(`Licensed publishers: ${[...new Set(ALLOWED_PUBLISHERS.map((p) => p.publisher))].join(', ')}\n`);
 
   let written = 0;
   for (const [index, topic] of selected.entries()) {
+    if (budgetMs && Date.now() - startedAt > budgetMs) {
+      console.log(`\nTime budget reached after ${index} topic(s); the rest use the curated tutorial.`);
+      break;
+    }
     console.log(`[${index + 1}/${selected.length}] ${topic.title}`);
     let kit = null;
     try {

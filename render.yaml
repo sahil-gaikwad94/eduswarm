@@ -3,7 +3,10 @@ services:
     name: eduswarm-api
     runtime: node
     rootDir: apps/api
-    buildCommand: npm install && npm run build
+    # Kits are seeded into the build output: no disk required, and every
+    # deploy refreshes the extracted tutorial content. Seeding never fails the
+    # build - topics without a kit use the curated tutorial.
+    buildCommand: npm install && npm run build && node ../../scripts/seed-kits.mjs --budget-minutes 6 || true
     startCommand: npm start
     healthCheckPath: /health
     envVars:
@@ -17,10 +20,11 @@ services:
         value: https://eduswarm-web.onrender.com
       - key: ALLOW_LOCAL_FALLBACK
         value: 'true'
-      # Licensed tutorial kits for the offline lesson path. Seed with
-      # `npm run seed:kits`; topics without one use the curated tutorial.
+      # Licensed tutorial kits for the offline lesson path, written by the
+      # build command above. Point this at a mounted disk instead if you add
+      # one, so kits survive a redeploy without re-fetching.
       - key: EDUSWARM_KITS_DIR
-        value: /var/data/kits
+        value: /opt/render/project/src/apps/api/.data/kits
       - key: AUTH_MODE
         value: google
       - key: PUBLIC_API_URL
