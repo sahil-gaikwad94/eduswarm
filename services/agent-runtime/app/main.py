@@ -311,7 +311,16 @@ class AgentGraph:
     def research(self):
         if self.rag is None: self.rag = OpenRouterRag()
         query = f"{self.state.context['topic']['title']}: {self.state.context['topic']['description']}"
-        evidence = self.run_agent("Researcher", "Retrieve grounded evidence", "Retrieve a compact, diverse evidence set before generation.", lambda: {"evidence": [chunk.__dict__ for chunk in self.rag.retrieve(query, self.state.topic_id)[:4]]}, "qdrant_retrieve")["evidence"]
+        def retrieve() -> dict[str, Any]:
+            # Qdrant is an optimisation, not a dependency: an unreachable or
+            # empty index must fall through to the local evidence tiers rather
+            # than failing the learner's topic.
+            try:
+                return {"evidence": [chunk.__dict__ for chunk in self.rag.retrieve(query, self.state.topic_id)[:4]]}
+            except Exception as exc:
+                return {"evidence": [], "index_unavailable": f"{type(exc).__name__}: {exc}"[:200]}
+
+        evidence = self.run_agent("Researcher", "Retrieve grounded evidence", "Retrieve a compact, diverse evidence set before generation.", retrieve, "qdrant_retrieve")["evidence"]
         if len({item["source_id"] for item in evidence}) < 2:
             # Prefer seeded local kit text (real attributed tutorial extracts)
             # over the thin curriculum brief whenever a kit exists for this topic.

@@ -243,3 +243,31 @@ def test_agent_chat_falls_back_to_its_own_prompt_without_a_system(monkeypatch):
     assert response.status_code == 200
     assert "Socratic Tutor" in FakeSpecialistRag.last_system
     assert "generic study advice" in FakeSpecialistRag.last_system
+
+
+def test_an_unreachable_index_falls_through_instead_of_failing_the_topic(monkeypatch):
+    """Qdrant is an optimisation, not a dependency: an outage must not fail jobs."""
+    class DeadIndexRag(FakeProviderRag):
+        def retrieve(self, _query, _topic_id):
+            raise ConnectionRefusedError('[Errno 111] Connection refused')
+
+        def structured_generate(self, prompt, validator=None):
+            package = {'notes': {'sections': [{'heading': 'Preview', 'body': 'From the brief.', 'claimIds': [0]}]},
+                       'claims': [{'text': 'A preview claim.', 'evidenceIds': ['curriculum-brief-0', 'curriculum-brief-1']}]}
+            if validator:
+                validator(package)
+            return package
+
+    monkeypatch.setattr('app.main.OpenRouterRag', DeadIndexRag)
+    job_id = 'dead-index-regression'
+    (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
+
+    client.post('/v1/topic-jobs', json={'job_id': job_id, 'topic_id': 'algo-complexity'})
+
+    result = client.get(f'/v1/topic-jobs/{job_id}').json()
+    assert result['status'] == 'completed', result.get('error')
+    assert result['package']['verification']['status'] == 'approved'
+    assert result['context']['evidence_mode'] == 'curriculum-preview'
+    researcher = next(run for run in result['trace'] if run['agent'] == 'Researcher')
+    assert 'Connection refused' in researcher['output']['index_unavailable'], 'the outage is reported, not hidden'
+    (STATE_DIR / f'{job_id}.json').unlink(missing_ok=True)
