@@ -215,11 +215,28 @@ export function relatedQuestions(topic: TopicRef, limit = 6): Question[] {
   return scored.filter((s) => s.score > 2).sort((a, b) => b.score - a.score).slice(0, limit).map((s) => s.q);
 }
 
-function pickSnippets(topic: TopicRef, count = 3): Snippet[] {
+const LANGUAGE_BY_GOAL: Record<string, string[]> = {
+  'web-dev': ['javascript', 'typescript', 'html', 'sql'],
+  'ai-ml': ['python', 'sql'],
+  'gate-cs': ['python', 'javascript', 'sql', 'html'],
+};
+
+function preferredLanguages(topicId?: string): string[] {
+  const goal = (topicId || '').split('-')[0] || 'gate-cs';
+  return LANGUAGE_BY_GOAL[goal] || LANGUAGE_BY_GOAL['gate-cs'];
+}
+
+function pickSnippets(topic: TopicRef & { id?: string }, count = 3): Snippet[] {
   const haystack = haystackOf(topic);
+  const wanted = preferredLanguages(topic.id);
   const ranked = SNIPPETS.map((s) => ({ s, score: matchScore(haystack, s.match) }))
-    .filter((r) => r.score > 0).sort((a, b) => b.score - a.score).map((r) => r.s);
-  return [...ranked, GENERIC_SNIPPET].slice(0, count);
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((r) => r.s);
+  // Prefer snippets in the learner's language family; cross-language examples only if nothing better exists.
+  const native = ranked.filter((s) => wanted.includes(s.language));
+  const pool = native.length >= count ? native : [...native, ...ranked.filter((s) => !wanted.includes(s.language))];
+  return [...pool, GENERIC_SNIPPET].slice(0, count);
 }
 
 function pickDiagrams(topic: TopicRef, count = 3): Diagram[] {
@@ -247,7 +264,7 @@ export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDept
   const knowledge = localKnowledgeFor({ ...topic, id: topicId });
   const references = referencesFor({ ...topic, id: topicId });
   const related = relatedQuestions(topic, 6);
-  const matchedSnippets = pickSnippets(topic, depth === 'eli5' ? 1 : 2);
+  const matchedSnippets = pickSnippets({ ...topic, id: topicId }, depth === 'eli5' ? 1 : 2);
   const matchedDiagrams = pickDiagrams(topic, 1);
   const codeExamples = [knowledge.code, ...matchedSnippets]
     .filter(Boolean)
@@ -269,20 +286,21 @@ export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDept
     : `Create a tiny example for ${title}: write the input, the state after each step, and the expected result. Then change one boundary condition and explain why the result changes or stays the same.`;
 
   const sections: any[] = [
-    S(`Introduction to ${title}`, `${title} is about ${knowledge.focus}. ${topic.description}\n\n**By the end of this local tutorial, you should be able to:** define the key terms in plain language, trace one realistic example, make the important trade-off, and recognize the failure mode that makes an otherwise plausible answer wrong. This is a compact reference-style lesson: read it once, work the example, then use the source links for API-level detail.`),
-    S('Core idea and vocabulary', `${knowledge.mentalModel}\n\n${quickFacts}`),
-    S('How it works: a guided example', `${knowledge.workedExample}\n\n${bankExample}`),
-    S('Build or apply it', `${buildSteps}\n\nWhen you implement or solve a question, write the contract first: what comes in, what result must come out, and which condition must remain true while you work. That turns the example into a reusable method rather than a memorized answer.`),
-    S('Common mistakes and a fast self-check', `**The trap:** ${knowledge.trap}\n\n**Check yourself:** ${knowledge.check}\n\nUse this exit test before moving on: explain the mental model without the page, solve the smallest non-trivial case, then name one input, workload, or assumption where your first approach would fail. If any step is fuzzy, repeat only that section and retry the example.`),
-    S(`Where ${title} fits next`, `${title} is one link in ${module}. Review any prerequisite that you could not use during the example; then move to the next syllabus topic only after you can retrieve this lesson’s model, procedure, and trap from memory.\n\n**Reference reading:** start with ${references[0].title} for the canonical vocabulary, use ${references[1].title} for a second explanation, and keep ${references[2].title} for examples or practice. The links are provided as sources—not copied text—so you can verify details and go deeper.`),
+    S(`Why ${title} matters`, `${title} is ${knowledge.focus}. ${topic.description}\n\n**Read this with a pencil:** work the guided example before scrolling — GATE and real engineering both reward the attempt over the glance.`),
+    S('The one big idea', `${knowledge.mentalModel}\n\n${quickFacts}`),
+    S('How it works — the guided example', `${knowledge.workedExample}`),
+    S('PYQ — know the shape of the question', `${bankExample}`),
+    S('Build it yourself', `${buildSteps}`),
+    S('Traps, and how to dodge them', `**The trap:** ${knowledge.trap}\n\n**Check yourself:** ${knowledge.check}`),
+    S('Where to go next', `${title} sits inside ${module}. Finish here only when you can state the definition, trace the smallest case, and repair the trap from memory.\n\n**Go deeper with the sources below** — they are linked for verification and practice, never copied into this lesson.`),
   ];
 
   if (depth === 'eli5') {
     sections.splice(1, 1, S('The simple picture', `${knowledge.mentalModel}\n\nThink of the worked example as a small story: identify what goes in, what changes, and what comes out. Do not memorize terms until you can tell that story.`));
-    sections.splice(3, 1);
+    sections.splice(4, 1);
   }
   if (depth === 'deep') {
-    sections.splice(4, 0,
+    sections.splice(6, 0,
       S('Trade-offs and transfer', `Strong answers compare alternatives instead of presenting one technique as magic. For ${title}, name the precondition that makes the standard approach valid, the resource it consumes (time, memory, complexity, or operational risk), and the signal that tells you to choose a different approach.\n\nTransfer drill: take the guided example and change its scale, ordering, failure mode, or correctness requirement. Re-state the invariant or contract before deciding whether the same solution still holds.`),
       S('Prove it, test it, teach it', `Use a four-beat proof or review: **initialization** (why the starting state is valid), **maintenance** (why each step preserves the rule), **termination** (why progress cannot continue forever), and **conclusion** (why the final state solves the original problem).\n\nThen teach ${title} in two minutes using one diagram, one example, and the trap above. A clear explanation under this constraint is a stronger signal of mastery than a longer summary.`),
       S('Cost and complexity analysis', `State the cost before optimising it. For ${title}, write down what you are counting (operations, comparisons, allocations, round trips, or wall-clock time), then the cost in the best, average, and worst case, and say which input shape produces each.\n\nSeparate the resource you spend from the resource you save — extra memory for speed, precomputation for query time, or consistency for availability. An answer that names the exchange is worth more than one that quotes a single figure, because the figure changes with the assumptions.`),
@@ -304,32 +322,33 @@ export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDept
   const quiz = [
     ...related.slice(0, 3).map((q) => ({ question: q.question, options: q.options, answer: q.answer, explanation: q.explanation })),
     {
-      question: `What is the strongest way to begin a ${title} problem?`,
-      options: ['Memorise a final answer', 'State the model, inputs, assumptions, and success condition', 'Optimise before checking correctness', 'Ignore the smallest example'],
+      question: `For ${title}, which approach survives the real exam?`,
+      options: ['Recall a remembered answer first', 'State the rule, test the smallest case, then decide', 'Optimise the code before checking correctness', 'Skip the definition and pattern-match the options'],
       answer: 1,
-      explanation: `The local method for ${title} starts with an explicit model and preconditions; that makes the procedure, trade-off, and edge cases checkable.`,
+      explanation: `Definition → trace → decide. The exam here changes exactly one variable on purpose — only the traced approach catches it.`,
     },
     {
-      question: `Which habit best protects against the common ${title} mistake?`,
-      options: ['Choose the familiar-looking option first', 'Test only a large happy-path example', 'Name the assumption and test a boundary or failure case', 'Skip source documentation'],
-      answer: 2,
-      explanation: `The key trap is: ${knowledge.trap} Making assumptions and boundaries explicit is the quickest way to catch it.`,
+      question: `What most often defeats candidates on ${title}?`,
+      options: ['Forgetting the formula', 'Applying it outside its preconditions', 'Using too much memory', 'Writing the answer twice'],
+      answer: 1,
+      explanation: `Boundary and precondition checks kill most plausible-but-wrong attempts; the rest is arithmetic.`,
     },
   ].slice(0, depth === 'eli5' ? 4 : 5);
 
-  const cheatSheet = [
-    `Purpose: ${knowledge.focus}.`,
-    `Mental model: ${knowledge.mentalModel}`,
-    ...knowledge.mechanics.slice(0, 3),
-    `Trap: ${knowledge.trap}`,
-    `Recall check: ${knowledge.check}`,
-  ].slice(0, 7);
+  const cheatSheet = (knowledge.cheatSheet && knowledge.cheatSheet.length
+    ? [...knowledge.cheatSheet]
+    : [
+        `Restate: work ${title} from its definition — name the object, its domain, and the rule being preserved.`,
+        ...knowledge.mechanics.slice(0, 3).map((m) => `Core: ${m}`),
+        `Trap: ${knowledge.trap}`,
+        `Check yourself: ${knowledge.check}`,
+      ]).slice(0, depth === 'deep' ? 9 : 7);
   // Hard guarantee, matching the AI lesson: 5-6 sections at eli5/standard, and
   // genuinely more at deep rather than the same lesson with a different label.
   const maxSections = depth === 'deep' ? 14 : 6;
   if (sections.length > maxSections) sections.length = maxSections;
   while (sections.length < 5) {
-    sections.push(S(`Retrieval practice for ${title}`, `Close the page and write down, from memory: the mental model, the procedure you would follow, and the trap that makes a plausible answer wrong. Then reopen the lesson and mark the part you could not reproduce.\n\n**Check yourself:** ${knowledge.check}`));
+    sections.push(S(`Retrieval practice`, `Close the page and write down, from memory: (1) the definition, (2) the procedure, (3) the trap. Reopen and mark whichever you could not reproduce — that part is the lesson.`));
   }
   const words = sections.reduce((total, section) => total + String(section.body).trim().split(/\s+/).length, 0);
 

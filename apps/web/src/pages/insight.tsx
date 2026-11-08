@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { API, apiDelete, apiGet, apiPatch, apiPost, setToken, type Topic } from '../lib/api';
+import { AvatarFace, AVATAR_COLORS } from '../components/Mascot';
 
 const opts = { credentials: 'include' as const };
 
@@ -171,20 +172,42 @@ const GOAL_TYPES = [
   { id: 'gate-cs', label: 'GATE CSE' }, { id: 'web-dev', label: 'Full-stack' },
   { id: 'ai-ml', label: 'AI / ML' }, { id: 'other', label: 'Custom' },
 ];
+const AVATAR_COLOR_SWATCHES = AVATAR_COLORS.map((c) => ({ id: c.id, name: c.name, fill: c.fill }));
+const ACCESSORY_LABELS: Record<string, string> = {
+  none: 'Bare Doddly', glasses: 'Scholar glasses', cap: 'Topper cap', headband: 'Grinder headband', star: 'Star pin', antenna: 'Spark antenna',
+};
 
-export function Profile({ user, goal, onSave, onSwitch }: {
-  user: any; goal: string; onSave: (u: any) => void; onSwitch?: (goal: string) => void;
+export function Profile({ user, goal, onSave, onSwitch, onSignOut }: {
+  user: any; goal: string; onSave: (u: any) => void; onSwitch?: (goal: string) => void; onSignOut?: () => void;
 }) {
   const [dailyMinutes, setDailyMinutes] = useState(user.dailyMinutes || 60);
   const [skillLevel, setSkillLevel] = useState(user.skillLevel || 'beginner');
   const [targetDate, setTargetDate] = useState(user.targetDate || '');
+  const [name, setName] = useState(user.name || '');
   const [newGoal, setNewGoal] = useState('web-dev');
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [avatarColor, setAvatarColor] = useState<string>(user.avatar?.color || 'ember');
+  const [avatarAccessory, setAvatarAccessory] = useState<string>(user.avatar?.accessory || 'none');
+  const [avatarSaved, setAvatarSaved] = useState(false);
 
   const save = async () => {
     setBusy(true);
-    try { onSave(await apiPatch('/api/me', { dailyMinutes, skillLevel, targetDate: targetDate || null })); }
-    finally { setBusy(false); }
+    try {
+      const patch: any = { dailyMinutes, skillLevel, targetDate: targetDate || null };
+      if (name.trim() && name.trim() !== user.name) patch.name = name.trim();
+      onSave(await apiPatch('/api/me', patch));
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 1800);
+    } finally { setBusy(false); }
+  };
+  const saveAvatar = async (color: string, accessory: string) => {
+    setAvatarColor(color); setAvatarAccessory(accessory);
+    try {
+      onSave(await apiPatch('/api/me', { avatar: { base: 'flame', color, accessory } }));
+      setAvatarSaved(true);
+      window.setTimeout(() => setAvatarSaved(false), 1500);
+    } catch { /* best-effort; customizer UI stays in sync locally */ }
   };
   const addGoal = async () => {
     setBusy(true);
@@ -202,34 +225,98 @@ export function Profile({ user, goal, onSave, onSwitch }: {
     onSave(await apiGet('/api/me'));
   };
 
+  const universe = goal === 'gate-cs' ? 'GATE CSE' : goal === 'web-dev' ? 'Full-stack Engineering' : goal === 'ai-ml' ? 'AI / ML Engineering' : goal;
+  const activeGoals = (user.goals || []).filter((g: any) => !g.paused);
+  const joinDate = user.createdAt ? new Date(user.createdAt).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'this year';
+
   return (
     <>
       <div className="compact-heading"><div>
         <p className="eyebrow">YOUR LEARNING IDENTITY</p>
-        <h1>Profile</h1>
+        <h1>Make it <em>yours.</em></h1>
+        <p className="lead">Your universe, your pace, your Doddly. Change anything — saves go straight to your account.</p>
       </div></div>
-      <section className="profile-card card">
-        <div className="profile-hero">
-          <span className="profile-avatar">{user.name?.[0] || 'S'}</span>
-          <div>
-            <p className="label">LEARNER</p>
+
+      {/* ---------------- hero identity card ---------------- */}
+      <section className="profile-hero card">
+        <div className="profile-hero-main">
+          <div className="profile-avatar-lg" aria-hidden>
+            <AvatarFace color={avatarColor} accessory={avatarAccessory} size={150} />
+          </div>
+          <div className="profile-hero-copy">
+            <p className="label">DASHBOARD</p>
             <h2>{user.name}</h2>
-            <p>{user.skillLevel || 'Beginner'} · {user.dailyMinutes || 60} minutes per day{user.targetDate ? ` · target ${user.targetDate}` : ''}</p>
+            <p className="profile-hero-sub">Studying <b>{universe}</b> · joined {joinDate}</p>
+            <div className="profile-chip-row">
+              <span className="profile-chip">◈ {user.skillLevel || 'beginner'}</span>
+              <span className="profile-chip">◷ {user.dailyMinutes || 60} min / day</span>
+              {user.targetDate && <span className="profile-chip">⚑ target {user.targetDate}</span>}
+              <span className="profile-chip">✦ {activeGoals.length} active {activeGoals.length === 1 ? 'universe' : 'universes'}</span>
+            </div>
+            <div className="profile-meta-line">
+              <span><b>{user.goals?.length || 0}</b> {user.goals?.length === 1 ? 'goal' : 'goals'}</span>
+              <span className="dot">·</span>
+              <span>Evidence-first tutorials</span>
+            </div>
           </div>
         </div>
-        <div className="form-row" style={{ marginTop: 18 }}>
+      </section>
+
+      {/* ---------------- customize Doddly ---------------- */}
+      <section className="avatar-customizer card">
+        <div className="avatar-customizer-head">
+          <div>
+            <p className="label">MAKE DODDLY YOURS</p>
+            <h2>Pick a flame. Pick an accessory.</h2>
+          </div>
+          <span className="avatar-saved">{avatarSaved ? '✓ Saved' : 'Tap to apply instantly'}</span>
+        </div>
+        <div className="avatar-colorway">
+          {AVATAR_COLOR_SWATCHES.map((swatch) => (
+            <button
+              key={swatch.id}
+              className={`avatar-swatch ${avatarColor === swatch.id ? 'active' : ''}`}
+              style={{ background: swatch.fill }}
+              onClick={() => saveAvatar(swatch.id, avatarAccessory)}
+              aria-pressed={avatarColor === swatch.id}
+              aria-label={`Flame colorway ${swatch.name}`}
+              title={swatch.name}
+            />
+          ))}
+        </div>
+        <div className="avatar-accessory" role="radiogroup" aria-label="Avatar accessory">
+          {Object.entries(ACCESSORY_LABELS).map(([id, label]) => (
+            <button
+              key={id}
+              role="radio"
+              aria-checked={avatarAccessory === id}
+              className={`avatar-accessory-option ${avatarAccessory === id ? 'active' : ''}`}
+              onClick={() => saveAvatar(avatarColor, id)}
+              title={label}
+            >
+              <AvatarFace color={avatarColor} accessory={id} size={54} />
+              <small>{label}</small>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* ---------------- preferences ---------------- */}
+      <section className="profile-card card">
+        <p className="label">YOUR STUDY PREFERENCES</p>
+        <div className="profile-form">
+          <label>Display name<input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="Aarav Sharma" /></label>
           <label>Minutes per day<input type="number" min={15} max={240} value={dailyMinutes} onChange={(e) => setDailyMinutes(Number(e.target.value))} /></label>
           <label>Level<select value={skillLevel} onChange={(e) => setSkillLevel(e.target.value)}>{LEVELS.map((l) => <option key={l}>{l}</option>)}</select></label>
           <label>Target date<input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} /></label>
         </div>
-        <div className="practice-actions"><button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save preferences'}</button><button className="secondary-button" onClick={() => { setToken(null); window.location.assign('/'); }}>Log out</button></div>
-        <div className="profile-fields">
-          <div><span>GOALS</span><b>{user.goals?.length || 0} active learning universes</b></div>
-          <div><span>TEAM STYLE</span><b>Evidence-first tutorials</b></div>
-          <div><span>SAVED DATA</span><b>Topics, cards, quizzes, sessions</b></div>
+        <div className="practice-actions">
+          <button onClick={() => void save()} disabled={busy}>{saved ? '✓ Saved' : busy ? 'Saving…' : 'Save preferences'}</button>
+          <button className="secondary-button" onClick={() => { setToken(null); onSignOut?.(); }}>Log out</button>
         </div>
       </section>
 
+      {/* ---------------- universes ---------------- */}
       <div className="section-title" style={{ marginTop: 26 }}><div><p className="eyebrow">MULTI-GOAL LEARNER</p><h2>Your learning universes</h2></div></div>
       <div className="goal-list">
         {(user.goals || []).map((g: any) => (

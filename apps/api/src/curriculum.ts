@@ -29,6 +29,10 @@ const gateModules: ModuleSeed[] = [
     ['Probability', 'Sample spaces, conditional probability, independence, Bayes theorem, and random variables with standard distributions.', 'concepts', 50],
     ['Statistics and Estimation', 'Expectation, variance, moments, limit theorems, sampling, estimation, and hypothesis-testing intuition.', 'concepts', 45],
     ['Numerical Methods', 'Root finding, interpolation, numerical integration, solving linear systems, and error analysis.', 'concepts', 45],
+    ['Lattice, Partial Orders and Semilattices', 'Posets, Hasse diagrams, lattices, distributivity, modular laws, and Boolean algebra connections for digital logic.', 'concepts', 45],
+    ['Eigenvalues and Diagonalization', 'Characteristic polynomials, eigenvalues, eigenvectors, diagonalization, and power iteration intuition.', 'concepts', 50],
+    ['Random Variables and Distributions', 'Binomial, Poisson, uniform, normal, geometric, and exponential distributions — mean, variance, and GATE-style problems.', 'concepts', 50],
+    ['Recurrence Relations and Generating Functions', 'Linear recurrences, characteristic equations, generating functions, and counting with Catalan numbers.', 'concepts', 45],
   ]],
   ['Digital Logic', [
     ['Number Systems and Codes', 'Binary, octal, hex, signed representations, complements, BCD, Gray code, and conversions.', 'concepts'],
@@ -75,6 +79,7 @@ const gateModules: ModuleSeed[] = [
     ['Context Free Grammars and Pushdown Automata', 'CFG derivations, parse trees, ambiguity, normal forms, and PDA equivalence.', 'concepts', 55],
     ['Turing Machines and Decidability', 'Machine models, recursive languages, reductions, decidable and recognizable problems.', 'concepts', 55],
     ['Complexity Classes', 'P, NP, co-NP, reductions, completeness, and the limits of efficient computation.', 'concepts', 55],
+    ['Minimization of Finite Automata', 'Partition refinement, distinguishable vs reachable states, Myhill–Nerode equivalence, and building the minimal DFA from any DFA or NFA.', 'concepts', 50],
   ]],
   ['Compiler Design', [
     ['The Compilation Pipeline', 'Phases of a compiler, interpreters vs compilers, and how the stages connect end to end.', 'concepts', 35],
@@ -109,6 +114,7 @@ const gateModules: ModuleSeed[] = [
     ['Transport Layer', 'UDP, TCP, reliability, flow control, congestion control, connection lifecycle, and QUIC context.', 'concepts', 55],
     ['Application Protocols', 'DNS, HTTP, SMTP, sockets, proxies, and the protocols that power the web.', 'concepts', 45],
     ['Network Security and Cryptography Basics', 'Symmetric/asymmetric encryption, hashes, digital signatures, authentication, and TLS intuition.', 'concepts', 50],
+    ['IPv6 and Next-Generation Internet', '128-bit addressing, notation, address types, and transition mechanisms (dual stack, tunneling) for IPv4–IPv6 coexistence.', 'concepts', 40],
   ]],
   ['General Aptitude and GATE Strategy', [
     ['Quantitative Aptitude', 'Percentages, ratios, averages, time-speed-distance, data interpretation, and numerical shortcuts.', 'practice', 40],
@@ -147,6 +153,9 @@ const fullStackModules: ModuleSeed[] = [
     ['SEO Metadata and Structured Data', 'Crawlability, semantic markup, Open Graph, JSON-LD, and honest performance-friendly SEO.', 'concepts', 35],
     ['Browser DevTools Mastery', 'Inspect, debug, profile, and audit any web app with Elements, Network, Performance, and Lighthouse.', 'code', 40],
     ['Web Performance Fundamentals', 'Critical rendering path, resource hints, lazy loading, bundling, and Core Web Vitals budgets.', 'concepts', 45],
+    ['HTTP Caching and Conditional Requests', 'ETag, Last-Modified, Cache-Control, stale-while-revalidate, and CDN edge caching — the latency lever behind every fast site.', 'concepts', 45],
+    ['Content Security Policy and Security Headers', 'CSP directives, nonces, HSTS, X-Frame-Options, Referrer-Policy, and Permissions-Policy — headers that stop real attacks.', 'concepts', 40],
+    ['Responsive Images and Media Optimization', 'srcset, sizes, picture element, AVIF/WebP, lazy loading, aspect-ratio boxes, and CDN image pipelines.', 'code', 40],
   ]],
   ['JavaScript and TypeScript', [
     ['Modern JavaScript', 'Scopes, closures, objects, prototypes, modules, destructuring, and modern syntax.', 'code', 50],
@@ -162,6 +171,7 @@ const fullStackModules: ModuleSeed[] = [
   ['Design for Engineers', [
     ['Visual Hierarchy and Layout', 'Spacing scales, alignment, grouping, and layout decisions that make interfaces feel professional.', 'concepts', 35],
     ['Typography and Color Systems', 'Type scales, contrast, accessible palettes, dark mode, and tokenizing design decisions.', 'concepts', 35],
+    ['Design Tokens and Theming at Scale', 'Token taxonomy, primitive vs semantic tokens, dark mode, multi-brand theming, and Style Dictionary pipelines.', 'design', 40],
     ['Figma to Code Fluency', 'Read design files, extract specs, negotiate constraints, and hand off cleanly.', 'practice', 35],
     ['Interaction Design and Motion', 'Springs, gestures, layout animation, accessibility-safe motion, and when animation earns its keep.', 'code', 40],
   ]],
@@ -180,7 +190,9 @@ const fullStackModules: ModuleSeed[] = [
     ['Express and Fastify', 'Routing, middleware, validation, error handling, logging, and production API structure.', 'code', 45],
     ['REST and GraphQL APIs', 'Resource modeling, pagination, filtering, versioning, GraphQL schemas, resolvers, and federation.', 'code', 50],
     ['Authentication and Authorization', 'Sessions, JWT, OAuth, cookies, RBAC, ABAC, CSRF, password security, and identity providers.', 'code', 55],
+    ['OAuth 2.0 and OpenID Connect in Depth', 'Authorization code flow with PKCE, scopes, consent screens, token refresh, session management, and common OAuth failure modes.', 'code', 45],
     ['Realtime and Background Jobs', 'WebSockets, SSE, queues, workers, scheduling, retries, idempotency, and event-driven design.', 'code', 50],
+    ['Webhooks and Event Delivery', 'Signature verification, retries with backoff, idempotency keys, dead-letter queues, and ordering guarantees.', 'backend', 40],
     ['File Uploads Streams and Object Storage', 'Multipart uploads, signed URLs, S3-compatible storage, resumable transfers, and image pipelines.', 'code', 45],
     ['API Security in Practice', 'Rate limiting, input validation, auth scoping, injection defense, SSRF guards, and security headers.', 'code', 50],
     ['Caching Strategies for APIs', 'HTTP caching, ETags, CDN behavior, Redis caching layers, and invalidation design.', 'code', 45],
@@ -201,6 +213,7 @@ const fullStackModules: ModuleSeed[] = [
     ['Observability and Reliability', 'Structured logs, metrics, traces, health checks, alerts, SLOs, and incident response.', 'concepts', 45],
     ['Web Security', 'OWASP risks, input validation, XSS, SQL injection, CSP, SSRF, supply chain, and threat modeling.', 'concepts', 55],
     ['Performance and Scaling', 'Caching, queues, CDN, database tuning, load testing, horizontal scaling, and bottleneck analysis.', 'concepts', 50],
+    ['Core Web Vitals and Real-User Monitoring', 'LCP, INP, CLS, TTFB — CrUX vs Lighthouse, field measurement, and the exact fixes that move real user metrics.', 'concepts', 40],
     ['Incident Management and Postmortems', 'On-call rotations, severity levels, blameless postmortems, runbooks, and reliability culture.', 'concepts', 40],
     ['Cloud Cost Optimization', 'Right-sizing, autoscaling policies, storage tiers, caching economics, and cost alerts.', 'concepts', 35],
   ]],
@@ -226,6 +239,7 @@ const fullStackModules: ModuleSeed[] = [
   ]],
   ['Testing and Delivery', [
     ['E2E Testing with Playwright', 'Reliable selectors, fixtures, visual regression, parallel shards, and flake triage.', 'code', 45],
+    ['Storybook and Component Testing', 'Isolated component development, story-driven tests, visual regression, and interaction testing for design systems.', 'test', 40],
     ['Contract and API Testing', 'Schema contracts, consumer-driven tests, Pact intuition, and breaking-change gates.', 'code', 40],
     ['Load Testing with k6', 'Virtual users, thresholds, soak tests, and finding the real bottleneck.', 'code', 40],
     ['Feature Flags and Progressive Delivery', 'Flags, canary releases, kill switches, experimentation, and safe rollouts.', 'concepts', 35],
@@ -275,6 +289,7 @@ const aiModules: ModuleSeed[] = [
     ['Optimization for Deep Learning', 'Adam variants, schedulers, warmup, gradient clipping, weight decay done right.', 'concepts', 50],
     ['Normalization and Regularization', 'BatchNorm, LayerNorm, dropout, stochastic depth, augmentation, and early stopping.', 'concepts', 45],
     ['Mixed Precision and Distributed Training', 'FP16/BF16 training, gradient scaling, data parallelism, sharding, and multi-GPU debugging.', 'code', 50],
+    ['Mechanistic Interpretability', 'Circuits, induction heads, superposition, monosemantic features, and tooling for understanding networks.', 'concepts', 50],
   ]],
   ['NLP and Language Models', [
     ['NLP Foundations', 'Tokenization, normalization, n-grams, language modeling, embeddings, and evaluation.', 'code', 45],
@@ -283,8 +298,12 @@ const aiModules: ModuleSeed[] = [
     ['Fine Tuning and Alignment', 'Instruction tuning, LoRA, QLoRA, preference optimization, evaluation, and safety.', 'code', 55],
     ['Prompt Engineering', 'Task decomposition, structured outputs, tool use, few-shot examples, and prompt testing.', 'code', 40],
     ['LLM Evaluation and Benchmarks', 'HELM, MMLU, human evals, LLM-as-judge, contamination, and building your own evals.', 'concepts', 45],
+    ['Alignment and RLHF Basics', 'SFT, reward models, PPO/GRPO, Constitutional AI, DPO — the stack behind helpful and harmless models.', 'concepts', 55],
     ['Multilingual and Low-Resource NLP', 'Cross-lingual transfer, tokenization fertility, translation, and low-resource tactics.', 'concepts', 40],
     ['Speech and Audio AI', 'ASR pipelines, TTS, audio features, speaker systems, and voice product patterns.', 'concepts', 45],
+    ['Reasoning Models and Test-Time Compute', 'Chain-of-thought, self-correction, verification loops, process reward models, and inference-time scaling laws.', 'concepts', 55],
+    ['Context Engineering', 'What enters the model window at each step — retrieval, compression, scratchpads, memory, and deliberate forgetting.', 'concepts', 50],
+    ['Fine-Tuning LLMs with LoRA and QLoRA', 'Parameter-efficient fine-tuning: adapters, rank selection, NF4 quantization, instruction data quality, and evaluation before merge.', 'code', 55],
   ]],
   ['Generative AI Applications', [
     ['Embeddings and Semantic Search', 'Embedding models, similarity, chunking, metadata, vector indexes, and retrieval quality.', 'code', 45],
@@ -294,6 +313,8 @@ const aiModules: ModuleSeed[] = [
     ['LLM Application Engineering', 'Streaming, structured generation, caching, rate limits, observability, and cost control.', 'code', 50],
     ['Structured Data Extraction', 'Schemas, constrained decoding, document pipelines, validation, and human review loops.', 'code', 45],
     ['AI Red Teaming', 'Prompt injection, jailbreak taxonomies, adversarial evals, and defense in depth.', 'concepts', 45],
+    ['Quantization and Model Compression', 'INT8/INT4, GPTQ, AWQ, KV-cache quantization, speculative decoding — the quality-cost frontier for open models.', 'concepts', 50],
+    ['Synthetic Data and Self-Improvement', 'Rejection sampling, LLM-as-generator with verification, data flywheels, contamination risks, and when synthetic beats human data.', 'concepts', 45],
   ]],
   ['MLOps and Production AI', [
     ['Experiment Tracking', 'Reproducibility, MLflow, Weights and Biases, artifacts, runs, and comparison workflows.', 'code', 40],
@@ -323,6 +344,7 @@ const aiModules: ModuleSeed[] = [
     ['Designing ML Systems', 'Requirements, framing, offline/online splits, and the ML design rubric.', 'concepts', 50],
     ['Training Pipelines at Scale', 'Data loaders, distributed training, checkpointing, spot resilience, and orchestration.', 'concepts', 50],
     ['Candidate Generation and Ranking', 'Two-tower retrieval, cascade ranking, calibration, and exploration.', 'concepts', 50],
+    ['Common ML System Design Cases', 'Recommendation, search, fraud detection, content moderation — framing, data, models, evaluation, and failure modes, the way interviews ask them.', 'design', 50],
     ['Inference at Scale', 'Batching, caching, autoscaling, edge deployment, and SLO-driven serving.', 'concepts', 50],
     ['Monitoring and Feedback Loops', 'Label delay, bandits, drift response, and closing the loop safely.', 'concepts', 45],
   ]],

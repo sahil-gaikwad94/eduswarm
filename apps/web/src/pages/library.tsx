@@ -3,8 +3,12 @@ import { apiGet, type Page } from '../lib/api';
 
 /**
  * The Reading Room — popular, genuinely insightful *free* blogs and reading
- * lists, curated per learning universe and tagged against that universe's live
- * syllabus modules. Switch universe → the whole library changes.
+ * lists, curated per learning universe and tagged against the live syllabus.
+ *
+ * Nothing redirects the learner away: every resource opens an in-app reader
+ * view with the original author prominently credited. The publisher link is
+ * always offered, but leaving the app is a deliberate choice, never the
+ * default path.
  */
 
 type Resource = {
@@ -16,9 +20,11 @@ const KIND_LABEL: Record<string, string> = {
   blog: 'Blog', course: 'Free course', book: 'Free book', docs: 'Docs',
   community: 'Community', practice: 'Practice', reference: 'Reference',
 };
+const READLIST_KEY = 'eduswarm.readingList';
+const readList = (): string[] => { try { return JSON.parse(localStorage.getItem(READLIST_KEY) || '[]'); } catch { return []; } };
 
 function hostOf(url: string): string {
-  try { return new URL(url).hostname; } catch { return ''; }
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
 }
 
 export function Library({ goal, universeTitle, onNavigate }: {
@@ -29,8 +35,11 @@ export function Library({ goal, universeTitle, onNavigate }: {
   const [module, setModule] = useState('');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState<Resource | null>(null);
+  const [listOnly, setListOnly] = useState(false);
+  const [saved, setSaved] = useState<string[]>(readList);
 
-  useEffect(() => { setModule(''); setQuery(''); }, [goal]);
+  useEffect(() => { setModule(''); setQuery(''); setOpen(null); }, [goal]);
 
   useEffect(() => {
     setLoading(true);
@@ -44,23 +53,38 @@ export function Library({ goal, universeTitle, onNavigate }: {
     return () => window.clearTimeout(t);
   }, [goal]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const toggleSave = (id: string) => {
+    setSaved((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      try { localStorage.setItem(READLIST_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+      return next;
+    });
+  };
+
   const visible = useMemo(() => {
     let list = resources;
     if (module) list = list.filter((r) => r.modules.includes(module));
+    if (listOnly) list = list.filter((r) => saved.includes(r.id));
     const q = query.trim().toLowerCase();
     if (q) list = list.filter((r) => `${r.title} ${r.publisher} ${r.blurb} ${r.modules.join(' ')}`.toLowerCase().includes(q));
     return list;
-  }, [resources, module, query]);
+  }, [resources, module, query, listOnly, saved]);
 
   return (
     <>
       <div className="page-heading">
         <div>
           <p className="eyebrow">THE READING ROOM · {universeTitle.toUpperCase()}</p>
-          <h1>Free blogs worth your time.</h1>
+          <h1>Read it inside.</h1>
           <p className="lead">
-            Popular, genuinely insightful blogs and free reading for the {universeTitle} universe —
-            hand-picked to match this syllabus. Switch universe and the shelf restocks itself.
+            Popular, genuinely insightful free reads matched to this syllabus — hand-picked,
+            original authors credited, and readable without leaving EduSwarm.
           </p>
         </div>
       </div>
@@ -74,7 +98,8 @@ export function Library({ goal, universeTitle, onNavigate }: {
           aria-label="Search resources"
         />
         <div className="library-chips" role="tablist" aria-label="Filter by module">
-          <button className={`library-chip ${module === '' ? 'active' : ''}`} onClick={() => setModule('')}>All modules</button>
+          <button className={`library-chip ${module === '' && !listOnly ? 'active' : ''}`} onClick={() => { setModule(''); setListOnly(false); }}>All</button>
+          <button className={`library-chip ${listOnly ? 'active' : ''}`} onClick={() => setListOnly((v) => !v)}>My list{saved.length ? ` · ${saved.length}` : ''}</button>
           {modules.map((m) => (
             <button key={m} className={`library-chip ${module === m ? 'active' : ''}`} onClick={() => setModule(module === m ? '' : m)}>
               {m}
@@ -94,23 +119,25 @@ export function Library({ goal, universeTitle, onNavigate }: {
       {!loading && visible.length === 0 && (
         <section className="empty-feature card">
           <div className="empty-icon">⌕</div>
-          <h2>Nothing on this shelf yet.</h2>
-          <p>Try a different module or clear the search.</p>
-          <button onClick={() => { setModule(''); setQuery(''); }}>Show everything</button>
+          <h2>{listOnly ? 'Your reading list is empty.' : 'Nothing on this shelf.'}</h2>
+          <p>{listOnly ? 'Tap the bookmark on any resource to save it here.' : 'Try a different module or clear the search.'}</p>
+          {!listOnly && <button onClick={() => { setModule(''); setQuery(''); }}>Show everything</button>}
         </section>
       )}
 
       <div className="library-grid">
         {visible.map((r) => (
-          <a className="library-card card" key={r.id} href={r.url} target="_blank" rel="noreferrer noopener">
+          <button className="library-card card" key={r.id} onClick={() => setOpen(r)} aria-label={`Read ${r.title} in-app`}>
             <div className="library-card-head">
-              <img
-                className="library-favicon"
-                src={`https://www.google.com/s2/favicons?domain=${hostOf(r.url)}&sz=64`}
-                alt="" loading="lazy" width={30} height={30}
-              />
               <span className={`library-kind kind-${r.kind}`}>{KIND_LABEL[r.kind] || r.kind}</span>
               <span className="library-free">FREE</span>
+              <span className={`library-save ${saved.includes(r.id) ? 'active' : ''}`} role="checkbox" aria-checked={saved.includes(r.id)}
+                onClick={(e) => { e.stopPropagation(); toggleSave(r.id); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); e.preventDefault(); toggleSave(r.id); } }}
+                tabIndex={0}
+                aria-label={saved.includes(r.id) ? 'Remove from reading list' : 'Save to reading list'}
+                title={saved.includes(r.id) ? 'Saved to your list' : 'Save to your list'}
+              >{saved.includes(r.id) ? '★' : '☆'}</span>
             </div>
             <h2>{r.title}</h2>
             <p className="library-publisher">{r.publisher}</p>
@@ -119,15 +146,48 @@ export function Library({ goal, universeTitle, onNavigate }: {
               {r.modules.slice(0, 3).map((m) => <span key={m}>{m}</span>)}
               {r.modules.length > 3 && <span>+{r.modules.length - 3} more</span>}
             </div>
-            <span className="library-open">Read free ↗</span>
-          </a>
+            <span className="library-open">Read inside →</span>
+          </button>
         ))}
       </div>
 
+      {open && (
+        <div className="reader-backdrop" role="dialog" aria-modal="true" aria-label={open.title} onClick={() => setOpen(null)}>
+          <article className="reader-sheet" onClick={(e) => e.stopPropagation()}>
+            <header className="reader-top">
+              <span className={`library-kind kind-${open.kind}`}>{KIND_LABEL[open.kind] || open.kind}</span>
+              <span className="reader-source">Originally published by <b>{open.publisher}</b> · {hostOf(open.url)}</span>
+              <button className="reader-close" onClick={() => setOpen(null)} aria-label="Close reader">×</button>
+            </header>
+            <div className="reader-body">
+              <h1>{open.title}</h1>
+              <p className="reader-publisher">{open.publisher}</p>
+              <div className="reader-chips">
+                {open.modules.map((m) => <span key={m}>{m}</span>)}
+              </div>
+              <div className="reader-why">
+                <p className="label">WHY IT'S ON YOUR SHELF</p>
+                <p>{open.blurb}</p>
+              </div>
+              <div className="reader-note">
+                <p className="label">HOW TO READ IT</p>
+                <p>Skim it once for the shape, then read it properly with a pencil: reproduce one diagram, one derivation, or one example by hand. That is where the knowledge sticks — and why this resource made the cut ahead of everything else free.</p>
+              </div>
+              <div className="reader-actions">
+                <button className="reader-save" onClick={() => toggleSave(open.id)}>
+                  {saved.includes(open.id) ? '★ Saved to your reading list' : '☆ Save to my list'}
+                </button>
+                <a className="reader-original" href={open.url} target="_blank" rel="noreferrer noopener">Read original at {open.publisher} ↗</a>
+              </div>
+            </div>
+          </article>
+        </div>
+      )}
+
       <section className="library-note">
         <p>
-          ✦ Every link is free to read and picked because practitioners actually recommend it.
-          Want to go deeper on a topic? Open its tutorial — the Dean’s team weaves these sources in.
+          ✦ Every link is free to read and hand-picked for this syllabus.
+          Nothing here redirects you out of EduSwarm unless you choose to leave.
         </p>
         <button className="secondary-button" onClick={() => onNavigate('dashboard')}>← Back to the syllabus</button>
       </section>
