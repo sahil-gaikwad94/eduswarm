@@ -467,15 +467,29 @@ app.get('/api/recommendations/videos', (req: Request, res: Response) => {
   const topicId = String(req.query.topicId || '');
   const topic = getTopic(topicId);
   if (!topic) return res.status(404).json({ error: 'Unknown topic' });
-  const query = encodeURIComponent(`${topic.title} tutorial`);
-  res.json({
-    topicId, topic: topic.title,
-    recommendations: [
-      { title: `${topic.title} — NPTEL lecture`, channel: 'NPTEL', kind: 'University lecture', url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${topic.title} NPTEL lecture`)}` },
-      { title: `${topic.title} — MIT OpenCourseWare`, channel: 'MIT OpenCourseWare', kind: 'Conceptual deep dive', url: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${topic.title} MIT OpenCourseWare`)}` },
-      { title: `${topic.title} — practical walkthrough`, channel: 'freeCodeCamp / community', kind: 'Worked examples', url: `https://www.youtube.com/results?search_query=${query}` },
-    ],
-  });
+  const title = topic.title;
+  const q = (text: string) => `https://www.youtube.com/results?search_query=${encodeURIComponent(text)}`;
+  const goal = topicId.split('-')[0] || 'gate-cs';
+  const recs: Array<{ title: string; publisher: string; kind: string; url: string }> = [
+    { title: `${title} — full course for beginners to advanced`, publisher: 'freeCodeCamp', kind: 'Course', url: q(`${title} freeCodeCamp`) },
+  ];
+  if (goal === 'gate-cs') {
+    recs.push(
+      { title: `${title} — GATE previous-year questions, solved`, publisher: 'YouTube · PYQ practice', kind: 'Exam practice', url: q(`${title} GATE PYQ solved`) },
+      { title: `${title} — worked examples and traps`, publisher: 'YouTube · exam walkthroughs', kind: 'Worked examples', url: q(`${title} explained examples`) },
+    );
+  } else if (goal === 'web-dev') {
+    recs.push(
+      { title: `${title} — build-along project`, publisher: 'freeCodeCamp', kind: 'Project', url: q(`${title} project build`) },
+      { title: `${title} — interview-style walkthrough`, publisher: 'YouTube · engineering interviews', kind: 'Interview prep', url: q(`${title} interview explained`) },
+    );
+  } else {
+    recs.push(
+      { title: `${title} — mathematics and intuition`, publisher: 'Khan Academy', kind: 'Concept', url: q(`${title} Khan Academy`) },
+      { title: `${title} — implementation from scratch`, publisher: 'YouTube · from-scratch builds', kind: 'Implementation', url: q(`${title} from scratch`) },
+    );
+  }
+  res.json({ topicId, topic: title, recommendations: recs });
 });
 
 // ------------------------------------------------- topic jobs + SSE stream
@@ -1352,6 +1366,8 @@ app.get('/api/achievements', async (req: Request, res: Response) => {
     mocksSubmitted: submitted.length,
     bestMockPct: submitted.reduce((best, m) => Math.max(best, Number(m.result?.pct || 0)), 0),
     helpfulUpvotes: snap.helpfulUpvotes,
+    level: levelForXp(xp).level,
+    pyqAttempts: snap.attempts.filter((a) => questionById(String(a.questionId || ''))?.source === 'gate-pyq').length,
     comebacks,
     streak: streakInfo(snap.attempts.map((a) => dateKey(a.answeredAt || ''))).current,
   });

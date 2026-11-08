@@ -81,6 +81,17 @@ export function Discussions({ topics, isGuest, onRequestSignIn, userId }: {
   useEffect(() => { const t = window.setTimeout(() => void load(), 350); return () => window.clearTimeout(t); }, [search]);
 
   const topicOptions = useMemo(() => [...topics].sort((a, b) => a.module.localeCompare(b.module) || a.title.localeCompare(b.title)), [topics]);
+  const topTopics = useMemo(() => {
+    const counts = new Map<string, { title: string; count: number; id: string }>();
+    for (const post of posts) {
+      const id = post.topicId || 'general';
+      const title = post.topicTitle || post.topicId || 'General';
+      const entry = counts.get(id) || { title, count: 0, id };
+      entry.count += 1;
+      counts.set(id, entry);
+    }
+    return [...counts.values()].sort((a, b) => b.count - a.count).slice(0, 8);
+  }, [posts]);
 
   const upvote = async (post: Post) => {
     if (isGuest) { onRequestSignIn(); return; }
@@ -195,6 +206,7 @@ export function Discussions({ topics, isGuest, onRequestSignIn, userId }: {
           <p>{search ? 'Try a broader phrase, or clear the topic filter.' : 'Be the first to post a doubt — the Dean answers within minutes when the community is awake.'}</p>
         </section>
       ) : (
+        <div className="discussions-layout">
         <div className="disc-feed">
           {posts.map((post) => (
             <article className="disc-post card" key={post.id}>
@@ -254,6 +266,35 @@ export function Discussions({ topics, isGuest, onRequestSignIn, userId }: {
               )}
             </article>
           ))}
+        </div>
+
+        <aside className="discussions-rail">
+          <section className="disc-rail-card">
+            <p className="label">COMMUNITY RULES</p>
+            <ol>
+              <li><b>Tag the exact topic.</b> Doubts anchored to a syllabus topic get answered first.</li>
+              <li><b>Show your attempt.</b> State what you tried and where it broke — “I don't get it” gets ignored.</li>
+              <li><b>One doubt per post.</b> Split big questions; merge small ones.</li>
+              <li><b>No links-for-answers.</b> Explain the reasoning, then cite.</li>
+            </ol>
+          </section>
+          <section className="disc-rail-card">
+            <p className="label">TRENDING TOPICS</p>
+            {topTopics.length ? (
+              <div className="disc-rail-topics">
+                {topTopics.map((t) => (
+                  <button key={t.id} className="disc-rail-topic" onClick={() => setTopicFilter(t.id === 'general' ? '' : t.id)}>
+                    <span>{t.title}</span><small>{t.count} post{t.count === 1 ? '' : 's'}</small>
+                  </button>
+                ))}
+              </div>
+            ) : <p className="muted">Post the first doubt — the feed learns what you're stuck on.</p>}
+          </section>
+          <section className="disc-rail-card disc-xp-card">
+            <p className="label">EARN +20 XP</p>
+            <p>Answer a doubt in your strong subject, share a question challenge in chat, or help a PYQ thread. The community notices all three.</p>
+          </section>
+        </aside>
         </div>
       )}
     </>

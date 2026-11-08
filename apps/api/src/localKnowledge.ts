@@ -1,3 +1,5 @@
+import { flagshipKnowledge } from './flagshipKnowledge.js';
+
 /**
  * Curated, compact lesson facts for the offline study-kit path.
  *
@@ -22,6 +24,7 @@ export type LocalKnowledge = {
   buildSteps: string[];
   trap: string;
   check: string;
+  cheatSheet?: string[];
   code?: { title: string; language: string; code: string; explanation: string };
   diagram?: { title: string; caption: string; mermaid: string };
 };
@@ -49,7 +52,7 @@ const profiles: Profile[] = [
     },
   },
   {
-    matches: ['express and fastify', 'rest and graphql apis', 'api security in practice', 'authentication and authorization', 'realtime and background jobs', 'file uploads streams and object storage', 'caching strategies for apis'],
+    matches: ['express and fastify', 'rest and graphql apis', 'api security in practice', 'authentication and authorization', 'realtime and background jobs', 'file uploads streams and object storage', 'caching strategies for apis', 'oauth', 'openid', 'webhook'],
     knowledge: {
       focus: 'a production API boundary: validate input, perform one well-defined operation, return an intentional HTTP response, and make retries safe',
       mentalModel: 'Treat a route as a small contract, not a convenience function. The client sends an authenticated request; middleware validates and authorizes it; business logic changes state; the response communicates the result and can be retried without accidental duplication.',
@@ -63,7 +66,7 @@ const profiles: Profile[] = [
     },
   },
   {
-    matches: ['how the web works', 'html semantics and accessibility', 'css layout and responsive design', 'css architecture and motion', 'forms validation and ux states', 'seo metadata and structured data', 'browser devtools mastery', 'web performance fundamentals', 'accessibility auditing in practice', 'progressive web apps', 'webassembly introduction'],
+    matches: ['how the web works', 'html semantics and accessibility', 'css layout and responsive design', 'css architecture and motion', 'forms validation and ux states', 'seo metadata and structured data', 'browser devtools mastery', 'web performance fundamentals', 'accessibility auditing in practice', 'progressive web apps', 'webassembly introduction', 'http caching', 'content security policy', 'security headers', 'web vitals', 'storybook', 'responsive images', 'design tokens', 'brotli'],
     knowledge: {
       focus: 'the browser platform: meaningful documents, predictable layout, progressive enhancement, and fast feedback for every user and device',
       mentalModel: 'The browser parses HTML into a document tree, applies CSS to compute layout and paint, and runs JavaScript on top. Start with semantic HTML and a usable layout; JavaScript should improve the experience rather than be the only way it works.',
@@ -173,7 +176,7 @@ const profiles: Profile[] = [
     },
   },
   {
-    matches: ['neural network fundamentals', 'pytorch', 'tensorflow and keras', 'cnns and computer vision', 'sequence models', 'generative models', 'optimization for deep learning', 'normalization and regularization', 'mixed precision and distributed training', 'transformers', 'nlp foundations', 'hugging face ecosystem', 'fine tuning and alignment', 'prompt engineering', 'llm evaluation and benchmarks', 'multilingual and low-resource nlp', 'speech and audio ai'],
+    matches: ['neural network fundamentals', 'pytorch', 'tensorflow and keras', 'cnns and computer vision', 'sequence models', 'generative models', 'optimization for deep learning', 'normalization and regularization', 'mixed precision and distributed training', 'transformers', 'nlp foundations', 'hugging face ecosystem', 'fine tuning and alignment', 'prompt engineering', 'llm evaluation and benchmarks', 'multilingual and low-resource nlp', 'speech and audio ai', 'reasoning models', 'context engineering', 'quantization', 'mechanistic interpretability', 'small language models', 'synthetic data', 'alignment', 'rlhf'],
     knowledge: {
       focus: 'training and evaluating neural systems as controlled experiments rather than tuning by intuition',
       mentalModel: 'A network maps inputs through differentiable layers to a loss. Backpropagation computes how each parameter affected that loss; an optimizer makes a small update. Data, objective, model capacity, and training dynamics all determine the result.',
@@ -201,7 +204,7 @@ const profiles: Profile[] = [
     },
   },
   {
-    matches: ['sets relations and functions', 'propositional and predicate logic', 'combinatorics and counting', 'graph theory', 'linear algebra', 'calculus and optimization', 'probability', 'statistics and estimation', 'numerical methods', 'number systems and codes', 'boolean algebra and logic gates', 'karnaugh maps and minimization', 'combinational circuits', 'sequential circuits', 'registers counters and fsm design', 'computer arithmetic'],
+    matches: ['sets relations and functions', 'propositional and predicate logic', 'combinatorics and counting', 'graph theory', 'linear algebra', 'calculus and optimization', 'probability', 'statistics and estimation', 'numerical methods', 'lattice', 'partial order', 'monoid', 'group', 'eigenvalue', 'diagonalization', 'random variable', 'information theory', 'recurrence relation', 'generating function', 'number systems and codes', 'boolean algebra and logic gates', 'karnaugh maps and minimization', 'combinational circuits', 'sequential circuits', 'registers counters and fsm design', 'computer arithmetic'],
     knowledge: {
       focus: 'building formal reasoning from definitions, small cases, and explicit assumptions before doing symbolic manipulation',
       mentalModel: 'Mathematical and digital-logic questions look different, but the reliable method is the same: define the objects, write the governing rule, test a minimal example, and only then generalize. Symbols compress a claim; they do not replace its assumptions.',
@@ -228,7 +231,7 @@ const profiles: Profile[] = [
     },
   },
   {
-    matches: ['regular languages and finite automata', 'pumping lemmas and language proofs', 'context free grammars and pushdown automata', 'turing machines and decidability', 'complexity classes', 'the compilation pipeline', 'lexical analysis', 'parsing and grammars', 'syntax directed translation', 'runtime environments and optimization', 'processes and threads', 'system calls and kernel interfaces', 'cpu scheduling', 'synchronization and deadlocks', 'memory management', 'file systems and storage', 'er modeling and relational algebra', 'er to relational mapping', 'sql and query processing', 'functional dependencies and normalization', 'indexing and b plus trees', 'transactions and concurrency', 'query optimization and execution plans', 'distributed databases', 'osi and tcp ip models', 'data link and lans', 'ip addressing and subnetting', 'routing protocols', 'transport layer', 'application protocols', 'network security and cryptography basics'],
+    matches: ['regular languages and finite automata', 'pumping lemmas and language proofs', 'context free grammars and pushdown automata', 'turing machines and decidability', 'complexity classes', 'the compilation pipeline', 'lexical analysis', 'parsing and grammars', 'syntax directed translation', 'runtime environments and optimization', 'processes and threads', 'system calls and kernel interfaces', 'cpu scheduling', 'synchronization and deadlocks', 'memory management', 'file systems and storage', 'er modeling and relational algebra', 'er to relational mapping', 'sql and query processing', 'functional dependencies and normalization', 'indexing and b plus trees', 'transactions and concurrency', 'query optimization and execution plans', 'distributed databases', 'osi and tcp ip models', 'data link and lans', 'ip addressing and subnetting', 'routing protocols', 'transport layer', 'application protocols', 'network security and cryptography basics', 'ipv6'],
     knowledge: {
       focus: 'reasoning about a layered or formal system by identifying its model, legal transitions, and the property you must prove or measure',
       mentalModel: 'Operating systems, databases, networks, compilers, and formal languages all hide complexity behind interfaces. Draw the state/stack/graph/table that the system maintains, then ask which transitions are legal and which invariant the interface promises.',
@@ -249,20 +252,45 @@ function normalized(topic: TopicLike) {
 function fallbackKnowledge(topic: TopicLike): LocalKnowledge {
   const title = topic.title;
   const module = topic.module || 'this module';
+  const desc = String(topic.description || '').replace(/\.$/, '');
   return {
-    focus: `the practical and conceptual foundations of ${title}`,
-    mentalModel: `${title} belongs to ${module}. Start from the stated scope: ${topic.description} Turn each noun in that scope into a definition, each verb into an operation you can trace, and each boundary into a test case.`,
-    mechanics: [`List the inputs, state, outputs, and assumptions for ${title}.`, 'Work one minimal example slowly enough to label each state transition.', 'Compare the standard method with one nearby alternative and state when each is valid.'],
-    workedExample: `Choose the smallest realistic example from ${title}, predict the result before computing it, and then change one boundary condition. The disagreement between prediction and trace is the exact concept to repair.`,
-    buildSteps: ['Read the linked reference once for terminology and its canonical API/formula.', 'Reproduce one example without copying it.', 'Write one test, derivation, or explanation that would catch the most likely misconception.'],
-    trap: `Do not treat ${title} as a vocabulary list. A correct term without its assumptions or failure mode is not yet a usable mental model.`,
-    check: `Can you define ${title}, work a tiny example, and name one condition where the standard rule changes?`,
+    focus: `understanding ${title} from its definition outward — what it is, how to trace it on a minimal example, and where the standard approach breaks`,
+    mentalModel: `${title} in ${module}: ${desc}.
+
+Three moves master every topic here — (1) define the object precisely (a grammar, a lattice, a protocol state, a loss), (2) trace one smallest example by hand on paper, (3) state the precondition that makes the standard method valid and the exact case where it fails. Do these three, and the topic is yours.`,
+    mechanics: [
+      `Definition first: restate ${title} in your own words, naming every symbol and its domain — GATE examiners quote definitions with one word changed.`,
+      `Small case: pick the smallest non-trivial instance (two elements, two states, one table row) and walk it through step by step, labelling state at each step.`,
+      `Invariant or rule: write the property that stays true (binary search interval, capacity flow ≤ capacity, candidate key minimal) — it is both the proof and the debugger.`,
+      `Boundary tour: empty input, one element, duplicates, maximum size, malformed input — each is a different failure mode, so test each deliberately.`,
+      `Cost audit: count dominant operations and extra memory separately; state best/average/worst and which input shape produces each.`,
+      `Contrast: pick the nearest neighbouring concept (e.g., 3NF vs BCNF, TCP vs UDP, DFA vs NFA) and state exactly one distinguishing feature.`,
+    ],
+    workedExample: `Make a two-column table: left the concrete input (one valid instance of ${title}), right the expected result you predict before computing. Then change one condition — the size, the order, one missing symbol — and predict again. The delta between your two predictions pins the exact concept you must study. If your prediction fails, trace the failing case alone until it matches; that trace IS the lesson.`,
+    buildSteps: [
+      `Open the first reference below and extract: the definition, the one governing formula/operation, and the one example it works.`,
+      `Reproduce that example without looking; label every state on paper.`,
+      `Apply the procedure to one PYQ-style problem from the practice bank at the bottom of this lesson.`,
+      `Teach the result aloud in two minutes — verbal retrieval exposes fuzzy spots that re-reading hides.`,
+    ],
+    trap: `Studying ${title} by collecting terms without tracing any example. A term you can recite but cannot apply on one tiny case will fail the moment GATE changes one variable — the exam changes exactly one variable on purpose.`,
+    check: `Close the page and, from memory: (1) state the definition of ${title} in one sentence, (2) trace the smallest non-trivial case aloud, (3) name one boundary where your procedure breaks. Any of the three shaky? Re-read only that section.`,
+    cheatSheet: [
+      `Restate: define ${title} in one sentence — symbols, domain, and the property being preserved.`,
+      `Trace one smallest case on paper before any formula — the trace is the verification.`,
+      `Name the precondition that must hold for the standard method, and one input that violates it.`,
+      `Boundary tour: empty / singleton / duplicates / max-size / malformed — five different bugs, five checks.`,
+      `Cost audit: count dominant ops and extra memory separately; best / average / worst + the shape that causes worst.`,
+      `Predicted output vs actual — if they differ, the misconception is in that one step; fix it there.`,
+    ],
   };
 }
 
 /** Returns the strongest profile, with an intentional general fallback for every curriculum topic. */
 export function localKnowledgeFor(topic: TopicLike): LocalKnowledge {
   const text = normalized(topic);
+  // Flagship (hand-authored) lessons win over any template match.
+  if (topic.id && flagshipKnowledge[topic.id]) return flagshipKnowledge[topic.id];
   let best: { profile: Profile; score: number } | undefined;
   for (const profile of profiles) {
     const score = profile.matches.reduce((total, phrase) => total + (text.includes(phrase) ? phrase.split(' ').length + 1 : 0), 0);
@@ -271,58 +299,19 @@ export function localKnowledgeFor(topic: TopicLike): LocalKnowledge {
   return best?.profile.knowledge || fallbackKnowledge(topic);
 }
 
-function goalOf(topic: TopicLike): 'gate-cs' | 'web-dev' | 'ai-ml' {
-  if (topic.id?.startsWith('web-dev-')) return 'web-dev';
-  if (topic.id?.startsWith('ai-ml-')) return 'ai-ml';
-  return 'gate-cs';
-}
-
-const nodeUrl = 'https://www.geeksforgeeks.org/node-js/nodejs/';
-
 /**
- * Primary/reference routes for every topic.  URLs are intentionally stored as
- * links, not copied article text.  The runtime's opt-in source seeder can ingest
- * permitted public source text into Qdrant; the offline kit remains original.
+ * EduSwarm-internal deepen routes.
+ *
+ * Lessons teach from inside the product — they never send learners out to the
+ * open web. These references are the canonical next stops inside this app, so
+ * every "go deeper" affordance keeps the learner in the loop.
  */
 export function referencesFor(topic: TopicLike): LocalReference[] {
-  const goal = goalOf(topic);
   const title = topic.title;
-  const query = encodeURIComponent(title);
-  const text = normalized(topic);
-  if (text.includes('node js runtime') || text.includes('nodejs runtime')) {
-    return [
-      { title: 'Node.js Tutorial', publisher: 'GeeksforGeeks', url: nodeUrl, kind: 'reference' },
-      { title: 'Node.js Learn', publisher: 'OpenJS Foundation', url: 'https://nodejs.org/en/learn', kind: 'primary' },
-      { title: 'JavaScript Guide', publisher: 'MDN Web Docs', url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide', kind: 'reference' },
-    ];
-  }
-  if (goal === 'web-dev') {
-    const primary = text.includes('react') || text.includes('next js')
-      ? { title: `${title} documentation`, publisher: text.includes('next js') ? 'Vercel' : 'React', url: text.includes('next js') ? 'https://nextjs.org/docs' : 'https://react.dev/learn', kind: 'primary' as const }
-      : text.includes('typescript')
-        ? { title: 'TypeScript Handbook', publisher: 'Microsoft', url: 'https://www.typescriptlang.org/docs/handbook/intro.html', kind: 'primary' as const }
-        : { title: `MDN: ${title}`, publisher: 'MDN Web Docs', url: `https://developer.mozilla.org/en-US/search?q=${query}`, kind: 'primary' as const };
-    return [
-      primary,
-      { title: `GeeksforGeeks: ${title}`, publisher: 'GeeksforGeeks', url: `https://www.geeksforgeeks.org/?s=${query}`, kind: 'reference' },
-      { title: `W3Schools reference: ${title}`, publisher: 'W3Schools', url: 'https://www.w3schools.com/', kind: 'reference' },
-    ];
-  }
-  if (goal === 'ai-ml') {
-    const primary = text.includes('pytorch') || text.includes('neural') || text.includes('deep learning')
-      ? { title: 'PyTorch Tutorials', publisher: 'PyTorch', url: 'https://docs.pytorch.org/tutorials/', kind: 'primary' as const }
-      : text.includes('hugging face') || text.includes('transformer') || text.includes('rag') || text.includes('llm')
-        ? { title: 'Hugging Face Learn', publisher: 'Hugging Face', url: 'https://huggingface.co/learn', kind: 'primary' as const }
-        : { title: 'scikit-learn User Guide', publisher: 'scikit-learn', url: 'https://scikit-learn.org/stable/user_guide.html', kind: 'primary' as const };
-    return [
-      primary,
-      { title: `GeeksforGeeks: ${title}`, publisher: 'GeeksforGeeks', url: `https://www.geeksforgeeks.org/?s=${query}`, kind: 'reference' },
-      { title: 'Dive into Deep Learning', publisher: 'D2L', url: 'https://d2l.ai/', kind: 'reference' },
-    ];
-  }
   return [
-    { title: `GeeksforGeeks: ${title}`, publisher: 'GeeksforGeeks', url: `https://www.geeksforgeeks.org/?s=${query}`, kind: 'reference' },
-    { title: 'NPTEL Computer Science courses', publisher: 'IITs and IISc', url: 'https://nptel.ac.in/courses', kind: 'primary' },
-    { title: 'GATE Overflow', publisher: 'GATE CSE community', url: 'https://gateoverflow.in/', kind: 'practice' },
+    { title: `Practice PYQ-style questions on ${title}`, publisher: 'EduSwarm Practice Bank', url: '/practice', kind: 'practice' },
+    { title: `Review your flashcards on ${topic.module || 'this module'}`, publisher: 'EduSwarm Flashcards', url: '/flashcards', kind: 'reference' },
+    { title: `Curated reads for ${topic.module || 'this module'} in the Reading Room`, publisher: 'EduSwarm Reading Room', url: '/library', kind: 'primary' },
+    { title: `Next tutorials in ${title}`, publisher: 'EduSwarm syllabus', url: '/plan', kind: 'primary' },
   ];
 }

@@ -328,14 +328,14 @@ export function App() {
     window.location.assign(`${API}/auth/google`);
   };
 
-  const signOut = () => {
+  const signOut = async () => {
     setToken(null);
-    setUser(null);
-    setDashboard(null);
-    setPlan(null);
-    setProgress([]);
+    try { await apiPost('/auth/logout', {}); } catch { /* cookie clearing is best-effort */ }
+    setUser(null); setDashboard(null); setPlan(null); setProgress([]);
     setGuest(false);
-    window.location.assign('/');
+    remember('eduswarm.page', 'dashboard');
+    remember(REDIRECT_KEY, null);
+    setNeedsLogin(true); // land on the public page, signed out
   };
 
   if ((needsLogin && !guest) || (previewLanding && !guest)) {
@@ -464,7 +464,7 @@ export function App() {
           {page === 'discussions' && <Discussions topics={topics} isGuest={guest} userId={guest ? null : user?.id} onRequestSignIn={() => setSignInGate(true)} />}
           {page === 'progress' && <Progress topics={topics} progress={progress} />}
           {page === 'mistakes' && <Mistakes />}
-          {page === 'profile' && <Profile user={user} goal={goal} onSave={setUser} onSwitch={switchUniverse} />}
+          {page === 'profile' && <Profile user={user} goal={goal} onSave={setUser} onSwitch={switchUniverse} onSignOut={signOut} />}
         </main>
       </div>
       {signInGate && <SignInSheet onClose={() => setSignInGate(false)} onSignIn={signIn} />}

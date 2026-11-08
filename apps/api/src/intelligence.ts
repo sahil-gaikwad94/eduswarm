@@ -260,6 +260,8 @@ export type AchievementInput = {
   helpfulUpvotes: number;
   comebacks: number;
   streak: number;
+  level: number;
+  pyqAttempts: number;
 };
 
 export type Achievement = { id: string; title: string; desc: string; unlocked: boolean; current: number; target: number };
@@ -269,13 +271,21 @@ export function achievementsFor(input: AchievementInput): Achievement[] {
     ['first-steps', 'First Steps', 'Complete your first study kit', input.completedTopics, 1],
     ['scholar-5', 'Rising Scholar', 'Complete 5 study kits', input.completedTopics, 5],
     ['scholar-15', 'Deep Scholar', 'Complete 15 study kits', input.completedTopics, 15],
+    ['scholar-30', 'Grand Scholar', 'Complete 30 study kits', input.completedTopics, 30],
     ['sharpshooter', 'Sharpshooter', 'Hold 80%+ accuracy over 10+ attempts', input.totalAttempts >= 10 ? input.accuracy : 0, 80],
     ['streak-3', 'Warming Up', 'Learn 3 days in a row', input.streak, 3],
     ['streak-7', 'Unstoppable', 'Learn 7 days in a row', input.streak, 7],
+    ['streak-14', 'Iron Will', 'Learn 14 days in a row', input.streak, 14],
     ['reviewer-20', 'Memory Athlete', 'Review 20 flashcards with SRS', input.reviews, 20],
+    ['reviewer-50', 'Eternal Memory', 'Review 50 flashcards with SRS', input.reviews, 50],
     ['mock-debut', 'Exam Temperament', 'Submit your first mock exam', input.mocksSubmitted, 1],
     ['mock-70', 'Rank Material', 'Score 70%+ in a mock exam', input.bestMockPct, 70],
+    ['mock-90', 'Full Marks', 'Score 90%+ in a mock exam', input.bestMockPct, 90],
     ['helper-1', 'Community Voice', 'Earn 5 upvotes on your Discussions posts & replies', input.helpfulUpvotes, 5],
+    ['helper-5', 'Knowledge Beacon', 'Earn 25 upvotes across Discussions', input.helpfulUpvotes, 25],
+    ['pyq-25', 'PYQ Hunter', 'Solve 25 GATE PYQs', input.pyqAttempts, 25],
+    ['practice-100', 'Seasoned', 'Attempt 100 questions across the bank', input.totalAttempts, 100],
+    ['level-5', 'Scholar-Statesperson', 'Reach Level 5', input.level, 5],
     ['comeback-kid', 'Comeback Kid', 'Fix a mistake by answering it right later', input.comebacks, 1],
   ];
   return defs.map(([id, title, desc, current, target]) => ({

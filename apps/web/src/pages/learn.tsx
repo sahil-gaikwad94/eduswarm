@@ -19,23 +19,16 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
   onOpen: (t: Topic) => void; onComplete: (t: Topic) => void; onNavigate: (page: Page, topicId?: string) => void;
   guest?: boolean; onRequireSignIn?: () => void;
 }) {
-  const [videos, setVideos] = useState<any[]>(pack?.videos || []);
   const [doubt, setDoubt] = useState('');
   const [doubtAnswer, setDoubtAnswer] = useState<any>(null);
   const [doubtBusy, setDoubtBusy] = useState(false);
   const [depth, setDepth] = useState(pack?.depth || 'standard');
+  const [videos, setVideos] = useState<any[]>(pack?.videos || []);
   const [notes, setNotes] = useState('');
   const [notesSaved, setNotesSaved] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
 
   useEffect(() => { setDepth(pack?.depth || 'standard'); }, [pack?.topicId]);
-  useEffect(() => {
-    if (!pack) return;
-    fetch(`${API}/api/recommendations/videos?topicId=${encodeURIComponent(topic.id)}`, opts)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d?.recommendations && setVideos(d.recommendations))
-      .catch(() => {});
-  }, [pack?.topicId, topic.id]);
 
   useEffect(() => {
     setNotes(''); setNotesSaved(false); setCelebrate(false);
@@ -85,6 +78,14 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
     heading: 'Ready to generate your complete study kit?',
     body: 'Pick an explanation depth and start the learning team to receive a detailed, evidence-backed kit with intuition, formal definitions, worked examples, code, diagrams, edge cases, exam connections, flashcards, practice questions, and recommended videos.',
   }];
+
+  useEffect(() => {
+    if (!pack) return;
+    fetch(`${API}/api/recommendations/videos?topicId=${encodeURIComponent(topic.id)}`, opts)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.recommendations && setVideos(d.recommendations))
+      .catch(() => {});
+  }, [pack?.topicId, topic.id]);
 
   const depthLabel = pack?.depth === 'eli5' ? 'ELI5' : pack?.depth === 'deep' ? 'Deep dive' : 'Standard';
   const codeExamples = pack?.codeExamples || [];
@@ -202,11 +203,6 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                     <RichText text={String(section.body)} />
                   </details>
                 ))}
-                <div className="companion-links">
-                  {(localCompanion.sources || []).map((source: any) => (
-                    <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>↗ {source.publisher}: {source.title}</a>
-                  ))}
-                </div>
               </section>
             )}
             {pack && (
@@ -248,6 +244,12 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                     ))}
                   </section>
                 )}
+                <section className="sources">
+                  <p className="label">RECOMMENDED VIDEOS · WATCH AFTER THE KIT</p>
+                  {videos.map((v) => (
+                    <a href={v.url} target="_blank" rel="noreferrer" key={v.title}>▶ {v.title}{v.publisher ? ` · ${v.publisher}` : ''}</a>
+                  ))}
+                </section>
                 {guest ? (
                   <section className="notes-box card">
                     <p className="label">YOUR NOTES · SYNCED TO THIS TOPIC</p>
@@ -293,18 +295,6 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                   )}
                 </section>
                 )}
-                <div className="sources">
-                  <p className="label">RECOMMENDED SOURCES</p>
-                  {(pack.verification.sourceRefs || []).length > 0
-                    ? pack.verification.sourceRefs.map((source: any) => (
-                      <a href={source.url} target="_blank" rel="noreferrer" key={source.url}>↗ {source.publisher}: {source.title}</a>
-                    ))
-                    : pack.verification.sources.map((s: string) => <span key={s}>↗ {s}</span>)}
-                </div>
-                <div className="sources">
-                  <p className="label">WATCH NEXT ON YOUTUBE</p>
-                  {videos.map((v) => <a href={v.url} target="_blank" rel="noreferrer" key={v.title}>▶ {v.title}</a>)}
-                </div>
               </>
             )}
           </article>
@@ -361,10 +351,10 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
 // ------------------------------------------------------- SRS flashcards
 
 const GRADES = [
-  { quality: 1, label: 'Again', hint: 'Forgot it' },
-  { quality: 3, label: 'Hard', hint: 'Struggled' },
-  { quality: 4, label: 'Good', hint: 'Recalled' },
-  { quality: 5, label: 'Easy', hint: 'Instant' },
+  { quality: 1, label: 'Again', hint: 'Forgot it', key: '1' },
+  { quality: 3, label: 'Hard', hint: 'Struggled', key: '2' },
+  { quality: 4, label: 'Good', hint: 'Recalled', key: '3' },
+  { quality: 5, label: 'Easy', hint: 'Instant', key: '4' },
 ];
 
 export function Flashcards({ onLesson, onProgress }: { onLesson: () => void; onProgress: () => void }) {
@@ -373,12 +363,13 @@ export function Flashcards({ onLesson, onProgress }: { onLesson: () => void; onP
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(0);
   const [freshTotal, setFreshTotal] = useState(0);
+  const [lastGrade, setLastGrade] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
     fetch(`${API}/api/flashcards/due?limit=30`, opts)
       .then((r) => r.json())
-      .then((d) => { setQueue(d.due || []); setFreshTotal((d.dueCount || 0) + (d.freshCount || 0)); })
+      .then((d) => { setQueue(d.due || []); setFreshTotal((d.dueCount || 0) + (d.freshCount || 0)); setDone(0); })
       .catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -387,6 +378,8 @@ export function Flashcards({ onLesson, onProgress }: { onLesson: () => void; onP
   const grade = async (quality: number) => {
     const card = queue[0];
     if (!card) return;
+    const graded = GRADES.find((g) => g.quality === quality);
+    if (graded) setLastGrade(graded.label);
     await apiPost('/api/flashcards/review', {
       cardKey: card.cardKey, topicId: card.topicId, question: card.question, answer: card.answer, quality,
     }).catch(() => {});
@@ -396,40 +389,79 @@ export function Flashcards({ onLesson, onProgress }: { onLesson: () => void; onP
     setFlip(false);
   };
 
+  // Keyboard: Space toggles the card, 1–4 grade it. Only when a card is on screen.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
+      if (!queue.length) return;
+      if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); setFlip((v) => !v); }
+      const g = GRADES.find((g) => g.key === event.key);
+      if (g) void grade(g.quality);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   if (loading) return <Empty title="Loading your review queue" text="Scheduling due cards across all topics." onClick={onLesson} />;
   const card = queue[0];
   if (!card) {
     return (
-      <Empty
-        title={done ? 'All caught up — superb recall.' : 'Your review queue is empty'}
-        text={done ? `You graded ${done} card${done === 1 ? '' : 's'} this session. The scheduler will bring them back right before you forget.` : 'Generate a study kit first — its flashcards will appear here on a spaced schedule.'}
-        actionLabel={done ? 'Back to overview →' : 'Go to current lesson →'}
-        onClick={onLesson}
-      />
+      <section className="flashcard-done card">
+        <div className="empty-icon">✦</div>
+        <p className="eyebrow">SESSION COMPLETE</p>
+        <h1>{done ? 'All caught up — superb recall.' : 'Your review queue is empty'}</h1>
+        <p className="lead">{done
+          ? `You graded ${done} card${done === 1 ? '' : 's'} this session. The scheduler will bring them back right before you forget — spaced repetition only works because you showed up.`
+          : 'Generate a study kit first — its flashcards will appear here on a spaced schedule.'}
+        </p>
+        <div className="flashcard-done-stats">
+          <span><b>{done}</b>graded</span>
+          <span><b>{freshTotal}</b>in today's queue</span>
+          <span><b>+{done * 4} XP</b>banked</span>
+        </div>
+        <div className="practice-actions" style={{ justifyContent: 'center' }}>
+          <button onClick={load}>Review again →</button>
+          <button className="secondary-button" onClick={onLesson}>Back to lesson →</button>
+        </div>
+      </section>
     );
   }
+  const progressPct = freshTotal ? Math.round((done / freshTotal) * 100) : 0;
   return (
     <>
       <div className="compact-heading">
         <div>
           <p className="eyebrow">SPACED REPETITION · {card.fresh ? 'NEW CARD' : 'DUE REVIEW'}</p>
           <h1>Recall, then grade honestly.</h1>
-          <p className="lead">{queue.length} remaining · {done} done{` · ${freshTotal} in today's queue`}</p>
+          <p className="lead">{queue.length} remaining · {done} done{lastGrade ? ` · last: ${lastGrade}` : ''}</p>
         </div>
+        <span className="fc-count"><b>{done}</b>/{freshTotal}</span>
       </div>
       <section className="flashcard-workspace">
         <div className="flashcard-progress">
-          <span>{card.fresh ? 'New' : 'Due'} · {card.topicId}</span>
-          <div><i style={{ width: `${freshTotal ? Math.round((done / freshTotal) * 100) : 0}%` }} /></div>
+          <span>{card.fresh ? 'New' : 'Due'} · {card.topicId.replaceAll('-', ' ')}</span>
+          <div role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${progressPct}%` }} /></div>
         </div>
-        <button className={`flashcard ${flip ? 'flipped' : ''}`} onClick={() => setFlip(!flip)}>
-          <span className="card-face"><small>QUESTION</small><strong>{card.question}</strong><em>Tap to reveal answer</em></span>
-          <span className="card-face answer"><small>ANSWER</small><strong>{card.answer}</strong><em>Tap to return</em></span>
-        </button>
-        <div className="srs-grades">
+        <div className="flashcard-stage">
+          <button className={`flashcard ${flip ? 'flipped' : ''}`} onClick={() => setFlip(!flip)} aria-pressed={flip} aria-label={flip ? 'Show question' : 'Show answer'}>
+            <span className="card-face">
+              <small>QUESTION</small>
+              <strong>{card.question}</strong>
+              <em>Tap to reveal · Space</em>
+            </span>
+            <span className="card-face answer">
+              <small>ANSWER</small>
+              <strong>{card.answer}</strong>
+              <em>Tap to return · Space</em>
+            </span>
+          </button>
+        </div>
+        <div className="srs-grades" role="group" aria-label="Grade your recall">
           {GRADES.map((g) => (
-            <button key={g.label} className="secondary-button" onClick={() => void grade(g.quality)}>
-              <b>{g.label}</b><small>{g.hint}</small>
+            <button key={g.label} className="srs-grade" onClick={() => void grade(g.quality)}>
+              <span className="srs-key" aria-hidden>{g.key}</span>
+              <b>{g.label}</b>
+              <small>{g.hint}</small>
             </button>
           ))}
         </div>

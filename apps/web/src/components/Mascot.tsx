@@ -300,3 +300,74 @@ export function Sparkles({ radius = 150, count = 5 }: { radius?: number; count?:
     </motion.div>
   );
 }
+
+/* ============ Avatar system — personalize Doddly ============ */
+
+export const AVATAR_COLORS: Array<{ id: string; name: string; fill: string; cheek: string }> = [
+  { id: 'ember', name: 'Ember', fill: '#f04e2c', cheek: '#7a2410' },
+  { id: 'cobalt', name: 'Cobalt', fill: '#2563eb', cheek: '#122f78' },
+  { id: 'mango', name: 'Mango', fill: '#f59e0b', cheek: '#7a4a05' },
+  { id: 'rose', name: 'Rose', fill: '#f43f5e', cheek: '#7a1730' },
+  { id: 'jade', name: 'Jade', fill: '#10b981', cheek: '#065f46' },
+  { id: 'violet', name: 'Violet', fill: '#8b5cf6', cheek: '#5b21b6' },
+  { id: 'teal', name: 'Teal', fill: '#0e9aa7', cheek: '#0a5d66' },
+  { id: 'midnight', name: 'Midnight', fill: '#475569', cheek: '#1e293b' },
+];
+
+const ACCESSORIES: Record<string, (ink: string) => React.ReactNode> = {
+  none: () => null,
+  glasses: (ink) => (
+    <g stroke={ink} strokeWidth="4" fill="none" strokeLinecap="round">
+      <circle cx="86" cy="118" r="15" />
+      <circle cx="134" cy="118" r="15" />
+      <path d="M101 118 L119 118 M70 117 L60 112 M150 117 L160 112" />
+    </g>
+  ),
+  cap: (ink) => (
+    <g>
+      <path d="M52 78 Q110 30 168 78 L168 63 Q110 15 52 63 Z" fill={ink} />
+      <rect x="40" y="73" width="140" height="10" rx="5" fill={ink} />
+      <circle cx="110" cy="30" r="6" fill="#ffe285" stroke={ink} strokeWidth="3" />
+    </g>
+  ),
+  headband: (ink) => (
+    <g>
+      <path d="M52 96 Q110 78 168 96 L168 80 Q110 62 52 80 Z" fill={ink} opacity="0.92" />
+      <path d="M154 88 q16 2 14 20 q-10 -4 -22 -8 Z" fill={ink} opacity="0.92" />
+    </g>
+  ),
+  star: (ink) => (
+    <g transform="translate(150,148)">
+      <path d="M0 -10 L2.6 -3.2 L10 -3.2 L4 1.4 L6.2 8.4 L0 4.4 L-6.2 8.4 L-4 1.4 L-10 -3.2 L-2.6 -3.2 Z" fill="#ffd84d" stroke={ink} strokeWidth="2.4" strokeLinejoin="round"/>
+    </g>
+  ),
+  antenna: (ink) => (
+    <g stroke={ink} strokeWidth="4.5" strokeLinecap="round">
+      <path d="M110 22 Q112 4 122 -2" fill="none" />
+      <circle cx="125" cy="-4" r="5.5" fill="#ffe285" stroke={ink} strokeWidth="3.5" />
+    </g>
+  ),
+};
+export const ACCESSORY_IDS = Object.keys(ACCESSORIES);
+
+export function avatarColorById(id?: string) {
+  return AVATAR_COLORS.find((c) => c.id === id) || AVATAR_COLORS[0];
+}
+
+export function AvatarFace({ color = 'ember', accessory = 'none', size = 96, className = '' }: {
+  color?: string; accessory?: string; size?: number; className?: string;
+}) {
+  const fill = avatarColorById(color).fill;
+  const acc = ACCESSORIES[accessory] || ACCESSORIES.none;
+  return (
+    <svg viewBox="36 4 148 204" className={className} style={{ width: size, height: size, display: 'block' }} role="img" aria-label="Your Doddly avatar">
+      <path d={FLAME} fill={fill} />
+      <circle cx={EYE_L.cx} cy={EYE_L.cy} r={EYE_RR} fill="#fff" />
+      <circle cx={EYE_R.cx} cy={EYE_R.cy} r={EYE_RR} fill="#fff" />
+      <circle cx={EYE_L.cx + 1.5} cy={EYE_L.cy + 2.5} r="7" fill="#241d2b" />
+      <circle cx={EYE_R.cx + 1.5} cy={EYE_R.cy + 2.5} r="7" fill="#241d2b" />
+      <path d="M98 147 Q109 157 120 147" fill="none" stroke="#241d2b" strokeWidth="4.5" strokeLinecap="round" />
+      {acc('#241d2b')}
+    </svg>
+  );
+}

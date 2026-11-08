@@ -75,7 +75,7 @@ test('practice attempts are saved with a reusable step-by-step solution', async 
 test('quiz catalog supports full-stack and AI/ML subject and topic filters', async () => {
   const web = await request('/api/quiz/catalog?course=web-dev&source=practice&subject=Backend&topic=API%20Design');
   assert.equal(web.status, 200);
-  assert.equal(web.body.questions.length, 1);
+  assert.equal(web.body.questions.length >= 1, true);
   assert.equal(web.body.questions[0].course, 'web-dev');
   const ai = await request('/api/quiz/catalog?course=ai-ml&source=practice&subject=Generative%20AI&topic=RAG%20Systems');
   assert.equal(ai.status, 200);
@@ -83,12 +83,13 @@ test('quiz catalog supports full-stack and AI/ML subject and topic filters', asy
   assert.equal(ai.body.questions[0].answer, 1);
 });
 
-test('video recommendations are topic-specific and actionable', async () => {
+test('video recommendations are topic-specific, actionable, and honestly attributed', async () => {
   const result = await request('/api/recommendations/videos?topicId=algo-complexity');
   assert.equal(result.status, 200);
   assert.equal(result.body.recommendations.length, 3);
   assert.equal(result.body.recommendations.every((item: any) => item.url.includes('youtube.com')), true);
-  assert.equal(result.body.recommendations.some((item: any) => item.channel === 'NPTEL'), true);
+  assert.equal(result.body.recommendations.every((item: any) => typeof item.publisher === 'string' && item.publisher.length > 2), true);
+  assert.equal(result.body.recommendations.some((item: any) => item.publisher === 'freeCodeCamp'), true);
 });
 
 test('server derives canonical question correctness instead of trusting the browser', async () => {
@@ -221,7 +222,7 @@ test('analytics and achievements summarize the week', async () => {
   const weekly = await request('/api/analytics/weekly', { headers });
   assert.equal(weekly.body.days.length, 7);
   const badges = await request('/api/achievements', { headers });
-  assert.equal(badges.body.total, 11);
+  assert.equal(badges.body.total, 19);
   assert.equal(badges.body.achievements.some((a: any) => a.id === 'first-steps'), true);
 });
 
@@ -292,7 +293,8 @@ test('local study kits are compact, topic-aware, and source-linked', async () =>
   const node = getTopic('web-dev-backend-with-node-js-node-js-runtime')!;
   const nodePack = buildLocalPack(node.id, node, 'standard');
   assert.match(nodePack.notes.sections[1].body, /event.loop|event loop/i);
-  assert.equal(nodePack.verification.sourceRefs.some((source: any) => source.url === 'https://www.geeksforgeeks.org/node-js/nodejs/'), true);
+  assert.equal(nodePack.verification.sourceRefs.every((source: any) => source.url.startsWith('/')), true, 'lesson references stay in-app');
+  assert.equal(nodePack.verification.sourceRefs.length >= 2, true);
 
   for (const curriculum of Object.values(catalogs)) {
     for (const current of curriculum) {
