@@ -13,6 +13,9 @@
 import { QUESTION_BANK, type Question } from './questionBank.js';
 import { localKnowledgeFor, referencesFor } from './localKnowledge.js';
 import { loadKit, type StudyKit } from './kitStore.js';
+import { composeLesson } from './lessonComposer.js';
+import { lessonFor } from './topicLessons.js';
+import { buildAuthoredPack } from './authoredPack.js';
 
 export type PackDepth = 'eli5' | 'standard' | 'deep';
 export type TopicRef = { title: string; description: string; module?: string };
@@ -256,6 +259,22 @@ function pickDiagrams(topic: TopicRef, count = 3): Diagram[] {
  * in one focused sitting while the linked docs remain available for detail.
  */
 export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDepth = 'standard'): any {
+  // Authored chapters are the primary local content path. One topic, one
+  // authored lesson: no module template, no composed essay, no reuse across
+  // neighbouring topics. Seeded kits and the legacy composer remain only for
+  // topics that have not yet been authored.
+  const authored = lessonFor(topicId);
+  if (authored) {
+    return buildAuthoredPack(
+      topicId,
+      topic,
+      depth,
+      authored,
+      relatedQuestions(topic, depth === 'deep' ? 10 : 6),
+      referencesFor({ ...topic, id: topicId }),
+    );
+  }
+
   // A seeded kit carries the publisher's actual explanation for this exact
   // topic, which beats a curated profile matched on keywords. Absent one, the
   // original curated path below runs unchanged.
@@ -263,119 +282,19 @@ export function buildLocalPack(topicId: string, topic: TopicRef, depth: PackDept
   if (kit) return buildKitPack(topicId, topic, depth, kit);
   const knowledge = localKnowledgeFor({ ...topic, id: topicId });
   const references = referencesFor({ ...topic, id: topicId });
-  const related = relatedQuestions(topic, 6);
+  const related = relatedQuestions(topic, depth === 'deep' ? 10 : 6);
   const matchedSnippets = pickSnippets({ ...topic, id: topicId }, depth === 'eli5' ? 1 : 2);
   const matchedDiagrams = pickDiagrams(topic, 1);
-  const codeExamples = [knowledge.code, ...matchedSnippets]
-    .filter(Boolean)
-    .filter((item, index, all) => all.findIndex((candidate: any) => candidate.title === (item as any).title) === index)
-    .slice(0, depth === 'deep' ? 3 : 2)
-    .map((item: any) => ({ title: item.title, language: item.language, code: item.code, explanation: item.explanation }));
-  const diagrams = [knowledge.diagram, ...matchedDiagrams]
-    .filter(Boolean)
-    .filter((item, index, all) => all.findIndex((candidate: any) => candidate.title === (item as any).title) === index)
-    .slice(0, 2)
-    .map((item: any) => ({ title: item.title, caption: item.caption, mermaid: item.mermaid }));
-  const S = (heading: string, body: string) => ({ heading, body });
-  const title = topic.title;
-  const module = topic.module || 'this module';
-  const quickFacts = knowledge.mechanics.map((item) => `• ${item}`).join('\n');
-  const buildSteps = knowledge.buildSteps.map((item, index) => `${index + 1}. ${item}`).join('\n');
-  const bankExample = related[0]
-    ? `**Practice anchor — ${related[0].subject}, ${related[0].year}:** ${related[0].question}\n\nBefore reading the answer, choose an option and state the rule you used. **Answer:** ${related[0].options[related[0].answer]}. ${related[0].explanation}`
-    : `Create a tiny example for ${title}: write the input, the state after each step, and the expected result. Then change one boundary condition and explain why the result changes or stays the same.`;
-
-  const sections: any[] = [
-    S(`Why ${title} matters`, `${title} is ${knowledge.focus}. ${topic.description}\n\n**Read this with a pencil:** work the guided example before scrolling — GATE and real engineering both reward the attempt over the glance.`),
-    S('The one big idea', `${knowledge.mentalModel}\n\n${quickFacts}`),
-    S('How it works — the guided example', `${knowledge.workedExample}`),
-    S('PYQ — know the shape of the question', `${bankExample}`),
-    S('Build it yourself', `${buildSteps}`),
-    S('Traps, and how to dodge them', `**The trap:** ${knowledge.trap}\n\n**Check yourself:** ${knowledge.check}`),
-    S('Where to go next', `${title} sits inside ${module}. Finish here only when you can state the definition, trace the smallest case, and repair the trap from memory.\n\n**Go deeper with the sources below** — they are linked for verification and practice, never copied into this lesson.`),
-  ];
-
-  if (depth === 'eli5') {
-    sections.splice(1, 1, S('The simple picture', `${knowledge.mentalModel}\n\nThink of the worked example as a small story: identify what goes in, what changes, and what comes out. Do not memorize terms until you can tell that story.`));
-    sections.splice(4, 1);
-  }
-  if (depth === 'deep') {
-    sections.splice(6, 0,
-      S('Trade-offs and transfer', `Strong answers compare alternatives instead of presenting one technique as magic. For ${title}, name the precondition that makes the standard approach valid, the resource it consumes (time, memory, complexity, or operational risk), and the signal that tells you to choose a different approach.\n\nTransfer drill: take the guided example and change its scale, ordering, failure mode, or correctness requirement. Re-state the invariant or contract before deciding whether the same solution still holds.`),
-      S('Prove it, test it, teach it', `Use a four-beat proof or review: **initialization** (why the starting state is valid), **maintenance** (why each step preserves the rule), **termination** (why progress cannot continue forever), and **conclusion** (why the final state solves the original problem).\n\nThen teach ${title} in two minutes using one diagram, one example, and the trap above. A clear explanation under this constraint is a stronger signal of mastery than a longer summary.`),
-      S('Cost and complexity analysis', `State the cost before optimising it. For ${title}, write down what you are counting (operations, comparisons, allocations, round trips, or wall-clock time), then the cost in the best, average, and worst case, and say which input shape produces each.\n\nSeparate the resource you spend from the resource you save — extra memory for speed, precomputation for query time, or consistency for availability. An answer that names the exchange is worth more than one that quotes a single figure, because the figure changes with the assumptions.`),
-      S('Edge cases and failure modes', `Work the boundaries deliberately: the empty input, a single element, all-equal elements, the maximum size you support, and a malformed or hostile input. For each, state what your approach does and whether that is the behaviour you want.\n\nThen ask how it fails under load or partial failure: what happens when the input is ten times larger, when a dependency times out, or when two operations run concurrently. Most production and exam mistakes live here rather than in the happy path.`),
-      S('Alternatives and when each wins', `Name at least two competing approaches for ${title} and the condition that decides between them. A technique is rarely better in general — it is better given a data shape, a size, a read/write ratio, or a correctness requirement.\n\nWrite the decision as a rule you could apply under time pressure: "use A when …, switch to B once …". ${knowledge.trap} Being able to defend the choice is what separates a strong answer from a memorised one.`),
-      S('How examiners and interviewers probe this', `The first question checks whether you know the result. The follow-ups check whether you understand it: expect to be asked to justify a step, change an assumption and redo the reasoning, give the cost, or produce an input that breaks the obvious approach.\n\nRehearse the second layer explicitly. Take the worked example above, change one assumption, and narrate the new reasoning aloud. If your explanation collapses when an assumption moves, you have memorised the answer rather than the method.`),
-      S('Common misconceptions, and why they are wrong', `Collect the plausible-but-wrong statements about ${title} and, for each, the single counterexample that kills it. A misconception you can refute with a concrete case will not survive to the exam; one you have only been told is wrong usually does.\n\nThe most common failure is applying the technique outside its preconditions because the surface pattern looked familiar. Before you apply it, restate the precondition and check it holds — that habit prevents most of these errors at once.`),
-    );
-  }
-
-  const flashcards = [
-    { question: `What is the core mental model for ${title}?`, answer: knowledge.mentalModel },
-    ...knowledge.mechanics.slice(0, 3).map((mechanic, index) => ({ question: `${title}: key idea ${index + 1}?`, answer: mechanic })),
-    { question: `What is the most important trap in ${title}?`, answer: knowledge.trap },
-    { question: `How do you check your understanding of ${title}?`, answer: knowledge.check },
-    ...related.slice(0, 2).map((q) => ({ question: q.question, answer: `${q.options[q.answer]} — ${q.explanation}` })),
-  ].slice(0, depth === 'eli5' ? 5 : 7);
-
-  const quiz = [
-    ...related.slice(0, 3).map((q) => ({ question: q.question, options: q.options, answer: q.answer, explanation: q.explanation })),
-    {
-      question: `For ${title}, which approach survives the real exam?`,
-      options: ['Recall a remembered answer first', 'State the rule, test the smallest case, then decide', 'Optimise the code before checking correctness', 'Skip the definition and pattern-match the options'],
-      answer: 1,
-      explanation: `Definition → trace → decide. The exam here changes exactly one variable on purpose — only the traced approach catches it.`,
-    },
-    {
-      question: `What most often defeats candidates on ${title}?`,
-      options: ['Forgetting the formula', 'Applying it outside its preconditions', 'Using too much memory', 'Writing the answer twice'],
-      answer: 1,
-      explanation: `Boundary and precondition checks kill most plausible-but-wrong attempts; the rest is arithmetic.`,
-    },
-  ].slice(0, depth === 'eli5' ? 4 : 5);
-
-  const cheatSheet = (knowledge.cheatSheet && knowledge.cheatSheet.length
-    ? [...knowledge.cheatSheet]
-    : [
-        `Restate: work ${title} from its definition — name the object, its domain, and the rule being preserved.`,
-        ...knowledge.mechanics.slice(0, 3).map((m) => `Core: ${m}`),
-        `Trap: ${knowledge.trap}`,
-        `Check yourself: ${knowledge.check}`,
-      ]).slice(0, depth === 'deep' ? 9 : 7);
-  // Hard guarantee, matching the AI lesson: 5-6 sections at eli5/standard, and
-  // genuinely more at deep rather than the same lesson with a different label.
-  const maxSections = depth === 'deep' ? 14 : 6;
-  if (sections.length > maxSections) sections.length = maxSections;
-  while (sections.length < 5) {
-    sections.push(S(`Retrieval practice`, `Close the page and write down, from memory: (1) the definition, (2) the procedure, (3) the trap. Reopen and mark whichever you could not reproduce — that part is the lesson.`));
-  }
-  const words = sections.reduce((total, section) => total + String(section.body).trim().split(/\s+/).length, 0);
-
-  return {
+  return composeLesson({
     topicId,
-    title,
+    topic: { title: topic.title, description: topic.description, module: topic.module },
     depth,
-    generatedAt: new Date().toISOString(),
-    readingMinutes: Math.max(4, Math.round(words / 190)),
-    verification: {
-      status: 'fallback',
-      evidenceMode: 'local-fallback',
-      provider: 'local-curated-tutorials',
-      fallbackReason: 'The agent runtime or provider was unavailable; this original source-linked local tutorial is ready to study.',
-      sources: references.map((reference) => `${reference.publisher}: ${reference.title}`),
-      sourceRefs: references,
-      claimsChecked: related.length,
-    },
-    notes: { sections },
-    codeExamples,
-    diagrams,
-    cheatSheet,
-    videos: references.map((reference) => ({ title: `${reference.publisher}: ${reference.title}`, url: reference.url, timestamp: 'Read next' })),
-    flashcards,
-    quiz,
-    pyqs: related.slice(0, 3).map((q) => ({ year: q.year, question: q.question, difficulty: q.difficulty })),
-  };
+    knowledge,
+    related,
+    snippets: matchedSnippets,
+    diagrams: matchedDiagrams,
+    references,
+  });
 }
 
 // ------------------------------------------------------- seeded kit builder
@@ -424,7 +343,7 @@ function buildKitPack(topicId: string, topic: TopicRef, depth: PackDepth, kit: S
     ));
   }
 
-  const related = relatedQuestions(topic, 6);
+  const related = relatedQuestions(topic, depth === 'deep' ? 10 : 6);
   if (related[0] && sections.length < budget) {
     sections.push(S(
       'Practice anchor',

@@ -169,16 +169,30 @@ function Inline({ text }: { text: string }) {
   );
 }
 
-/** Minimal renderer for lesson bodies: paragraphs, bullets, tables, fences. */
+/**
+ * Renderer for authored lesson bodies and extracted Reading Room articles.
+ * Supports the small markdown dialect we produce: headings, paragraphs,
+ * ordered/unordered lists, blockquotes, tables, fenced code, and horizontal
+ * rules. Single newlines inside a paragraph collapse to spaces; blank lines
+ * separate blocks.
+ */
 export function RichText({ text }: { text: string }) {
-  const blocks = String(text || '').split('\n\n');
+  const blocks = String(text || '').replace(/\r/g, '').split('\n\n');
   return (
-    <>
+    <div className="rich-text">
       {blocks.map((block, i) => {
         const trimmed = block.trim();
+        if (!trimmed) return null;
         if (/^```/.test(trimmed)) {
           const code = trimmed.replace(/^```\w*\n?/, '').replace(/```$/, '');
           return <pre key={i} className="rich-code"><code>{code}</code></pre>;
+        }
+        if (/^(?:---|\*\*\*|___)$/.test(trimmed)) return <hr key={i} className="rich-rule" />;
+        const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
+        if (heading) {
+          const level = Math.min(3, heading[1].length);
+          const Tag = (`h${level}`) as keyof JSX.IntrinsicElements;
+          return <Tag key={i} className={`rich-heading rich-h${level}`}><Inline text={heading[2]} /></Tag>;
         }
         if (trimmed.split('\n').every((line) => /^\s*\|.*\|\s*$/.test(line))) {
           const rows = trimmed.split('\n').map((line) => line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim()));
@@ -199,9 +213,20 @@ export function RichText({ text }: { text: string }) {
             </ul>
           );
         }
-        return <p key={i}><Inline text={trimmed} /></p>;
+        if (trimmed.split('\n').every((line) => /^\s*\d+[.)]\s+/.test(line))) {
+          return (
+            <ol key={i} className="rich-list rich-ordered">
+              {trimmed.split('\n').map((line, j) => <li key={j}><Inline text={line.replace(/^\s*\d+[.)]\s+/, '')} /></li>)}
+            </ol>
+          );
+        }
+        if (/^>/.test(trimmed)) {
+          const quote = trimmed.split('\n').map((line) => line.replace(/^\s*>\s?/, '')).join(' ');
+          return <blockquote key={i} className="rich-quote"><Inline text={quote} /></blockquote>;
+        }
+        return <p key={i}><Inline text={trimmed.replace(/\n/g, ' ')} /></p>;
       })}
-    </>
+    </div>
   );
 }
 

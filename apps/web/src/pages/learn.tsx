@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { API, apiGet, apiPost, apiPut, type Pack, type Page, type Topic } from '../lib/api';
 import { Avatar, Empty, JobCard, Mermaid, RichText } from '../components/ui';
+import { ArticleReader } from '../components/Reader';
 
 const opts = { credentials: 'include' as const };
 
@@ -23,15 +24,17 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
   const [doubtAnswer, setDoubtAnswer] = useState<any>(null);
   const [doubtBusy, setDoubtBusy] = useState(false);
   const [depth, setDepth] = useState(pack?.depth || 'standard');
-  const [videos, setVideos] = useState<any[]>(pack?.videos || []);
+  const [videos, setVideos] = useState<any[]>([]);
   const [notes, setNotes] = useState('');
   const [notesSaved, setNotesSaved] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
+  const [localDismissed, setLocalDismissed] = useState(false);
+  const [sourceOpen, setSourceOpen] = useState<any>(null);
 
   useEffect(() => { setDepth(pack?.depth || 'standard'); }, [pack?.topicId]);
 
   useEffect(() => {
-    setNotes(''); setNotesSaved(false); setCelebrate(false);
+    setNotes(''); setNotesSaved(false); setCelebrate(false); setLocalDismissed(false); setSourceOpen(null);
     if (guest) return;
     apiGet(`/api/notes/${encodeURIComponent(topic.id)}`).then((d) => setNotes(d.text || '')).catch(() => {});
   }, [topic.id, guest]);
@@ -67,17 +70,14 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
     window.setTimeout(() => setCelebrate(false), 4000);
   };
 
-  const isFallbackPack = pack?.verification?.status === 'fallback';
+  const isLocalPack = Boolean(pack && (pack.local || pack.guest || pack.baseline || pack.verification?.status === 'local' || pack.verification?.status === 'fallback'));
 
   const order = topics.length ? topics : [topic];
   const position = Math.max(0, order.findIndex((t) => t.id === topic.id));
   const prev = position > 0 ? order[position - 1] : null;
   const next = position < order.length - 1 ? order[position + 1] : null;
 
-  const sections = pack?.notes?.sections || [{
-    heading: 'Ready to generate your complete study kit?',
-    body: 'Pick an explanation depth and start the learning team to receive a detailed, evidence-backed kit with intuition, formal definitions, worked examples, code, diagrams, edge cases, exam connections, flashcards, practice questions, and recommended videos.',
-  }];
+  const sections = pack?.notes?.sections || [];
 
   useEffect(() => {
     if (!pack) return;
@@ -91,96 +91,61 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
   const codeExamples = pack?.codeExamples || [];
   const diagrams = pack?.diagrams || [];
   const cheatSheet = pack?.cheatSheet || [];
-  const pyqs = pack?.pyqs || [];
   const localCompanion = pack?.localCompanion;
+  const sourceRefs = (pack?.verification?.sourceRefs || []).filter((ref: any) => /^https?:/i.test(String(ref.url || '')));
 
   return (
     <>
       <button className="back-link" onClick={onBack}>← Back to study plan</button>
-      {guest && (
-        <section className="guest-banner card" role="status">
-          <span aria-hidden>✦</span>
-          <div><b>Free curated baseline — reading as a guest.</b><small>Sign in (free) for the AI swarm expansion, flashcards, notes, your streak, and the mistake notebook.</small></div>
-          <button onClick={onRequireSignIn}>Sign in free →</button>
-        </section>
-      )}
-      <div className="lesson-header">
-        <div>
-          <p className="eyebrow">{topic.module.toUpperCase()} · TUTORIAL {position + 1} OF {order.length}</p>
-          <h1>{pack?.title || topic.title}</h1>
-          <p className="lesson-subtitle">{topic.description}</p>
-          <div className="lesson-tags">
-            <span>◷ {pack?.readingMinutes || topic.minutes} minutes</span>
-            <span>◈ {pack ? depthLabel : 'Not generated'}</span>
-            <span>⌘ Examples + code + diagrams</span>
-            {isComplete && <span className="complete-tag">✓ Completed</span>}
-          </div>
-        </div>
-        <Avatar size="large" />
-      </div>
-
-      {celebrate && (
-        <section className="celebrate-banner" role="status">
-          <span className="confetti"><i /><i /><i /><i /><i /><i /><i /><i /></span>
-          <div><b>Topic complete — superb work. +40 XP banked.</b><small>Keep the streak alive: review flashcards or take the next tutorial.</small></div>
-        </section>
-      )}
-
       {job && <JobCard job={job} />}
+      {isLocalPack && !localDismissed && (
+        <section className="local-banner card" role="status">
+          <span className="local-banner-icon" aria-hidden>◈</span>
+          <div className="local-banner-copy">
+            <b>{guest ? 'Free EduSwarm chapter — read instantly, no account needed.' : 'EduSwarm local chapter — ready instantly.'}</b>
+            <small>
+              {guest
+                ? 'Written and reviewed by our curriculum team. Sign in to save progress, flashcards, notes, and your streak — or keep reading right now.'
+                : `Authored and reviewed by our curriculum team: ${sections.length} sections, worked examples, code walkthroughs, a cheat sheet, and practice with full solutions. No model call is needed.`}
+            </small>
+          </div>
+          <div className="local-banner-actions">
+            {guest && onRequireSignIn && <button onClick={onRequireSignIn}>Sign in free →</button>}
+            {!guest && <button onClick={() => onStart(topic, depth, true)}>✦ Generate AI expansion</button>}
+            <button className="secondary-button" onClick={() => setLocalDismissed(true)}>Keep reading</button>
+          </div>
+        </section>
+      )}
 
       {!job && jobError && (
         <section className="job-error card" role="alert">
           <span className="job-error-icon">⚠</span>
-          <div><b>The team couldn’t finish this run.</b><small>{jobError}</small></div>
-          <button onClick={() => onStart(topic, depth, true)}>↻ Try again</button>
+          <div><b>We couldn’t open this chapter.</b><small>{jobError}</small></div>
+          <button onClick={() => onOpen(topic)}>↻ Reload chapter</button>
         </section>
       )}
 
-      {!job && isFallbackPack && (
-        <section className="fallback-banner card" role="status">
-          <span className="fallback-icon">◌</span>
-          <div>
-            <b>{guest ? 'Free curated baseline — ready to study.' : 'Local reference tutorial — ready to study.'}</b>
-            <small>
-              {guest
-                ? 'This source-linked kit runs entirely on our curated curriculum — instant, free, forever. Sign in for the cited AI expansion and to keep your progress.'
-                : 'The AI team is unavailable, so this source-linked kit uses the built-in curriculum, worked examples, practice, and trusted documentation. Your progress is saved; regenerate later for a cited AI expansion.'}
-            </small>
+      {!pack && !job && !jobError && (
+        <section className="lesson-skeleton card" aria-busy="true" aria-label="Opening your local chapter">
+          <div className="reader-skeleton">
+            <span className="sk sk-label" /><span className="sk sk-title" /><span className="sk sk-title short" />
+            <span className="sk sk-line" /><span className="sk sk-line" /><span className="sk sk-line short" />
           </div>
-          <button onClick={() => onStart(topic, pack?.depth || 'standard', true)}>{guest ? '✦ Sign in free for the AI expansion' : '✦ Regenerate with AI team'}</button>
+          <p className="muted">Opening your local chapter — no model call, no waiting.</p>
         </section>
       )}
 
-      {!job && !pack && (
-        <section className="start-learning card">
-          <div>
-            <p className="label">LEARNING TEAM</p>
-            <h2>Generate the complete study kit.</h2>
-            <p>Detailed notes, worked examples, code, diagrams, videos, flashcards, and practice — generated and saved automatically.</p>
-            <div className="depth-picker" role="radiogroup" aria-label="Explanation depth">
-              {DEPTHS.map((d) => (
-                <button key={d.id} type="button" className={`depth-option ${depth === d.id ? 'active' : ''}`} onClick={() => setDepth(d.id)}>
-                  <b>{d.label}</b><small>{d.hint}</small>
-                </button>
-              ))}
-            </div>
-          </div>
-          <button onClick={() => (guest && onRequireSignIn ? onRequireSignIn() : onStart(topic, depth))}>{guest ? 'Sign in free to generate with AI →' : 'Start learning →'}</button>
-        </section>
-      )}
-
-      {!job && (
+      {pack && (
         <div className="lesson-layout">
           <article className="lesson-article">
             <div className="verified-line">
-              <span className="verified-chip">
-                {pack?.baseline || pack?.guest ? '✓ CURATED BASELINE' : pack?.verification?.status === 'fallback' ? '◌ LOCAL STUDY KIT' : pack ? '✓ SAVED VERIFIED LESSON' : 'READY TO GENERATE'}
+              <span className={`verified-chip ${isLocalPack ? 'local-chip' : ''}`}>
+                {isLocalPack ? '✓ EDUSWARM LOCAL CHAPTER' : '✓ SAVED AI-ENHANCED CHAPTER'}
               </span>
               <span>
-                {pack?.verification?.status === 'fallback'
-                  ? `Local tutorial with worked examples, recall practice, and ${pack.verification.sources.length} linked references · ${sections.length} sections`
-                  : pack ? `${pack.verification.claimsChecked} claims · ${pack.verification.sources.length} sources`
-                    : 'Start to unlock the full explanation'}
+                {isLocalPack
+                  ? `${sections.length} sections · ${pack.readingMinutes || topic.minutes} min read · authored and reviewed by EduSwarm`
+                  : `${pack.verification?.claimsChecked || 0} claims · ${(pack.verification?.sources || []).length} sources`}
               </span>
             </div>
             {sections.map((s: any, i: number) => (
@@ -236,20 +201,28 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                     <ul>{cheatSheet.map((line: string, i: number) => <li key={i}>{line}</li>)}</ul>
                   </section>
                 )}
-                {pyqs.length > 0 && (
-                  <section className="pyq-strip">
-                    <p className="label">EXAM PATTERNS IN THIS KIT</p>
-                    {pyqs.slice(0, 4).map((q: any, i: number) => (
-                      <p key={i}><b>{q.year ? `${q.year} · ` : ''}</b>{q.question}</p>
+                {videos.length > 0 && (
+                  <section className="sources">
+                    <p className="label">RECOMMENDED VIDEOS · WATCH AFTER THE CHAPTER</p>
+                    {videos.map((v) => (
+                      <a href={v.url} target="_blank" rel="noreferrer" key={v.title}>▶ {v.title}{v.publisher ? ` · ${v.publisher}` : ''}</a>
                     ))}
                   </section>
                 )}
-                <section className="sources">
-                  <p className="label">RECOMMENDED VIDEOS · WATCH AFTER THE KIT</p>
-                  {videos.map((v) => (
-                    <a href={v.url} target="_blank" rel="noreferrer" key={v.title}>▶ {v.title}{v.publisher ? ` · ${v.publisher}` : ''}</a>
-                  ))}
-                </section>
+                {sourceRefs.length > 0 && (
+                  <section className="sources source-reading">
+                    <p className="label">FREE SOURCE READING · OPEN INSIDE EDUSWARM</p>
+                    <div className="source-list">
+                      {sourceRefs.slice(0, 8).map((ref: any) => (
+                        <button className="source-link" key={ref.url} onClick={() => setSourceOpen(ref)}>
+                          <span className="source-icon" aria-hidden>❖</span>
+                          <span className="source-copy"><b>{ref.title}</b><small>{ref.publisher}{ref.kind ? ` · ${ref.kind}` : ''}</small></span>
+                          <span className="source-open">Read →</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                )}
                 {guest ? (
                   <section className="notes-box card">
                     <p className="label">YOUR NOTES · SYNCED TO THIS TOPIC</p>
@@ -304,8 +277,13 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
               {sections.map((s: any, i: number) => <a href={`#section-${i}`} key={s.heading}>{String(i + 1).padStart(2, '0')} {s.heading}</a>)}
             </div>
             {pack && (
-              <div className="rail-card">
-                <p className="label">REGENERATE</p>
+              <div className="rail-card rail-ai">
+                <p className="label">{isLocalPack ? 'OPTIONAL · AI SWARM EXPANSION' : 'REGENERATE WITH AI SWARM'}</p>
+                <p className="rail-help">
+                  {isLocalPack
+                    ? 'The chapter above is complete on its own. Generate a second pass with live citation checks only if you want another angle.'
+                    : 'Run the full learning team again for a fresh, cited version. Your current chapter stays saved.'}
+                </p>
                 <div className="depth-picker vertical" role="radiogroup" aria-label="Explanation depth">
                   {DEPTHS.map((d) => (
                     <button key={d.id} type="button" className={`depth-option ${depth === d.id ? 'active' : ''}`} onClick={() => setDepth(d.id)}>
@@ -313,8 +291,10 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                     </button>
                   ))}
                 </div>
-                <button className="secondary-button regen-button" onClick={() => onStart(topic, depth, true)}>↻ Regenerate this kit</button>
-                <small className="regen-note">Re-runs the full Dean pipeline and replaces this kit. Your saved kit is kept if the AI team is offline.</small>
+                <button className="secondary-button regen-button" onClick={() => onStart(topic, depth, true)}>
+                  {isLocalPack ? '✦ Generate AI expansion' : '↻ Regenerate this chapter'}
+                </button>
+                <small className="regen-note">Optional. If the AI team is offline, the chapter you are reading stays available.</small>
               </div>
             )}
           </aside>
@@ -342,6 +322,15 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
             ) : <span />}
           </nav>
         </>
+      )}
+
+      {sourceOpen && (
+        <ArticleReader
+          url={sourceOpen.url}
+          fallbackTitle={sourceOpen.title}
+          fallbackPublisher={sourceOpen.publisher}
+          onClose={() => setSourceOpen(null)}
+        />
       )}
     </>
   );

@@ -255,7 +255,9 @@ export function App() {
 
   async function start(t: Topic, depth = 'standard', regenerate = false) {
     if (!requireAccount()) return;
-    setSelected(t); setPage('lesson'); setError(''); setJobError(''); setPack(null);
+    setSelected(t); setPage('lesson'); setError(''); setJobError('');
+    // Keep the local chapter on screen while the optional AI expansion runs.
+    // Only a different topic clears the pack (handled in choose()).
     setJob({
       status: 'queued', stage: 'Dean',
       message: regenerate ? 'The team is re-researching this topic…' : 'The learning team is starting…',
@@ -464,7 +466,7 @@ export function App() {
           {page === 'discussions' && <Discussions topics={topics} isGuest={guest} userId={guest ? null : user?.id} onRequestSignIn={() => setSignInGate(true)} />}
           {page === 'progress' && <Progress topics={topics} progress={progress} />}
           {page === 'mistakes' && <Mistakes />}
-          {page === 'profile' && <Profile user={user} goal={goal} onSave={setUser} onSwitch={switchUniverse} onSignOut={signOut} />}
+          {page === 'profile' && <Profile user={user} goal={goal} onSave={setUser} onSignOut={signOut} />}
         </main>
       </div>
       {signInGate && <SignInSheet onClose={() => setSignInGate(false)} onSignIn={signIn} />}

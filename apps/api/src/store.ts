@@ -4,6 +4,8 @@ import { buildDiscussionSeeds } from './discussionSeeds.js';
 
 export type StoredUser = {
   id: string; provider?: string; providerSubject?: string; email?: string; name: string;
+  /** Public @handle and short bio for the social-style profile. */
+  handle?: string; bio?: string; private?: boolean;
   skillLevel: string; dailyMinutes: number; targetDate?: string | null; avatar: Record<string, string>;
   goals: Array<Record<string, unknown>>; activeGoal?: string; createdAt: string; updatedAt: string;
 };
