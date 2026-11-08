@@ -15,15 +15,15 @@ tests under exam conditions, and coaches with specialists — while every signal
 Design principles:
 
 1. **Intelligence must degrade, never disappear.** Every LLM feature has a
-   deterministic floor (local kits, static code review, guided doubt ladders,
-   planner fallback). Offline still teaches.
+   deterministic floor (curated local kits, guided doubt ladders, planner
+   fallback). Offline still teaches.
 2. **Evidence before eloquence.** Generated lessons publish only with
    claim-level citations against retrieved sources. Fallback kits are labeled
    as such — never silently passed off as verified.
 3. **The browser is untrusted.** Correctness, grading, XP, and scheduling are
    computed server-side. Answer keys never ship before submission.
-4. **Every action feeds the model.** Attempts, reviews, mocks, code runs, and
-   lesson completions all flow into mastery, XP, streaks, and plans.
+4. **Every action feeds the model.** Attempts, reviews, mocks, lesson
+   completions, and community help all flow into mastery, XP, streaks, and plans.
 
 ## 2. The agent team
 
@@ -132,40 +132,32 @@ Both tiers emit the same lesson shape and the same 5-6 section window (more at
 deep), so the UI and the learner see one consistent artifact regardless of which
 path produced it. `npm run kits:report` prints coverage.
 
-### Specialist sessions (stateful chat)
+### Doubt solver (ambient, stateless Q&A)
 
-Seven persistent personas share one grounded chat endpoint: Socratic Tutor, PYQ
-Coach, Doubt Solver, Code Reviewer, Mock Examiner, Revision Planner, Career
-Mentor.
+The swarm is invisible infrastructure, not a destination — learners never chat
+with "agents", they ask the lesson a question and get an answer. `POST
+/api/doubt` builds one prompt in `apps/api/src/doubtBrain.ts` — universe, open
+lesson, learner level — then tries, in order:
 
-**Three-tier answer path.** `POST /api/agents/sessions/:id/messages` builds one
-system prompt in `apps/api/src/agentBrain.ts` — persona, open lesson, universe,
-learner level, and their weak topics — then tries, in order:
-
-1. **Agent runtime** (`/v1/agent-chat`): the same prompt plus Qdrant retrieval.
+1. **Agent runtime** (`/v1/doubt-solve`): the same prompt plus Qdrant retrieval
+   and lesson context.
 2. **Direct model from the API** (`apps/api/src/llm.ts`): walks the chain
    discovered from OpenRouter's live catalogue, so an asleep or misconfigured
-   runtime cannot silently downgrade the learner's answers.
-3. **Curriculum brain** (`localSpecialistReply`): not a canned paragraph — a
-   pasted PYQ is matched against the question bank and answered with its real
-   explanation and option eliminations, pasted code gets a structural review,
-   and common stuck-points (recursion blow-up, Master theorem, Belady, BCNF,
+   runtime cannot silently downgrade the answer.
+3. **Curriculum brain** (`localDoubtReply`): not a canned paragraph — a pasted
+   PYQ is matched against the question bank and answered with its real
+   explanation and option eliminations; pasted code gets a structural review;
+   common stuck-points (recursion blow-up, Master theorem, Belady, BCNF,
    self-attention, stale closures…) get their actual mechanism.
 
-Every assistant message is stored with `provider` and `model`, and the chat UI
-prints that label — so a learner can always tell whether a model answered or the
-offline curriculum did. The local brain now resolves a topic-specific teaching
-profile (for example, Node’s event loop/streams, React render snapshots, SQL
-plans, RAG validation, or GATE invariants) plus an attributed reference route;
-it does not fall back to one canned paragraph. `GET /api/agents/status` reports
-the live path.
+It does not fall back to one canned paragraph, and every reply carries the
+brain that produced it. `GET /api/auth/status` reports the live path.
 
 ### Intelligence endpoints (structured JSON)
 
 `/v1/doubt-solve` (evidence + lesson context), `/v1/study-plan`,
-`/v1/evaluate-code` (rubric + corrected code), `/v1/mock-analysis`
-(strengths/weaknesses/next steps). The API calls these with timeouts and always
-keeps a local equivalent.
+`/v1/mock-analysis` (strengths/weaknesses/next steps). The API calls these with
+timeouts and always keeps a local equivalent.
 
 ## 3. The mastery model
 
@@ -178,7 +170,7 @@ band  = nascent <25 · developing <55 · strong <80 · mastered ≥80
 
 Modules average their topics for the dashboard heatmap. XP is
 difficulty-weighted (easy 10 / medium 15 / hard 25, wrong 3 for effort) plus
-completion/review/mock/code bonuses across 11 levels. Streaks derive from the
+completion/review/mock/helpful-upvote bonuses across 11 levels. Streaks derive from the
 union of attempts, completions, and activity dates — no separate tracking table
 to drift.
 
@@ -199,17 +191,26 @@ the rotation.
 - Adaptive ranking (repeated misses → unseen → level-matched) powers
   "next best question" and weak-topic drills.
 
-## 6. Code lab sandbox
+## 6. Discussions (public, high-signal)
 
-`node:vm` contexts with no `require`/`process`/network, per-case timeouts,
-20 KB code cap, 20-case cap, truncated logs, and float-tolerant deep equality.
-Ten curriculum-mapped challenges (hashing, stacks, BSTs, DP, subnetting…)
-feed the same XP/mastery model as quizzes.
+A structured community feed anchored to canonical topic ids — the replacement
+for both the retired Code Lab and the old Clubs silos:
 
+- `GET /api/discussions` is public (guests read everything); write actions
+  require an account.
+- Kinds: `doubt | thought | shared-kit`. Doubts can be marked resolved by the
+  author; upvotes store user ids server-side so toggles are idempotent.
+- **Cold-start seeding**: curated, PYQ-grade threads are inserted at boot by
+  insert-if-missing (`apps/api/src/discussionSeeds.ts`), so the feed is alive
+  on day one and redeploys never clobber user data. Seeded votes are tracked
+  separately from real upvotes and never mixed with them.
+- Basic anti-spam: max 20 posts and 60 comments per user per day, link cap of 2
+  per post, per-kind/search/topic filters server-side.
 ## 7. Data model (Mongo/Redis, memory fallback)
 
-`users · sessions · jobs · contents · progress(+attempts) · agentSessions ·
-mistakes · reviews · mocks · activities` — all owner-scoped; Redis pub/sub
+`users · sessions · jobs · contents · progress(+attempts) · discussions ·
+mistakes · reviews · mocks · activities` — user data is owner-scoped; discussions
+are public by design (authors and topic anchors are public). Redis pub/sub
 (`eduswarm:job:*`) streams job events to SSE. MemoryStore mirrors the full
 interface so tests and demos run dependency-free.
 
@@ -250,6 +251,6 @@ XP — lives on the Today's mission page.
   fallback models, per-subject mock blueprints.
 - **Next:** group study rooms + shared mocks, flexible rubric evaluations for
   subjective answers, voice doubt input, PWA offline kits.
-- **Later:** interview simulator with resume mapping, institute dashboards,
-  regional-language lesson variants, learning-graph recommendations across
-  universes.
+- **Later:** paid INR 99/199 tiers (Practice Pass / Agent Swarm Pro) with
+  Razorpay UPI Autopay, HD Kokoro neural voices, forkable shared study kits,
+  friends + study pods with 1:1 chat, regional-language lesson variants.

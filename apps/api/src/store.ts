@@ -1,5 +1,6 @@
 import { MongoClient } from 'mongodb';
 import { createClient, RedisClientType } from 'redis';
+import { buildDiscussionSeeds } from './discussionSeeds.js';
 
 export type StoredUser = {
   id: string; provider?: string; providerSubject?: string; email?: string; name: string;
@@ -10,13 +11,25 @@ export type StoredJob = Record<string, any> & { id: string };
 export type StoredContent = Record<string, any> & { id: string; ownerId: string; topicId: string };
 export type StoredNote = { id: string; ownerId: string; topicId: string; text: string; updatedAt: string };
 export type StoredProgress = Record<string, any> & { id: string; ownerId: string; topicId: string };
-export type StoredAgentSession = Record<string, any> & { id: string; ownerId: string; agentId: string };
 export type StoredMistake = Record<string, any> & { id: string; ownerId: string; questionId: string };
 export type StoredReview = {
   id: string; ownerId: string; cardKey: string; topicId: string; question: string; answer: string;
   efactor: number; intervalDays: number; repetitions: number; nextDueAt: string; lastQuality: number; updatedAt: string;
 };
 export type StoredMock = Record<string, any> & { id: string; ownerId: string; status: string };
+export type StoredDiscussionComment = {
+  id: string; postId: string; authorId: string; authorName: string; body: string; createdAt: string;
+};
+export type StoredDiscussion = Record<string, any> & {
+  id: string; kind: 'doubt' | 'thought' | 'shared-kit';
+  authorId: string; authorName: string; authorStreak?: number;
+  title: string; body: string; topicId?: string; topicTitle?: string; questionId?: string;
+  upvoterIds: string[]; comments: StoredDiscussionComment[];
+  isResolved: boolean; seeded?: boolean; seededVotes?: number; createdAt: string; updatedAt: string;
+};
+export type DiscussionsFilter = {
+  kind?: string; topicId?: string; questionId?: string; search?: string; authorId?: string; limit?: number;
+};
 export type StoredActivity = {
   id: string; ownerId: string; kind: string; date: string; createdAt: string; xp?: number;
 } & Record<string, any>;
@@ -42,12 +55,16 @@ export interface Store {
   saveProgress(progress: StoredProgress): Promise<StoredProgress>;
   getProgress(ownerId: string, topicId: string): Promise<StoredProgress | null>;
   listProgress(ownerId: string): Promise<StoredProgress[]>;
-  saveAgentSession(session: StoredAgentSession): Promise<StoredAgentSession>;
-  getAgentSession(ownerId: string, id: string): Promise<StoredAgentSession | null>;
-  listAgentSessions(ownerId: string): Promise<StoredAgentSession[]>;
   saveMistake(mistake: StoredMistake): Promise<StoredMistake>;
   deleteMistake(ownerId: string, id: string): Promise<void>;
   listMistakes(ownerId: string): Promise<StoredMistake[]>;
+  saveDiscussion(post: StoredDiscussion): Promise<StoredDiscussion>;
+  getDiscussion(id: string): Promise<StoredDiscussion | null>;
+  listDiscussions(filter?: DiscussionsFilter): Promise<StoredDiscussion[]>;
+  toggleDiscussionUpvote(id: string, userId: string): Promise<{ post: StoredDiscussion; upvoted: boolean } | null>;
+  addDiscussionComment(id: string, comment: StoredDiscussionComment): Promise<StoredDiscussion | null>;
+  setDiscussionResolved(id: string, resolved: boolean): Promise<StoredDiscussion | null>;
+  seedDiscussions(posts: StoredDiscussion[]): Promise<number>;
   saveReview(review: StoredReview): Promise<StoredReview>;
   listReviews(ownerId: string): Promise<StoredReview[]>;
   saveMock(mock: StoredMock): Promise<StoredMock>;
@@ -61,6 +78,19 @@ export interface Store {
 
 function channel(jobId: string) { return `eduswarm:job:${jobId}`; }
 
+function matchesDiscussionsFilter(post: StoredDiscussion, filter?: DiscussionsFilter): boolean {
+  if (!filter) return true;
+  if (filter.kind && post.kind !== filter.kind) return false;
+  if (filter.topicId && post.topicId !== filter.topicId) return false;
+  if (filter.questionId && post.questionId !== filter.questionId) return false;
+  if (filter.authorId && post.authorId !== filter.authorId) return false;
+  if (filter.search) {
+    const haystack = `${post.title} ${post.body} ${post.authorName} ${post.topicTitle || ''} ${post.topicId || ''}`.toLowerCase();
+    if (!filter.search.toLowerCase().split(/\s+/).filter(Boolean).every((token) => haystack.includes(token))) return false;
+  }
+  return true;
+}
+
 class MemoryStore implements Store {
   private users = new Map<string, StoredUser>();
   private jobs = new Map<string, StoredJob>();
@@ -68,8 +98,14 @@ class MemoryStore implements Store {
   private contents = new Map<string, StoredContent>();
   private notes = new Map<string, StoredNote>();
   private progress = new Map<string, StoredProgress>();
-  private agentSessions = new Map<string, StoredAgentSession>();
+  private discussions = new Map<string, StoredDiscussion>();
   private mistakes = new Map<string, StoredMistake>();
+
+  constructor() {
+    // Curated editorial threads ship with the product so the feed is never
+    // empty on day one. Insert-if-missing: user upvotes and comments survive.
+    void this.seedDiscussions(buildDiscussionSeeds());
+  }
   private reviews = new Map<string, StoredReview>();
   private mocks = new Map<string, StoredMock>();
   private activities: StoredActivity[] = [];
@@ -106,9 +142,46 @@ class MemoryStore implements Store {
   async saveProgress(p: StoredProgress) { this.progress.set(`${p.ownerId}:${p.topicId}`, p); return p; }
   async getProgress(o: string, t: string) { return this.progress.get(`${o}:${t}`) || null; }
   async listProgress(o: string) { return [...this.progress.values()].filter((p) => p.ownerId === o); }
-  async saveAgentSession(s: StoredAgentSession) { this.agentSessions.set(s.id, s); return s; }
-  async getAgentSession(o: string, id: string) { const s = this.agentSessions.get(id); return s?.ownerId === o ? s : null; }
-  async listAgentSessions(o: string) { return [...this.agentSessions.values()].filter((s) => s.ownerId === o); }
+  async saveDiscussion(post: StoredDiscussion) { this.discussions.set(post.id, post); return post; }
+  async getDiscussion(id: string) { return this.discussions.get(id) || null; }
+  async listDiscussions(filter: DiscussionsFilter = {}) {
+    const limit = Math.min(Math.max(Number(filter.limit) || 30, 1), 100);
+    return [...this.discussions.values()]
+      .filter((post) => matchesDiscussionsFilter(post, filter))
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, limit);
+  }
+  async toggleDiscussionUpvote(id: string, userId: string) {
+    const post = this.discussions.get(id);
+    if (!post) return null;
+    const upvoterIds = new Set(post.upvoterIds || []);
+    const upvoted = !upvoterIds.has(userId);
+    if (upvoted) upvoterIds.add(userId); else upvoterIds.delete(userId);
+    const next = { ...post, upvoterIds: [...upvoterIds], updatedAt: new Date().toISOString() };
+    this.discussions.set(id, next);
+    return { post: next, upvoted };
+  }
+  async addDiscussionComment(id: string, comment: StoredDiscussionComment) {
+    const post = this.discussions.get(id);
+    if (!post) return null;
+    const next = { ...post, comments: [...(post.comments || []), comment], updatedAt: new Date().toISOString() };
+    this.discussions.set(id, next);
+    return next;
+  }
+  async setDiscussionResolved(id: string, resolved: boolean) {
+    const post = this.discussions.get(id);
+    if (!post) return null;
+    const next = { ...post, isResolved: resolved, updatedAt: new Date().toISOString() };
+    this.discussions.set(id, next);
+    return next;
+  }
+  async seedDiscussions(posts: StoredDiscussion[]) {
+    let inserted = 0;
+    for (const post of posts) {
+      if (!this.discussions.has(post.id)) { this.discussions.set(post.id, post); inserted += 1; }
+    }
+    return inserted;
+  }
   async saveMistake(m: StoredMistake) { this.mistakes.set(`${m.ownerId}:${m.id}`, m); return m; }
   async deleteMistake(o: string, id: string) { this.mistakes.delete(`${o}:${id}`); }
   async listMistakes(o: string) { return [...this.mistakes.values()].filter((m) => m.ownerId === o); }
@@ -152,6 +225,11 @@ class MongoRedisStore implements Store {
     await this.database.collection('mocks').createIndex({ ownerId: 1, createdAt: -1 });
     await this.database.collection('activities').createIndex({ ownerId: 1, createdAt: -1 });
     await this.database.collection('activities').createIndex({ ownerId: 1, date: 1 });
+    await this.database.collection('discussions').createIndex({ createdAt: -1 });
+    await this.database.collection('discussions').createIndex({ topicId: 1, createdAt: -1 });
+    await this.database.collection('discussions').createIndex({ kind: 1, createdAt: -1 });
+    await this.database.collection('discussions').createIndex({ authorId: 1, createdAt: -1 });
+    await this.seedDiscussions(buildDiscussionSeeds());
     this.publisher = createClient({ url: this.redisUrl });
     await this.publisher.connect();
   }
@@ -177,9 +255,50 @@ class MongoRedisStore implements Store {
   async saveProgress(p: StoredProgress) { await this.database.collection<StoredProgress>('progress').replaceOne({ ownerId: p.ownerId, topicId: p.topicId }, p, { upsert: true }); return p; }
   async getProgress(o: string, t: string) { return await this.database.collection<StoredProgress>('progress').findOne({ ownerId: o, topicId: t }, { projection: { _id: 0 } }); }
   async listProgress(o: string) { return await this.database.collection<StoredProgress>('progress').find({ ownerId: o }, { projection: { _id: 0 } }).toArray(); }
-  async saveAgentSession(s: StoredAgentSession) { await this.database.collection<StoredAgentSession>('agentSessions').replaceOne({ id: s.id }, s, { upsert: true }); return s; }
-  async getAgentSession(o: string, id: string) { return await this.database.collection<StoredAgentSession>('agentSessions').findOne({ ownerId: o, id }, { projection: { _id: 0 } }); }
-  async listAgentSessions(o: string) { return await this.database.collection<StoredAgentSession>('agentSessions').find({ ownerId: o }, { projection: { _id: 0 } }).toArray(); }
+  async saveDiscussion(post: StoredDiscussion) { await this.database.collection<StoredDiscussion>('discussions').replaceOne({ id: post.id }, post, { upsert: true }); return post; }
+  async getDiscussion(id: string) { return await this.database.collection<StoredDiscussion>('discussions').findOne({ id }, { projection: { _id: 0 } }); }
+  async listDiscussions(filter: DiscussionsFilter = {}) {
+    const limit = Math.min(Math.max(Number(filter.limit) || 30, 1), 100);
+    const query: Record<string, unknown> = {};
+    if (filter.kind) query.kind = filter.kind;
+    if (filter.topicId) query.topicId = filter.topicId;
+    if (filter.questionId) query.questionId = filter.questionId;
+    if (filter.authorId) query.authorId = filter.authorId;
+    const docs = await this.database.collection<StoredDiscussion>('discussions').find(query, { projection: { _id: 0 } }).sort({ createdAt: -1 }).limit(filter.search ? 500 : limit).toArray();
+    return docs.filter((post) => matchesDiscussionsFilter(post, filter)).slice(0, limit);
+  }
+  async toggleDiscussionUpvote(id: string, userId: string) {
+    const post = await this.database.collection<StoredDiscussion>('discussions').findOne({ id }, { projection: { _id: 0 } });
+    if (!post) return null;
+    const upvoterIds = new Set(post.upvoterIds || []);
+    const upvoted = !upvoterIds.has(userId);
+    if (upvoted) upvoterIds.add(userId); else upvoterIds.delete(userId);
+    const next: StoredDiscussion = { ...post, upvoterIds: [...upvoterIds], updatedAt: new Date().toISOString() };
+    await this.database.collection<StoredDiscussion>('discussions').replaceOne({ id }, next);
+    return { post: next, upvoted };
+  }
+  async addDiscussionComment(id: string, comment: StoredDiscussionComment) {
+    const post = await this.database.collection<StoredDiscussion>('discussions').findOne({ id }, { projection: { _id: 0 } });
+    if (!post) return null;
+    const next: StoredDiscussion = { ...post, comments: [...(post.comments || []), comment], updatedAt: new Date().toISOString() };
+    await this.database.collection<StoredDiscussion>('discussions').replaceOne({ id }, next);
+    return next;
+  }
+  async setDiscussionResolved(id: string, resolved: boolean) {
+    return await this.database.collection<StoredDiscussion>('discussions').findOneAndUpdate(
+      { id },
+      { $set: { isResolved: resolved, updatedAt: new Date().toISOString() } },
+      { returnDocument: 'after', projection: { _id: 0 } },
+    );
+  }
+  async seedDiscussions(posts: StoredDiscussion[]) {
+    let inserted = 0;
+    for (const post of posts) {
+      const result = await this.database.collection<StoredDiscussion>('discussions').updateOne({ id: post.id }, { $setOnInsert: post }, { upsert: true });
+      if (result.upsertedCount) inserted += 1;
+    }
+    return inserted;
+  }
   async saveMistake(m: StoredMistake) { await this.database.collection<StoredMistake>('mistakes').replaceOne({ ownerId: m.ownerId, id: m.id }, m, { upsert: true }); return m; }
   async deleteMistake(o: string, id: string) { await this.database.collection<StoredMistake>('mistakes').deleteOne({ ownerId: o, id }); }
   async listMistakes(o: string) { return await this.database.collection<StoredMistake>('mistakes').find({ ownerId: o }, { projection: { _id: 0 } }).sort({ createdAt: -1 }).toArray(); }

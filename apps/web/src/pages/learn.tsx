@@ -13,10 +13,11 @@ const DEPTHS = [
 
 // ------------------------------------------------------------------ lesson
 
-export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart, onBack, onCards, onPractice, onOpen, onComplete, onNavigate }: {
+export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart, onBack, onCards, onPractice, onOpen, onComplete, onNavigate, guest, onRequireSignIn }: {
   topic: Topic; pack: Pack | null; job: any; jobError: string; topics: Topic[]; isComplete: boolean;
   onStart: (t: Topic, depth: string, regenerate?: boolean) => void; onBack: () => void; onCards: () => void; onPractice: () => void;
   onOpen: (t: Topic) => void; onComplete: (t: Topic) => void; onNavigate: (page: Page, topicId?: string) => void;
+  guest?: boolean; onRequireSignIn?: () => void;
 }) {
   const [videos, setVideos] = useState<any[]>(pack?.videos || []);
   const [doubt, setDoubt] = useState('');
@@ -38,8 +39,9 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
 
   useEffect(() => {
     setNotes(''); setNotesSaved(false); setCelebrate(false);
+    if (guest) return;
     apiGet(`/api/notes/${encodeURIComponent(topic.id)}`).then((d) => setNotes(d.text || '')).catch(() => {});
-  }, [topic.id]);
+  }, [topic.id, guest]);
 
   const askDoubt = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -94,6 +96,13 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
   return (
     <>
       <button className="back-link" onClick={onBack}>← Back to study plan</button>
+      {guest && (
+        <section className="guest-banner card" role="status">
+          <span aria-hidden>✦</span>
+          <div><b>Free curated baseline — reading as a guest.</b><small>Sign in (free) for the AI swarm expansion, flashcards, notes, your streak, and the mistake notebook.</small></div>
+          <button onClick={onRequireSignIn}>Sign in free →</button>
+        </section>
+      )}
       <div className="lesson-header">
         <div>
           <p className="eyebrow">{topic.module.toUpperCase()} · TUTORIAL {position + 1} OF {order.length}</p>
@@ -130,13 +139,14 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
         <section className="fallback-banner card" role="status">
           <span className="fallback-icon">◌</span>
           <div>
-            <b>Local reference tutorial — ready to study.</b>
+            <b>{guest ? 'Free curated baseline — ready to study.' : 'Local reference tutorial — ready to study.'}</b>
             <small>
-              The AI team is unavailable, so this source-linked kit uses the built-in curriculum, worked examples,
-              practice, and trusted documentation. Your progress is saved; regenerate later for a cited AI expansion.
+              {guest
+                ? 'This source-linked kit runs entirely on our curated curriculum — instant, free, forever. Sign in for the cited AI expansion and to keep your progress.'
+                : 'The AI team is unavailable, so this source-linked kit uses the built-in curriculum, worked examples, practice, and trusted documentation. Your progress is saved; regenerate later for a cited AI expansion.'}
             </small>
           </div>
-          <button onClick={() => onStart(topic, pack?.depth || 'standard', true)}>✦ Regenerate with AI team</button>
+          <button onClick={() => onStart(topic, pack?.depth || 'standard', true)}>{guest ? '✦ Sign in free for the AI expansion' : '✦ Regenerate with AI team'}</button>
         </section>
       )}
 
@@ -154,7 +164,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
               ))}
             </div>
           </div>
-          <button onClick={() => onStart(topic, depth)}>Start learning →</button>
+          <button onClick={() => (guest && onRequireSignIn ? onRequireSignIn() : onStart(topic, depth))}>{guest ? 'Sign in free to generate with AI →' : 'Start learning →'}</button>
         </section>
       )}
 
@@ -163,7 +173,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
           <article className="lesson-article">
             <div className="verified-line">
               <span className="verified-chip">
-                {pack?.verification?.status === 'fallback' ? '◌ LOCAL STUDY KIT' : pack ? '✓ SAVED VERIFIED LESSON' : 'READY TO GENERATE'}
+                {pack?.baseline || pack?.guest ? '✓ CURATED BASELINE' : pack?.verification?.status === 'fallback' ? '◌ LOCAL STUDY KIT' : pack ? '✓ SAVED VERIFIED LESSON' : 'READY TO GENERATE'}
               </span>
               <span>
                 {pack?.verification?.status === 'fallback'
@@ -238,6 +248,16 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                     ))}
                   </section>
                 )}
+                {guest ? (
+                  <section className="notes-box card">
+                    <p className="label">YOUR NOTES · SYNCED TO THIS TOPIC</p>
+                    <p className="muted">Sign in (free) to write notes, save them to this tutorial, and never lose a revision again.</p>
+                    <div className="notes-actions">
+                      <small>Private to you</small>
+                      <button className="secondary-button" onClick={onRequireSignIn}>Sign in free →</button>
+                    </div>
+                  </section>
+                ) : (
                 <section className="notes-box card">
                   <p className="label">YOUR NOTES · SAVED TO THIS TOPIC</p>
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} placeholder="Summarize the core idea in your own words — retrieval beats re-reading." />
@@ -246,6 +266,17 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                     <button className="secondary-button" onClick={() => void saveNotes()}>Save notes</button>
                   </div>
                 </section>
+                )}
+                {guest ? (
+                  <section className="doubt-box card">
+                    <p className="label">STUCK ON THIS LESSON?</p>
+                    <p className="muted">The Dean answers doubts anchored to this exact lesson for signed-in learners — free, forever for GATE.</p>
+                    <div className="notes-actions">
+                      <small>Hints first, then full solutions</small>
+                      <button className="secondary-button" onClick={onRequireSignIn}>Sign in free →</button>
+                    </div>
+                  </section>
+                ) : (
                 <section className="doubt-box card">
                   <p className="label">STUCK ON THIS LESSON? ASK NOW</p>
                   <form onSubmit={askDoubt}>
@@ -261,6 +292,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                     </div>
                   )}
                 </section>
+                )}
                 <div className="sources">
                   <p className="label">RECOMMENDED SOURCES</p>
                   {(pack.verification.sourceRefs || []).length > 0

@@ -1,50 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { API, apiDelete, apiGet, apiPatch, apiPost, setToken, type Agent, type Topic } from '../lib/api';
+import { API, apiDelete, apiGet, apiPatch, apiPost, setToken, type Topic } from '../lib/api';
 
 const opts = { credentials: 'include' as const };
-
-// ------------------------------------------------------------------ agents
-
-function BrainStatus({ status }: { status: any }) {
-  if (!status) return null;
-  const live = status.answerPath !== 'curriculum-fallback';
-  const label = status.answerPath === 'runtime'
-    ? `AI live · agent runtime${status.runtime?.model ? ` · ${status.runtime.model}` : ''}`
-    : status.answerPath === 'direct-llm'
-      ? `AI live · direct model${status.models?.[0] ? ` · ${status.models[0]}` : ''}`
-      : 'Offline guidance · no model reachable';
-  return (
-    <p className={`brain-status ${live ? 'live' : 'offline'}`}>
-      <span className="brain-dot" />{label}
-      {!live && <small>Set OPENROUTER_API_KEY on the API or agent service to switch the specialists to a real model.</small>}
-    </p>
-  );
-}
-
-export function Agents({ agents, status, onOpen }: { agents: Agent[]; status?: any; onOpen: (a: Agent) => void }) {
-  return (
-    <>
-      <div className="compact-heading"><div>
-        <p className="eyebrow">YOUR SPECIALIST TEAM</p>
-        <h1>Guidance that actually starts.</h1>
-        <p className="lead">Paste the exact question, option list, or code. Every reply is labelled with the brain that produced it — AI model or offline curriculum guidance.</p>
-        <BrainStatus status={status} />
-      </div></div>
-      <div className="agent-directory">
-        {agents.map((a) => (
-          <article className="agent-card card" key={a.id}>
-            <span className="agent-card-icon">{a.icon}</span>
-            <p className="eyebrow">{a.role}</p>
-            <h2>{a.name}</h2>
-            <p>{a.description}</p>
-            <div className="agent-best"><span>BEST FOR</span><b>{a.bestFor}</b></div>
-            <button onClick={() => onOpen(a)}>Start a guided session →</button>
-          </article>
-        ))}
-      </div>
-    </>
-  );
-}
 
 // ----------------------------------------------------------------- progress
 

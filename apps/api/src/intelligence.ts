@@ -257,7 +257,7 @@ export type AchievementInput = {
   reviews: number;
   mocksSubmitted: number;
   bestMockPct: number;
-  challengesSolved: number;
+  helpfulUpvotes: number;
   comebacks: number;
   streak: number;
 };
@@ -275,7 +275,7 @@ export function achievementsFor(input: AchievementInput): Achievement[] {
     ['reviewer-20', 'Memory Athlete', 'Review 20 flashcards with SRS', input.reviews, 20],
     ['mock-debut', 'Exam Temperament', 'Submit your first mock exam', input.mocksSubmitted, 1],
     ['mock-70', 'Rank Material', 'Score 70%+ in a mock exam', input.bestMockPct, 70],
-    ['coder-1', 'Hands On', 'Solve a code-lab challenge', input.challengesSolved, 1],
+    ['helper-1', 'Community Voice', 'Earn 5 upvotes on your Discussions posts & replies', input.helpfulUpvotes, 5],
     ['comeback-kid', 'Comeback Kid', 'Fix a mistake by answering it right later', input.comebacks, 1],
   ];
   return defs.map(([id, title, desc, current, target]) => ({
@@ -377,7 +377,7 @@ export function generateStudyPlan(input: {
       detail: 'Timed questions biased to your repeated misses.',
       minutes: take(Math.min(20, remaining)),
       topicId: weak.topicId,
-      page: 'quiz',
+      page: 'practice',
     });
   }
   if (remaining >= 10 && input.completedIds.size >= 3) {
@@ -386,7 +386,7 @@ export function generateStudyPlan(input: {
       title: 'Mini mock · exam temperament',
       detail: 'Mixed questions with negative marking and a countdown.',
       minutes: take(remaining),
-      page: 'mocks',
+      page: 'practice',
     });
   } else if (remaining >= 5 && nextNew) {
     blocks.push({

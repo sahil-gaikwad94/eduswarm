@@ -1,46 +1,25 @@
 /**
- * EduSwarm specialist brain
- * -------------------------
- * Prompt construction plus a genuinely useful *offline* specialist.
+ * EduSwarm doubt brain
+ * --------------------
+ * Prompt construction plus a genuinely useful *offline* doubt solver.
  *
- * The previous fallback answered every message with the same four-sentence
- * paragraph — which is why the agents read as "not even calling an LLM". This
- * module answers the message that was actually sent: a pasted PYQ gets its real
- * solution from the bank, pasted code gets a structural review, a concept
- * question gets the open lesson's own scope.
+ * Extracted from the retired specialist-agent module when the standalone Agent
+ * Team page was removed from the product (EduSwarm audit, Sprint 1): the swarm
+ * is invisible infrastructure now — it exists to answer the doubt, not to be a
+ * destination. Everything here is scoped to `/api/doubt`: answer the question
+ * that was actually asked, with the open lesson's own scope when one exists.
  */
 
 import { QUESTION_BANK, type Question } from './questionBank.js';
 import { getCatalog, getTopic, type CurriculumTopic } from './curriculum.js';
 import { localKnowledgeFor, referencesFor } from './localKnowledge.js';
 
-export type AgentContext = {
-  agentId: string;
-  agentName: string;
-  agentRole: string;
+export type DoubtContext = {
   learnerName?: string;
   skillLevel?: string;
-  dailyMinutes?: number;
   goal: string;
   goalTitle: string;
   topic?: CurriculumTopic | null;
-  weakTopics?: string[];
-  dueReviews?: number;
-  accuracy?: number;
-};
-
-export const GOAL_TITLES: Record<string, string> = {
-  'gate-cs': 'GATE CSE', 'web-dev': 'Full-stack Engineering', 'ai-ml': 'AI / ML Engineering',
-};
-
-export const AGENT_PERSONAS: Record<string, string> = {
-  'socratic-tutor': "Guide with questions. Expose the assumption behind their answer with one small counterexample, then give the crisp resolution so they are not left hanging.",
-  'pyq-coach': 'Exam strategist. Classify the question type, name the formula or invariant that solves it, eliminate each wrong option with a specific reason, give the timed drill to run next.',
-  'doubt-solver': 'Concept debugger. Direct answer in one sentence, then the shortest correct derivation, then the exact misconception that makes the wrong answer tempting.',
-  'code-reviewer': 'Senior engineer reviewing production code. Name the concrete failing input for each finding, state worst-case time and space, return corrected code in a fenced block.',
-  'mock-examiner': 'Test analyst. Diagnose accuracy vs speed vs negative marks, prescribe question order and a per-section time budget, name the two topics to repair before the next paper.',
-  'revision-planner': 'Study architect. Turn their confidence and weak topics into a dated, minute-budgeted plan with spaced reviews at 1/3/7/14 days.',
-  'career-mentor': 'Pathfinder. Map the concept to the role that pays for it, the project that proves it, and the exact interview question they must answer cold.',
 };
 
 const STOPWORDS = new Set(
@@ -88,7 +67,7 @@ export function matchBankQuestion(text: string, goal: string): { question: Quest
   return best && best.score >= threshold ? best : null;
 }
 
-export function buildSystemPrompt(ctx: AgentContext): string {
+export function buildDoubtSystemPrompt(ctx: DoubtContext): string {
   const topicLine = ctx.topic
     ? `Current lesson: "${ctx.topic.title}" (module ${ctx.topic.module}). Scope: ${ctx.topic.description}`
     : 'No lesson is open — answer from their message; do not stall by asking which lesson they are on.';
@@ -96,13 +75,11 @@ export function buildSystemPrompt(ctx: AgentContext): string {
     ctx.learnerName ? `Learner: ${ctx.learnerName}` : '',
     ctx.skillLevel ? `level ${ctx.skillLevel}` : '',
     ctx.goalTitle ? `universe ${ctx.goalTitle}` : '',
-    typeof ctx.accuracy === 'number' ? `recent accuracy ${ctx.accuracy}%` : '',
-    ctx.weakTopics?.length ? `weak topics: ${ctx.weakTopics.slice(0, 5).join(', ')}` : '',
   ].filter(Boolean).join(' · ');
 
   return [
-    `You are ${ctx.agentName}, EduSwarm's ${ctx.agentRole}.`,
-    AGENT_PERSONAS[ctx.agentId] || 'Teach precisely with a worked example and a check for understanding.',
+    'You are EduSwarm\u2019s Doubt Solver, a concept debugger for a learner mid-study.',
+    'Concept debugger. Direct answer in one sentence, then the shortest correct derivation, then the exact misconception that makes the wrong answer tempting.',
     '',
     `Context — ${learnerLine || 'new learner'}`,
     topicLine,
@@ -157,7 +134,7 @@ const CONCEPT_HINTS: Array<{ match: RegExp; answer: string; why: string; trap: s
   {
     match: /cache|paging|page fault|lru|tlb/i,
     answer: 'Cache and paging questions turn on locality and the replacement rule.',
-    why: 'Hit rate follows temporal and spatial locality; replacement policies differ in whether they are stack algorithms. FIFO is not, which is exactly why Belady\'s anomaly (more frames, more faults) can happen with it and not with LRU.',
+    why: 'Hit rate follows temporal and spatial locality; replacement policies differ in whether they are stack algorithms. FIFO is not, which is exactly why Belady\u2019s anomaly (more frames, more faults) can happen with it and not with LRU.',
     trap: 'Assuming more memory always reduces faults — that is true for LRU/OPT, false for FIFO.',
   },
   {
@@ -214,12 +191,8 @@ function hintFor(text: string) {
   return CONCEPT_HINTS.find((hint) => hint.match.test(text)) || null;
 }
 
-function titleCase(value: string): string {
-  return String(value || '').replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-/** Offline specialist reply: deterministic, but specific to what was asked. */
-export function localSpecialistReply(ctx: AgentContext, text: string): string {
+/** Offline doubt reply: deterministic, but specific to what was asked. */
+export function localDoubtReply(ctx: DoubtContext, text: string): string {
   const question = text.trim();
   const subject = question.length > 90 ? `${question.slice(0, 88)}…` : question;
   const topicLine = ctx.topic ? `Open lesson: ${ctx.topic.title} (${ctx.topic.module}).` : '';
@@ -235,7 +208,7 @@ export function localSpecialistReply(ctx: AgentContext, text: string): string {
       optionLines(q),
       '',
       `**Trap:** the distractors here all look right if you skip the governing rule for ${q.topic}. Write that rule down before you read the options next time.`,
-      `**Next step:** open ${q.subject} → ${q.topic} in the syllabus and run two more questions of this type under 90 seconds.`,
+      `**Next step:** open ${q.subject} → ${q.topic} in the syllabus and re-attempt two more of this type under 90 seconds.`,
       `_(Matched from the EduSwarm ${q.source === 'gate-pyq' ? 'PYQ' : 'practice'} bank: ${q.subject} · ${q.topic} · ${q.year}.)_`,
     ].join('\n');
   }
@@ -271,62 +244,19 @@ export function localSpecialistReply(ctx: AgentContext, text: string): string {
     ].join('\n');
   }
 
-  if (ctx.agentId === 'revision-planner') {
-    const minutes = Math.max(15, ctx.dailyMinutes || 60);
-    const review = Math.min(15, Math.max(5, Math.round(minutes * 0.2)));
-    const repair = Math.min(20, Math.max(5, Math.round(minutes * 0.3)));
-    const focus = ctx.topic?.title || ctx.weakTopics?.[0] || 'the concept in your message';
-    return [
-      `**Today’s ${minutes}-minute plan:** make **${focus}** the concrete outcome, not a vague “revision” session.`,
-      `1. **${review} min — retrieve:** answer due cards or write the core definition from memory.`,
-      `2. **${repair} min — repair:** trace one small example and write the assumption that caused your latest miss${ctx.weakTopics?.length ? ` (${ctx.weakTopics.slice(0, 2).join(', ')})` : ''}.`,
-      `3. **${Math.max(5, minutes - review - repair)} min — apply:** solve one timed question or implement one small function without notes.`,
-      '**Spaced follow-up:** revisit the same recall prompt tomorrow, then on days 3, 7, and 14. Grade recall honestly; “hard” means redo the worked example.',
-    ].join('\n');
-  }
-
-  if (ctx.agentId === 'mock-examiner') {
-    const accuracy = typeof ctx.accuracy === 'number' ? `${ctx.accuracy}%` : 'not enough attempts yet';
-    const repair = ctx.weakTopics?.slice(0, 2).filter(Boolean).join(' and ') || ctx.topic?.title || 'your two lowest-confidence topics';
-    return [
-      `**Exam read:** current accuracy is ${accuracy}. Do not spend the opening minutes proving a hard question to yourself.`,
-      '**Order:** take direct-definition and familiar-method marks first; flag calculation-heavy or ambiguous questions; return only when the easy pass is complete.',
-      '**Pacing:** use a hard stop for any question where you cannot state the governing rule within about 30 seconds. Protect accuracy before chasing attempts—negative marking makes random guesses expensive.',
-      `**Repair before the next mock:** ${repair}. For each, do one untimed trace, then two timed questions with a written error label.`,
-    ].join('\n');
-  }
-
-  if (ctx.agentId === 'career-mentor') {
-    const route = ctx.goal === 'ai-ml'
-      ? 'an AI/ML engineer who can frame, evaluate, and ship a measured model feature'
-      : ctx.goal === 'web-dev'
-        ? 'a full-stack engineer who can own an accessible, observable feature from browser to database'
-        : 'a software engineer who can explain CS fundamentals clearly under interview constraints';
-    return [
-      `**Career connection:** ${titleCase(ctx.goalTitle || ctx.goal)} maps to ${route}.`,
-      `**Proof project:** build one small artifact around ${ctx.topic?.title || 'the concept you asked about'} with a README that states the problem, constraints, trade-offs, tests, and one failure you fixed.`,
-      '**Interview story:** practise “I chose X over Y because __; I measured __; when __ failed, I changed __.” That demonstrates judgment, not only tutorial completion.',
-      '**Next step:** ship the smallest demonstrable slice this week and ask for a review against its rubric.',
-    ].join('\n');
-  }
-
   if (ctx.topic) {
     const peers = modulePeers(ctx.topic);
     const knowledge = localKnowledgeFor(ctx.topic);
     const refs = referencesFor(ctx.topic);
-    const socratic = ctx.agentId === 'socratic-tutor'
-      ? `**Check:** before looking below, what assumption must hold for your answer to “${subject}” to work?`
-      : '';
     return [
       `**Answer:** ${knowledge.mentalModel}`,
       `**Why:** ${knowledge.mechanics.map((item) => `• ${item}`).join('\n')}`,
       `**Worked example:** ${knowledge.workedExample}`,
       `**Trap:** ${knowledge.trap}`,
-      socratic,
       `**Next step:** ${knowledge.check}${peers.length ? ` Then connect it to ${peers[0]}.` : ''}`,
       `**Reference:** ${refs[0].publisher} — ${refs[0].title} (${refs[0].url})`,
       '_(Local curriculum brain — the model path was unavailable, so this answer uses the built-in topic guide.)_',
-    ].filter(Boolean).join('\n\n');
+    ].join('\n\n');
   }
 
   const options = extractOptions(question);
