@@ -47,7 +47,7 @@ def test_health_reports_agent_graph_mode():
 
 def test_every_live_topic_has_its_real_scope_and_two_reference_routes():
     topics = curriculum_topics()
-    assert len(topics) == 237
+    assert len(topics) == 259
     node_id = 'web-dev-backend-with-node-js-node-js-runtime'
     assert resolve_topic(node_id)['description'].startswith('Modules, streams')
     node_routes = reference_routes(node_id, resolve_topic(node_id)['title'])
