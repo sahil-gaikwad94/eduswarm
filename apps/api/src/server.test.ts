@@ -79,7 +79,8 @@ test('quiz catalog supports full-stack and AI/ML subject and topic filters', asy
   assert.equal(web.body.questions[0].course, 'web-dev');
   const ai = await request('/api/quiz/catalog?course=ai-ml&source=practice&subject=Generative%20AI&topic=RAG%20Systems');
   assert.equal(ai.status, 200);
-  assert.equal(ai.body.questions.length, 1);
+  assert.equal(ai.body.questions.length, 2); // retrieval + cross-encoder reranker, both on RAG Systems
+  assert.equal(ai.body.questions.every((q: any) => q.course === 'ai-ml'), true);
   assert.equal(ai.body.questions[0].answer, 1);
 });
 
