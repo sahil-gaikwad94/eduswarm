@@ -197,9 +197,9 @@ const FEATURES: Array<{ icon: string; span: string; tint: string; title: string;
     chips: [],
   },
   {
-    icon: '</>', span: '', tint: 'sky', title: 'A sandboxed code lab',
-    copy: 'Run JavaScript against hidden tests with an AI code reviewer looking over your shoulder. Break things safely.',
-    chips: [],
+    icon: '◉', span: '', tint: 'sky', title: 'Discussions with the Dean',
+    copy: 'Doubts tagged to the exact tutorial or question — answered by peers who just mastered it and by the Dean. No 5,000-member scroll, no noise.',
+    chips: ['Doubt threads', 'Topic tags', '+20 XP peer challenges'],
   },
   {
     icon: '❖', span: 'wide', tint: 'violet', title: 'The Reading Room',
@@ -232,7 +232,7 @@ const FALLBACK_COUNTS: Record<string, { topics: number; modules: number }> = {
 
 // ------------------------------------------------------------------- page
 
-export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: string }) {
+export function Landing({ onSignIn, error, onTryGuest }: { onSignIn: () => void; error?: string; onTryGuest: () => void }) {
   const reduced = useReducedMotion();
   const { scrollYProgress } = useScroll();
   const progressScale = useSpring(scrollYProgress, { stiffness: 140, damping: 22 });
@@ -329,6 +329,7 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
               <button className="l2-cta primary" onClick={onSignIn}>Start learning free <span>↗</span></button>
             </Magnetic>
             <button className="l2-cta ghost" onClick={() => scrollToId('l2-how')}>Meet the swarm <span>↓</span></button>
+            <button className="l2-guest-link" onClick={onTryGuest}>or explore the free syllabus without signing in <span>→</span></button>
           </motion.div>
           {error && <p className="error-copy l2-error">{error}</p>}
           <motion.div
@@ -337,7 +338,7 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
           >
             <div><b><CountUp to={totalTutorials} /></b><small>tutorials</small></div>
             <div><b><CountUp to={totalModules} /></b><small>modules</small></div>
-            <div><b><CountUp to={7} /></b><small>specialist agents</small></div>
+            <div><b><CountUp to={3} /></b><small>learning universes</small></div>
             <div><b><CountUp to={54} /></b><small>free blogs curated</small></div>
           </motion.div>
         </div>
@@ -544,6 +545,7 @@ export function Landing({ onSignIn, error }: { onSignIn: () => void; error?: str
               <h2>Your swarm is ready.</h2>
               <p>One goal. One calm mission a day. A team of agents that never gets tired of teaching you.</p>
               <button className="l2-cta primary big" onClick={onSignIn}>Start learning free <span>↗</span></button>
+              <button className="l2-guest-link centered" onClick={onTryGuest}>or keep reading as a guest — no account, no card <span>→</span></button>
               <small>Free to start · Sign in with Google · Your universe awaits</small>
             </div>
           </div>

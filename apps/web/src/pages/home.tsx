@@ -201,16 +201,16 @@ export function Home({ user, goal, universe, universes, topics, mastery, progres
       </section>
 
       <section className="home-shortcuts">
-        <button onClick={() => onNavigate('quiz')}><b>✓ PYQ quiz</b><small>Timed questions with solutions</small></button>
-        <button onClick={() => onNavigate('mocks')}><b>◷ Mock exams</b><small>Full papers, GATE marking</small></button>
-        <button onClick={() => onNavigate('agents')}><b>✦ Agent team</b><small>Ask a specialist anything</small></button>
+        <button onClick={() => onNavigate('practice')}><b>✓ Practice lab</b><small>Sprints & mocks, one graph</small></button>
+        <button onClick={() => onNavigate('discussions')}><b>◉ Discussions</b><small>Doubts answered by peers & the Dean</small></button>
+        <button onClick={() => onNavigate('library')}><b>❖ Reading Room</b><small>Free, curated depth</small></button>
         <button onClick={() => onNavigate('plan')}><b>◈ Today's mission</b><small>Your ranked next actions</small></button>
       </section>
     </>
   );
 }
 
-export function DailyChallenge({ goal, onCode }: { goal: string; onCode: () => void }) {
+export function DailyChallenge({ goal }: { goal: string }) {
   const [daily, setDaily] = useState<any>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [result, setResult] = useState<any>(null);
@@ -253,11 +253,6 @@ export function DailyChallenge({ goal, onCode }: { goal: string; onCode: () => v
           <b>{result.correct ? 'Correct — XP banked, streak fed.' : 'Not quite — logged to your mistake notebook.'}</b>
           {result.solution?.whyItWorks && <span>{result.solution.whyItWorks}</span>}
         </p>
-      )}
-      {daily.code && (
-        <button className="daily-code-teaser" onClick={onCode}>
-          <span>⌨</span><span><b>+ {daily.code.title}</b><small>{daily.code.difficulty} · solve in Code Lab for +20 XP</small></span><span>→</span>
-        </button>
       )}
     </section>
   );
@@ -328,7 +323,7 @@ export function Plan({ user, goal, topics, data, plan, onOpen, onNavigate }: {
         </div>
 
         <div className="dash-side">
-          <DailyChallenge goal={goal} onCode={() => onNavigate('codelab')} />
+          <DailyChallenge goal={goal} />
           <section className="card dash-card">
             <p className="label">MASTERY MAP</p>
             {data.mastery.slice(0, 8).map((m: any) => (

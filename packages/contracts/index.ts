@@ -36,15 +36,24 @@ export interface MockResult {
   accuracy: number; pct: number; timeUsedSec: number;
   perQuestion: Array<{ id: string; selected: number | null; correctAnswer: number; isCorrect: boolean; skipped: boolean; marks: number; delta: number }>;
 }
-export interface CodeTestCase { args: unknown[]; expected: unknown; label?: string; }
-export interface CodeChallenge {
-  id: string; title: string; difficulty: 'easy' | 'medium' | 'hard'; subject: string; topic: string;
-  prompt: string; signature: string; starter: string; hints: string[];
-  examples: CodeTestCase[]; testCount: number;
-}
-export interface CodeRunResult {
-  ok: boolean; error?: string; logs: string[]; passed: number; total: number; solved?: boolean;
-  cases: Array<{ label: string; passed: boolean; actual?: unknown; expected?: unknown; error?: string }>;
-}
 export interface Achievement { id: string; title: string; desc: string; unlocked: boolean; current: number; target: number; }
 export interface FlashcardDue { cardKey: string; topicId: string; question: string; answer: string; fresh: boolean; }
+
+// -------------------------------------------------------------- discussions
+export type DiscussionKind = 'doubt' | 'thought' | 'shared-kit';
+export interface DiscussionComment {
+  id: string; postId: string; authorId: string; authorName: string;
+  body: string; createdAt: string; helpful?: boolean;
+}
+export interface DiscussionPost {
+  id: string; kind: DiscussionKind;
+  authorId: string; authorName: string;
+  title: string; body: string;
+  topicId?: string; topicTitle?: string; questionId?: string;
+  /** Denormalized author streak for the badge next to their name. */
+  authorStreak?: number;
+  upvotes: number; commentCount: number;
+  comments: DiscussionComment[];
+  isResolved: boolean; seeded?: boolean;
+  createdAt: string;
+}

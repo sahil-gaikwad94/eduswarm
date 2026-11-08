@@ -3,8 +3,8 @@
 EduSwarm turns exam syllabi and engineering roadmaps into an **intelligent study
 operating system**: a Dean-led agent team generates evidence-gated study kits,
 while a deterministic learning-intelligence engine tracks mastery, schedules
-spaced reviews, plans each day, runs timed mocks, and judges code — with or
-without the LLM runtime online.
+spaced reviews, plans each day, and runs timed mocks — with or without the LLM
+runtime online.
 
 **Universes:** GATE CSE (PYQ-first) · Full-stack Web Development · AI/ML Engineering.
 
@@ -18,8 +18,8 @@ without the LLM runtime online.
 | **Spaced repetition** | SM-2 scheduler across every saved flashcard — Again/Hard/Good/Easy grades set the next review |
 | **Adaptive practice** | IRT-lite ranking repairs repeated misses first, tuned to the learner's level |
 | **Mock exams** | Timed papers with GATE negative marking (−⅓), question palette, flags, auto-filed mistakes, per-question review |
-| **Code lab** | Sandboxed JS runner (`node:vm`, timeout-guarded) with hidden tests + AI/static code review |
-| **Specialist agents** | Socratic Tutor, PYQ Coach, Doubt Solver, Code Reviewer, Mock Examiner, Revision Planner, Career Mentor — three-tier answer path (runtime RAG → direct model → curriculum), every reply labelled with the brain that produced it |
+| **Discussions** | A public, high-signal feed for doubts and thoughts — anchored to the exact tutorial or question, with upvotes, comments, resolution, and curated cold-start threads from day one |
+| **Guest reverse-trial** | Anyone can read the full curated curriculum, PYQ lab, and discussions — no sign-in — and convert when they're ready to save progress |
 | **Study OS** | Multi-goal tracking, diagnostic calibration, global search (Ctrl+K), achievements, weekly analytics, streaks |
 | **Reading Room** | A dynamic shelf of popular, genuinely insightful free blogs scoped to each learning universe and its syllabus modules |
 
@@ -35,15 +35,17 @@ flowchart LR
 ```
 
 - `apps/web`: modular React app (`lib/`, `components/`, `pages/`, `App`) — home
-  (universe switcher + full syllabus + XP strip), lessons, SRS flashcards, PYQ lab,
-  mocks, code lab, agents, reading room, progress, mistakes, profile, onboarding,
-  command palette.
-- `apps/api`: Express API — Google OAuth + signed sessions, curriculum, **78-question
-  bank**, jobs + SSE, content/progress, **dashboard, study plans, SRS, mocks, code
-  runner, doubts, diagnostics, analytics, achievements**, goals, agent sessions.
+  (universe switcher + full syllabus + XP strip), lessons (with a guest-readable
+  curated baseline), SRS flashcards, unified practice hub (PYQ sprints + timed mocks
+  + spaced mistake repair), discussions feed, reading room, progress, profile, command
+  palette. Mobile keeps a clean 4-tab dock: Home · Practice · Reading · Discussions.
+- `apps/api`: Express API — Google OAuth + signed sessions, curriculum, **question
+  bank**, jobs + SSE, content/progress, **dashboard, study plans, SRS, mocks,
+  doubts (three-tier: runtime RAG → direct model → curriculum), diagnostics,
+  analytics, achievements**, goals, and a public discussions API with curated seeds.
 - `services/agent-runtime`: FastAPI + LangGraph — checkpointed topic jobs, Qdrant
-  hybrid retrieval, structured generation, evidence gating, plus doubt-solving,
-  study-plan, code-evaluation, and mock-analysis endpoints.
+  hybrid retrieval, structured generation, evidence gating, plus doubt-solving
+  and study-plan endpoints.
 - `packages/contracts`: shared TypeScript contracts for every API shape.
 - `infra`: Docker Compose topology + Render Blueprint (`render.yaml`).
 - `services/agent-runtime/seed_knowledge.py`: seeds Qdrant with curated briefs; its opt-in, robots-aware reference mode ingests permitted public source text for every live curriculum topic.
@@ -115,8 +117,8 @@ Keep `CORS_ORIGINS`, `VITE_API_URL`, `AGENT_RUNTIME_URL`, `PUBLIC_API_URL`,
 
 **Set `OPENROUTER_API_KEY` on both the API and the agent runtime.** The runtime
 adds Qdrant retrieval and is the preferred brain, but it is a separate service:
-when it is asleep or erroring, the API calls the model directly so specialists
-still answer with a real model instead of degrading silently.
+when it is asleep or erroring, the API calls the model directly so the doubt
+solver still answers with a real model instead of degrading silently.
 
 **You never have to name a model.** Free-tier ids churn constantly, so the model
 chain is *discovered*, not hard-coded: `services/agent-runtime/app/llm_router.py`
@@ -151,27 +153,27 @@ progress and keep-alive heartbeats. Bring your own key — the repo ships none.
 | Area | Endpoints |
 |---|---|
 | Session/auth | `GET /api/session`, `GET /api/me`, `PATCH /api/me`, OAuth `/auth/*` |
-| Curriculum | `GET /api/curriculum/:goal`, `GET /api/quiz/catalog`, `GET /api/agents` |
+| Curriculum | `GET /api/curriculum/:goal`, `GET /api/quiz/catalog` (both public), `GET /api/universes`, `GET /api/resources` |
 | Jobs | `POST /api/jobs`, `GET /api/jobs/:id`, SSE `GET /api/jobs/:id/events`, `GET /api/content/:jobId` |
 | Learning | `GET/POST /api/learning/*`, `GET/POST /api/practice/*`, `GET /api/practice/adaptive`, `GET/DELETE /api/mistakes`, `POST /api/mistakes/:id/repair` |
 | Intelligence | `GET /api/dashboard`, `GET /api/search`, `GET/POST /api/study-plan` |
 | Memory | `GET /api/flashcards/due`, `POST /api/flashcards/review` |
 | Exams | `POST/GET /api/mock-exams`, `GET /api/mock-exams/:id`, `POST /api/mock-exams/:id/submit` |
-| Code | `GET /api/code/challenges`, `POST /api/code/run`, `POST /api/code/review` |
+| Discussions | `GET /api/discussions` (public), `POST /api/discussions`, `POST /api/discussions/:id/upvote`, `POST /api/discussions/:id/comments`, `POST /api/discussions/:id/resolve` |
 | Growth | `POST /api/doubt`, `GET/POST /api/diagnostic`, `GET /api/analytics/weekly`, `GET /api/achievements`, goals CRUD |
 | Reading Room | `GET /api/resources?goal=&module=&q=` — curated free blogs per universe, filterable by syllabus module |
-| Auth | `POST /api/auth/exchange` (login code → Bearer token), `GET /api/auth/status`, `GET /api/agents/status` |
+| Guest access | `GET /api/learning/content/:topicId` serves the curated local kit to anonymous readers (never persisted); guests also browse the PYQ catalog, diagnostic, daily challenge, and discussions |
+| Auth | `POST /api/auth/exchange` (login code → Bearer token), `GET /api/auth/status` |
 | Ops | `GET /health`, `GET /ready`, `GET /api/metrics` |
 
 Runtime: `POST /v1/topic-jobs`, `GET /v1/topic-jobs/:id`, `/trace`, `/resume`,
-`POST /v1/agent-chat`, `POST /v1/doubt-solve`, `POST /v1/study-plan`,
-`POST /v1/evaluate-code`, `POST /v1/mock-analysis`,
+`POST /v1/doubt-solve`, `POST /v1/study-plan`,
 `POST /v1/knowledge/documents`, `GET /v1/knowledge/search`.
 
 ## Quality gates
 
 ```bash
-npm test                                   # 48 API tests (jobs, regen, SRS, mocks, code, auth, reading room, agents)
+npm test                                   # API test suite (jobs, regen, SRS, mocks, doubts, auth, discussions, guest reads)
 npm run build                              # API + web production builds
 npm run lint                               # strict TypeScript everywhere
 cd services/agent-runtime && python -m pytest test_main.py   # 14 runtime tests
@@ -183,10 +185,10 @@ CI (`.github/workflows/ci.yml`) runs all of the above on every push/PR.
 
 ## Security notes
 
-- Generated code runs only in the `node:vm` sandbox (no `require`/`process`/
-  network, hard timeouts, output caps). Any future multi-language runner must be
-  container-isolated with strict CPU/memory/time/network limits.
+- Discussions are capped per user per day, anchored to canonical topic ids, and
+  seeded editorially (insert-if-missing) so the shared feed stays high-signal from
+  day one.
 - Quiz/mock correctness is derived server-side from the bank — the browser is
   never trusted. Mock answers stay server-side until submission.
-- Rate limits guard jobs, code execution, and the API; learner data is strictly
+- Rate limits guard jobs, discussions, and the API; learner data is strictly
   owner-scoped. Never commit `.env` files or provider credentials.

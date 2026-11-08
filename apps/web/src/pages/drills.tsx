@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { API, apiGet, apiPost, type Topic } from '../lib/api';
+import { API, apiGet, apiPost } from '../lib/api';
 import { Empty } from '../components/ui';
+import { Mistakes } from './insight';
 
 const opts = { credentials: 'include' as const };
 
 // -------------------------------------------------------------------- quiz
 
-export function Quiz({ course, topicId }: { course: string; topicId?: string }) {
+export function Quiz({ course, topicId, readOnly }: { course: string; topicId?: string; readOnly?: boolean }) {
   const [qs, setQs] = useState<any[]>([]);
   const [filters, setFilters] = useState<any>({ subjects: [], topics: [], years: [] });
   const [subject, setSubject] = useState('all');
@@ -55,7 +56,7 @@ export function Quiz({ course, topicId }: { course: string; topicId?: string }) 
   const q = qs[i];
   const save = async (j: number, o: string) => {
     setAnswer(j);
-    if (!topicId || !q) return;
+    if (readOnly || !topicId || !q) return;
     await apiPost('/api/practice/attempts', {
       topicId, questionId: q.id || `quiz:${i}`, subject: q.subject, topic: q.topic, question: q.question,
       selectedAnswer: o, correctAnswer: q.options[q.answer], correct: j === q.answer, explanation: q.explanation,
@@ -321,101 +322,61 @@ export function Mocks({ course }: { course: string }) {
   );
 }
 
-// ----------------------------------------------------------------- code lab
+// ----------------------------------------------------------- practice hub
 
-export function CodeLab() {
-  const [challenges, setChallenges] = useState<any[]>([]);
-  const [selected, setSelected] = useState<any | null>(null);
-  const [code, setCode] = useState('');
-  const [runResult, setRunResult] = useState<any | null>(null);
-  const [review, setReview] = useState<any | null>(null);
-  const [busy, setBusy] = useState('');
+export type PracticeMode = 'quiz' | 'mocks' | 'mistakes';
 
-  useEffect(() => {
-    apiGet('/api/code/challenges').then((d) => {
-      setChallenges(d.challenges || []);
-      if (d.challenges?.length) { setSelected(d.challenges[0]); setCode(d.challenges[0].starter); }
-    }).catch(() => {});
-  }, []);
+const MODES: Array<{ id: PracticeMode; label: string; hint: string }> = [
+  { id: 'quiz', label: 'Sprint', hint: '5–15 min daily drills' },
+  { id: 'mocks', label: 'Mocks', hint: 'Timed full-length papers' },
+  { id: 'mistakes', label: 'Mistakes', hint: 'Spaced repair queue' },
+];
 
-  const pick = (c: any) => { setSelected(c); setCode(c.starter); setRunResult(null); setReview(null); };
-  const run = async () => {
-    if (!selected || busy) return;
-    setBusy('run');
-    try { setRunResult(await apiPost('/api/code/run', { challengeId: selected.id, code })); }
-    catch (e: any) { setRunResult({ ok: false, error: e.message, logs: [], passed: 0, total: 0, cases: [] }); }
-    finally { setBusy(''); }
+/**
+ * One Practice destination, three zoom levels of the same mastery graph.
+ * Guests get the full question bank read-only; mocks and the repair queue
+ * are account features (they write attempts, XP and mistakes).
+ * (Sprint 3 turns this into the fully segmented Practice Hub with hints,
+ * PYQ filters, and the spaced mistake-repair banner.)
+ */
+export function PracticeHub({ course, topicId, isGuest, onRequestSignIn }: {
+  course: string;
+  topicId?: string;
+  isGuest?: boolean;
+  onRequestSignIn?: () => void;
+}) {
+  const [mode, setMode] = useState<PracticeMode>('quiz');
+  const locked = Boolean(isGuest);
+  const guard = (target: PracticeMode) => {
+    if (locked && target !== 'quiz') { onRequestSignIn?.(); return; }
+    setMode(target);
   };
-  const askReview = async () => {
-    if (!selected || busy) return;
-    setBusy('review');
-    try { setReview(await apiPost('/api/code/review', { challengeId: selected.id, code })); }
-    catch (e: any) { setReview({ verdict: e.message, findings: [], strengths: [] }); }
-    finally { setBusy(''); }
-  };
-
-  if (!selected) return <Empty title="Loading code lab" text="Fetching challenges." onClick={() => {}} />;
   return (
     <>
-      <div className="compact-heading"><div>
-        <p className="eyebrow">HANDS-ON · JAVASCRIPT SANDBOX</p>
-        <h1>Code lab</h1>
-        <p className="lead">Implement <code>solve(...)</code>. Code runs in a timeout-guarded sandbox against hidden tests — no setup needed.</p>
-      </div></div>
-      <div className="code-layout">
-        <aside className="code-list card">
-          {challenges.map((c: any) => (
-            <button key={c.id} className={c.id === selected.id ? 'active' : ''} onClick={() => pick(c)}>
-              <b>{c.title}</b><small>{c.difficulty} · {c.subject} · {c.testCount} tests</small>
-            </button>
-          ))}
-        </aside>
-        <section className="code-main card">
-          <p className="label">{selected.subject.toUpperCase()} · {selected.topic.toUpperCase()} · {selected.difficulty.toUpperCase()}</p>
-          <h2>{selected.title}</h2>
-          <p>{selected.prompt}</p>
-          <p className="muted">Signature: <code>{selected.signature}</code></p>
-          <div className="code-examples">
-            {selected.examples.map((ex: any, i: number) => (
-              <div key={i}><small>EXAMPLE {i + 1}</small><code>solve({ex.args.map((a: any) => JSON.stringify(a)).join(', ')}) → {JSON.stringify(ex.expected)}</code></div>
-            ))}
-          </div>
-          <textarea className="code-editor" value={code} onChange={(e) => setCode(e.target.value)} spellCheck={false} rows={12} />
-          <div className="practice-actions">
-            <button onClick={() => void run()} disabled={busy !== ''}>{busy === 'run' ? 'Running…' : 'Run tests →'}</button>
-            <button className="secondary-button" onClick={() => void askReview()} disabled={busy !== ''}>{busy === 'review' ? 'Reviewing…' : '✦ AI code review'}</button>
-          </div>
-          {runResult && (
-            <div className={`run-result ${runResult.ok && runResult.passed === runResult.total ? 'good' : 'needs-work'}`}>
-              {runResult.ok
-                ? <b>{runResult.solved ? `✓ Solved — ${runResult.passed}/${runResult.total} tests passed.` : `${runResult.passed}/${runResult.total} tests passed.`}</b>
-                : <b>✕ {runResult.error}</b>}
-              {(runResult.cases || []).map((c: any, i: number) => (
-                <p key={i} className="muted">{c.passed ? '✓' : '✕'} {c.label}{!c.passed && c.error ? ` — ${c.error}` : ''}{!c.passed && !c.error ? ` — got ${JSON.stringify(c.actual)}, want ${JSON.stringify(c.expected)}` : ''}</p>
-              ))}
-              {(runResult.logs || []).map((log: string, i: number) => <p key={i} className="muted">› {log}</p>)}
-            </div>
-          )}
-          {review && (
-            <div className="code-review">
-              <p className="label">CODE REVIEW · SCORE {review.score ?? '—'}{review.provider ? ` · ${review.provider}` : ''}</p>
-              <p><b>{review.verdict}</b></p>
-              {(review.strengths || []).map((s: string, i: number) => <p key={i}>✓ {s}</p>)}
-              {(review.findings || []).map((f: string, i: number) => <p key={i}>! {f}</p>)}
-              {review.complexity && <p className="muted">{review.complexity}</p>}
-              {review.corrected_code && <pre><code>{review.corrected_code}</code></pre>}
-            </div>
-          )}
-          <div className="code-hints">
-            <p className="label">HINTS</p>
-            {selected.hints.map((h: string, i: number) => <p key={i} className="muted">{i + 1}. {h}</p>)}
-          </div>
+      {locked && (
+        <section className="guest-banner card" role="status">
+          <span aria-hidden>✦</span>
+          <div><b>Guest preview of the Practice lab.</b><small>Questions are open to all. Sign in to save attempts, run full mocks, and repair mistakes.</small></div>
+          <button onClick={onRequestSignIn}>Sign in free →</button>
         </section>
+      )}
+      <div className="hub-tabs" role="tablist" aria-label="Practice mode">
+        {MODES.map((m) => (
+          <button
+            key={m.id}
+            role="tab"
+            aria-selected={mode === m.id}
+            className={`${mode === m.id ? 'active' : ''} ${locked && m.id !== 'quiz' ? 'locked' : ''}`}
+            onClick={() => guard(m.id)}
+            title={locked && m.id !== 'quiz' ? 'Sign in to unlock' : undefined}
+          >
+            <b>{m.label}{locked && m.id !== 'quiz' ? ' 🔒' : ''}</b><small>{m.hint}</small>
+          </button>
+        ))}
       </div>
+      {mode === 'quiz' && <Quiz course={course} topicId={topicId} readOnly={locked} />}
+      {mode === 'mocks' && !locked && <Mocks course={course} />}
+      {mode === 'mistakes' && !locked && <Mistakes />}
     </>
   );
-}
-
-export function TopicExplorer({ topics }: { topics: Topic[] }) {
-  return <p className="muted">{topics.length} topics available.</p>;
 }

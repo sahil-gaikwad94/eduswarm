@@ -137,7 +137,7 @@ export function SearchPalette({ goal, onClose, onNavigate }: { goal: string; onC
           <div className="search-group">
             <p className="label">QUESTIONS</p>
             {results.questions.map((q: any) => (
-              <button key={q.id} onClick={() => go('quiz')}><b>{q.question.slice(0, 90)}{q.question.length > 90 ? '…' : ''}</b><small>{q.subject} · {q.topic} · {q.difficulty}</small></button>
+              <button key={q.id} onClick={() => go('practice')}><b>{q.question.slice(0, 90)}{q.question.length > 90 ? '…' : ''}</b><small>{q.subject} · {q.topic} · {q.difficulty}</small></button>
             ))}
           </div>
         )}
@@ -228,72 +228,60 @@ export function Mermaid({ chart, chartId }: { chart: string; chartId: string }) 
   return <div className="mermaid-chart" ref={ref} role="img" aria-label="Concept diagram" />;
 }
 
-// -------------------------------------------------------------- agent chat
-
-export function AgentChat({ session, onClose, onUpdate }: { session: any; onClose: () => void; onUpdate: (s: any) => void }) {
-  const [text, setText] = useState('');
-  const [sending, setSending] = useState(false);
-  const [failed, setFailed] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [session.messages.length, failed]);
-
-  const deliver = async (outgoing: string, base: any) => {
-    setSending(true);
-    setFailed(null);
-    try {
-      const updated = await apiPost(`/api/agents/sessions/${session.id}/messages`, { text: outgoing });
-      onUpdate(updated);
-    } catch (e: any) {
-      const reason = e?.status === 401
-        ? 'Your session expired — please sign in again, then retry.'
-        : (e?.message || 'The specialist did not respond.');
-      setFailed(outgoing);
-      onUpdate({ ...base, messages: [...base.messages, { role: 'assistant', text: `⚠ ${reason} Your message is saved above — tap Retry to resend it.` }] });
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const send = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!text.trim() || sending) return;
-    const outgoing = text.trim();
-    setText('');
-    const optimistic = { ...session, messages: [...session.messages, { role: 'user', text: outgoing }] };
-    onUpdate(optimistic);
-    await deliver(outgoing, optimistic);
-  };
-
+/** Top-right account menu: utilities live here, not in primary navigation. */
+export function AvatarMenu({ name, onNavigate, onSignOut }: { name: string; onNavigate: (page: Page) => void; onSignOut: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (event: MouseEvent) => { if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  const initial = (name?.trim()?.[0] || 'S').toUpperCase();
+  const item = (page: Page, icon: string, label: string) => (
+    <button role="menuitem" onClick={() => { setOpen(false); onNavigate(page); }}><span aria-hidden>{icon}</span>{label}</button>
+  );
   return (
-    <div className="modal-backdrop">
-      <section className="agent-chat card">
-        <button className="close-button" onClick={onClose}>×</button>
-        <p className="eyebrow">LIVE SPECIALIST SESSION</p>
-        <h2>{session.agent.name}</h2>
-        <div className="chat-messages">
-          {session.messages.map((m: any, i: number) => (
-            <div className={`chat-bubble ${m.role}`} key={i}>
-              <p>{m.text}</p>
-              {m.role === 'assistant' && m.provider && m.provider !== 'system' && (
-                <small className={`chat-source ${m.provider === 'local' ? 'offline' : 'ai'}`}>
-                  {m.provider === 'local'
-                    ? `⚠ Offline guidance${m.note ? ` — ${m.note}` : ''}`
-                    : `✦ AI model · ${m.model || 'eduswarm'}`}
-                </small>
-              )}
-            </div>
-          ))}
-          {sending && <p className="assistant">Thinking…</p>}
-          {failed && !sending && (
-            <button className="secondary-button retry-button" onClick={() => void deliver(failed, session)}>↻ Retry sending</button>
-          )}
-          <div ref={bottomRef} />
+    <div className="avatar-menu" ref={ref}>
+      <button className="profile-chip" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="initial-avatar">{initial}</span>
+        <span className="profile-chip-name">{name}</span>
+        <span className="profile-chip-caret" aria-hidden>{open ? '▴' : '▾'}</span>
+      </button>
+      {open && (
+        <div className="avatar-menu-panel" role="menu" aria-label="Account">
+          <p className="avatar-menu-label">YOUR CORNER</p>
+          {item('profile', '◉', 'Profile & goals')}
+          {item('progress', '↗', 'Progress & achievements')}
+          {item('mistakes', '!', 'Mistake notebook')}
+          {item('plan', '◈', "Today's mission")}
+          <div className="avatar-menu-divider" />
+          <button role="menuitem" className="avatar-menu-danger" onClick={() => { setOpen(false); onSignOut(); }}><span aria-hidden>↪</span>Log out</button>
         </div>
-        <form onSubmit={send}>
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="What are you stuck on?" />
-          <button disabled={sending}>Send</button>
-        </form>
+      )}
+    </div>
+  );
+}
+
+/** Guest-mode gate shown whenever a read-only visitor tries a write action. */
+export function SignInSheet({ onClose, onSignIn }: { onClose: () => void; onSignIn: () => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Sign in to continue" onClick={onClose}>
+      <section className="signin-sheet card" onClick={(event) => event.stopPropagation()}>
+        <button className="close-button" onClick={onClose} aria-label="Close">×</button>
+        <Avatar />
+        <h2>Sign in to make it yours.</h2>
+        <p>Everything is readable for free — full lessons, PYQ labs, the Reading Room, and the community feed. Create a free account to save your streak, mistakes, notes, and badges.</p>
+        <button onClick={onSignIn}>Continue with Google →</button>
+        <small className="signin-sheet-note">The GATE universe stays free forever · no card, no trial clock</small>
       </section>
     </div>
   );

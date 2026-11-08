@@ -20,11 +20,6 @@ test('quiz catalog is available without a study prerequisite and supports subjec
   const filtered = await request('/api/quiz/catalog?course=gate-cs&source=gate-pyq&subject=Algorithms&topic=Complexity');
   assert.equal(filtered.body.questions.every((question: any) => question.subject === 'Algorithms' && question.topic === 'Complexity'), true);
 });
-test('agent directory returns goal-oriented specialist roles', async () => {
-  const result = await request('/api/agents');
-  assert.equal(result.status, 200);
-  assert.equal(result.body.agents.some((agent: any) => agent.id === 'pyq-coach'), true);
-});
 test('topic job publishes only a verified package', async () => {
   const created = await request('/api/jobs', { method: 'POST', body: { topicId: 'algo-complexity' } });
   assert.equal(created.status, 202);
@@ -67,15 +62,6 @@ test('completed topic packages are saved to the learner and progress is readable
   assert.equal(saved.body.content.some((item: any) => item.topicId === 'algo-complexity'), true);
   assert.equal(saved.body.progress.some((item: any) => item.topicId === 'algo-complexity' && item.completed), true);
 });
-test('specialist agents create sessions and answer messages', async () => {
-  const headers = { 'x-demo-user': 'agent-learner' };
-  const created = await request('/api/agents/socratic-tutor/sessions', { method: 'POST', headers, body: { topicId: 'algo-complexity' } });
-  assert.equal(created.status, 201);
-  const reply = await request(`/api/agents/sessions/${created.body.id}/messages`, { method: 'POST', headers, body: { text: 'binary search invariant' } });
-  assert.equal(reply.status, 200);
-  assert.equal(reply.body.messages.length, 3);
-});
-
 test('practice attempts are saved with a reusable step-by-step solution', async () => {
   const headers = { 'x-demo-user': 'revision-learner' };
   const result = await request('/api/practice/attempts', { method: 'POST', headers, body: { topicId: 'algo-complexity', subject: 'Algorithms', topic: 'Complexity', questionId: 'q-1', question: 'What is binary search?', selectedAnswer: 'O(log n)', correctAnswer: 'O(log n)', correct: true, explanation: 'Each step halves the search interval.', solution: { approach: 'Use repeated halving.', stepByStep: ['Check that the array is sorted.', 'Compare with the midpoint.', 'Discard half the remaining interval.', 'Repeat until found or empty.'], whyItWorks: 'The search interval shrinks geometrically.', commonMistake: 'Using binary search on unsorted input.' } } });
@@ -103,14 +89,6 @@ test('video recommendations are topic-specific and actionable', async () => {
   assert.equal(result.body.recommendations.length, 3);
   assert.equal(result.body.recommendations.every((item: any) => item.url.includes('youtube.com')), true);
   assert.equal(result.body.recommendations.some((item: any) => item.channel === 'NPTEL'), true);
-});
-
-test('specialist fallback gives role-specific guidance', async () => {
-  const headers = { 'x-demo-user': 'quality-learner' };
-  const created = await request('/api/agents/pyq-coach/sessions', { method: 'POST', headers, body: { topicId: 'algo-complexity' } });
-  const reply = await request(`/api/agents/sessions/${created.body.id}/messages`, { method: 'POST', headers, body: { text: 'Which option is correct and why?' } });
-  assert.equal(reply.status, 200);
-  assert.match(reply.body.messages.at(-1).text, /invariant|distractor|exam-ready/i);
 });
 
 test('server derives canonical question correctness instead of trusting the browser', async () => {
@@ -210,20 +188,6 @@ test('mock exams hide answers then grade with negative marking', async () => {
   assert.equal(mistakes.body.mistakes.length >= 1, true);
 });
 
-test('code runner executes solve() against hidden tests', async () => {
-  const headers = { 'x-demo-user': 'code-learner' };
-  const good = await request('/api/code/run', { method: 'POST', headers, body: { challengeId: 'two-sum', code: 'function solve(nums, target) { const seen = new Map(); for (let i = 0; i < nums.length; i += 1) { if (seen.has(target - nums[i])) return [seen.get(target - nums[i]), i]; seen.set(nums[i], i); } return []; }' } });
-  assert.equal(good.status, 200);
-  assert.equal(good.body.solved, true);
-  assert.equal(good.body.passed, good.body.total);
-  const bad = await request('/api/code/run', { method: 'POST', headers, body: { challengeId: 'two-sum', code: 'const x = 1;' } });
-  assert.equal(bad.body.ok, false);
-  assert.match(bad.body.error, /solve/);
-  const challenges = await request('/api/code/challenges');
-  assert.equal(challenges.body.challenges.length >= 10, true);
-  assert.equal('tests' in challenges.body.challenges[0], false);
-});
-
 test('diagnostic recommends a level and teaches from misses', async () => {
   const quiz = await request('/api/diagnostic', { headers: { 'x-demo-user': 'diag-learner' } });
   assert.equal(quiz.body.questions.length, 5);
@@ -295,7 +259,6 @@ test('daily challenge is deterministic within a day', async () => {
   assert.equal(a.body.question.id, b.body.question.id);
   assert.equal(a.body.question.answer, undefined);
   assert.equal(typeof a.body.topicId, 'string');
-  assert.equal(typeof a.body.code.id, 'string');
 });
 test('notes round-trip per learner and topic', async () => {
   const headers = { 'x-demo-user': 'notes-learner' };
@@ -305,34 +268,8 @@ test('notes round-trip per learner and topic', async () => {
   const loaded = await request('/api/notes/algo-complexity', { headers });
   assert.equal(loaded.body.text, 'invariant first');
   const missing = await request('/api/notes/nope', { headers });
-  assert.equal(missing.status, 404);
-});
-test('interview simulator runs warm-up to report', async () => {
-  const headers = { 'x-demo-user': 'interview-learner' };
-  const meta = await request('/api/interviews/meta', { headers });
-  assert.equal(meta.body.tracks.length, 3);
-  const started = await request('/api/interviews', { method: 'POST', headers, body: { track: 'sde' } });
-  assert.equal(started.status, 201);
-  assert.equal(started.body.items.length, 8);
-  const concept = started.body.items.find((i: any) => i.kind === 'concept');
-  const bank = (await import('./questionBank.js')).questionById(concept.payload.questionId);
-  const answered = await request(`/api/interviews/${started.body.interviewId}/answer`, {
-    method: 'POST', headers,
-    body: { itemId: concept.id, selected: bank!.answer, explanation: `${bank!.explanation} For example, consider the standard case.` },
-  });
-  assert.equal(answered.status, 200);
-  assert.equal(answered.body.evaluation.score >= 7, true);
-  assert.equal(typeof answered.body.evaluation.followUp, 'string');
-  const report = await request(`/api/interviews/${started.body.interviewId}/complete`, { method: 'POST', headers });
-  assert.equal(report.status, 200);
-  assert.equal(report.body.dimensions.length, 4);
-  assert.equal(typeof report.body.verdict, 'string');
-});
-test('interview flows are deterministic per interview id', async () => {
-  const { buildInterview } = await import('./interview.js');
-  const a = buildInterview('gate', 'fixed-id');
-  const b = buildInterview('gate', 'fixed-id');
-  assert.deepEqual(a.items.map((i) => i.id), b.items.map((i) => i.id));
+  assert.equal(missing.status, 200);
+  assert.equal(missing.body.text, '');
 });
 test('local study kits are compact, topic-aware, and source-linked', async () => {
   const { buildLocalPack } = await import('./localPack.js');
@@ -414,44 +351,6 @@ test('switching the learning universe persists on the account', async () => {
 });
 
 // --------------------------------------------------------- specialist answers
-
-test('specialist answers the question that was actually asked and labels its brain', async () => {
-  const headers = { 'x-demo-user': 'pyq-learner' };
-  const savedKey = process.env.OPENROUTER_API_KEY;
-  delete process.env.OPENROUTER_API_KEY; // force the deterministic local brain
-  try {
-    const created = await request('/api/agents/pyq-coach/sessions', { method: 'POST', headers, body: { topicId: 'algo-complexity', goal: 'gate-cs' } });
-    assert.equal(created.status, 201);
-    const reply = await request(`/api/agents/sessions/${created.body.id}/messages`, {
-      method: 'POST', headers,
-      body: { text: 'The worst-case time complexity of binary search on a sorted array is: O(1) O(log n) O(n) O(n log n)' },
-    });
-    assert.equal(reply.status, 200);
-    const last = reply.body.messages[reply.body.messages.length - 1];
-    assert.equal(last.provider, 'local');
-    assert.equal(reply.body.meta.provider, 'local');
-    assert.equal(last.text.includes('O(log n)'), true, 'must name the real answer');
-    assert.equal(last.text.includes('halves the remaining search interval'), true, 'must include the bank explanation');
-    assert.equal(last.text.includes('make a plan'), false, 'must not answer with generic advice');
-
-    const concept = await request(`/api/agents/sessions/${created.body.id}/messages`, {
-      method: 'POST', headers, body: { text: 'why does my recursive fibonacci blow up on n = 45?' },
-    });
-    const conceptReply = concept.body.messages[concept.body.messages.length - 1].text;
-    assert.equal(conceptReply.includes('Time and Space Complexity'), true, 'must stay anchored to the open lesson');
-    assert.equal(conceptReply.includes('Offline guidance'), true, 'must be honest that no model answered');
-  } finally {
-    if (savedKey !== undefined) process.env.OPENROUTER_API_KEY = savedKey;
-  }
-});
-
-test('agent status reports which brain will answer', async () => {
-  const result = await request('/api/agents/status');
-  assert.equal(result.status, 200);
-  assert.equal(typeof result.body.runtime.online, 'boolean');
-  assert.equal(['runtime', 'direct-llm', 'curriculum-fallback'].includes(result.body.answerPath), true);
-  assert.equal(result.body.models.length > 0, true);
-});
 
 test('doubts answer the concept asked instead of a similar-looking PYQ', async () => {
   const savedKey = process.env.OPENROUTER_API_KEY;
@@ -640,4 +539,77 @@ test('the kit seeder only accepts publishers we hold rights for', async () => {
 
   const rules = parseRobots('User-agent: *\nDisallow: /private\nAllow: /private/ok\n');
   assert.equal(rules.length, 2);
+});
+
+// ------------------------------------------------------- discussions (Sprint 1)
+
+test('discussions feed is public and ships with curated cold-start threads', async () => {
+  const result = await request('/api/discussions');
+  assert.equal(result.status, 200);
+  assert.equal(result.body.discussions.length >= 8, true);
+  const deadlock = result.body.discussions.find((d: any) => d.id === 'seed-deadlock-one-more-mutex');
+  assert.equal(Boolean(deadlock), true);
+  assert.equal(typeof deadlock.upvotes, 'number');
+  assert.equal(deadlock.comments.length >= 1, true);
+  assert.equal('upvoterIds' in deadlock, false, 'serialized posts must not leak upvoter internals');
+});
+
+test('discussions support posting, upvoting, commenting and resolving', async () => {
+  const headers = { 'x-demo-user': 'discuss-learner' };
+  const created = await request('/api/discussions', { method: 'POST', headers, body: { kind: 'doubt', title: 'Why does LRU beat FIFO on stack algorithms?', body: 'Belady says stack algorithms cannot have the anomaly — but WHY is LRU a stack algorithm and FIFO is not?', topicId: 'gate-cs-operating-systems-memory-management' } });
+  assert.equal(created.status, 201);
+  assert.equal(created.body.isResolved, false);
+  const up = await request(`/api/discussions/${created.body.id}/upvote`, { method: 'POST', headers });
+  assert.equal(up.body.upvoted, true);
+  const upAgain = await request(`/api/discussions/${created.body.id}/upvote`, { method: 'POST', headers });
+  assert.equal(upAgain.body.upvoted, false);
+  assert.equal(upAgain.body.upvotes < up.body.upvotes, true);
+  const comment = await request(`/api/discussions/${created.body.id}/comments`, { method: 'POST', headers, body: { body: 'LRU keeps the m most recent pages — a new frame never evicts a recently used page for an older one.' } });
+  assert.equal(comment.status, 201);
+  assert.equal(comment.body.comments.length, 1);
+  const resolved = await request(`/api/discussions/${created.body.id}/resolve`, { method: 'POST', headers });
+  assert.equal(resolved.body.isResolved, true);
+  const filter = await request('/api/discussions?kind=doubt&topicId=gate-cs-operating-systems-memory-management');
+  assert.equal(filter.body.discussions.some((d: any) => d.id === created.body.id), true);
+});
+
+test('discussions reject bad input and non-author resolves', async () => {
+  const headers = { 'x-demo-user': 'discuss-guard' };
+  const bad = await request('/api/discussions', { method: 'POST', headers, body: { kind: 'rant', title: 'x-y', body: 'y-z' } });
+  assert.equal(bad.status, 400);
+  const spam = await request('/api/discussions', { method: 'POST', headers, body: { kind: 'thought', title: 'check this out', body: 'go to https://a.com https://b.com https://c.com now' } });
+  assert.equal(spam.status, 400);
+  const resolveForbidden = await request('/api/discussions/seed-deadlock-one-more-mutex/resolve', { method: 'POST', headers });
+  assert.equal(resolveForbidden.status, 403);
+});
+
+// --------------------------------------------------------------- guest mode
+
+test('guest reads are public, curated and never persisted', async () => {
+  const saved = process.env.AUTH_MODE;
+  process.env.AUTH_MODE = 'google';
+  try {
+    const session = await request('/api/session');
+    assert.equal(session.status, 401);
+    const pack = await request('/api/learning/content/algo-complexity');
+    assert.equal(pack.status, 200);
+    assert.equal(pack.body.guest, true);
+    assert.equal(pack.body.notes.sections.length >= 5, true);
+    const feed = await request('/api/discussions');
+    assert.equal(feed.status, 200);
+    const created = await request('/api/discussions', { method: 'POST', body: { kind: 'doubt', title: 'guest post attempt', body: 'should be rejected' } });
+    assert.equal(created.status, 401);
+  } finally {
+    if (saved === undefined) delete process.env.AUTH_MODE; else process.env.AUTH_MODE = saved;
+  }
+});
+
+test('authenticated learners without a saved kit get the curated baseline, never persisted', async () => {
+  const headers = { 'x-demo-user': 'baseline-reader' };
+  const pack = await request('/api/learning/content/algo-sorting', { headers });
+  assert.equal(pack.status, 200);
+  assert.equal(pack.body.baseline, true);
+  assert.equal(pack.body.verification.status, 'fallback');
+  const list = await request('/api/learning/content', { headers });
+  assert.equal(list.body.content.some((item: any) => item.topicId === 'algo-sorting'), false, 'baseline reads are never persisted');
 });

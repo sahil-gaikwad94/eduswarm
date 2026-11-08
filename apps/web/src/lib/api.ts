@@ -9,9 +9,8 @@
 export const API = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? '' : 'http://localhost:4000');
 
 export type Page =
-  | 'dashboard' | 'plan' | 'syllabus' | 'lesson' | 'flashcards' | 'practice'
-  | 'quiz' | 'mocks' | 'codelab' | 'agents' | 'progress' | 'mistakes' | 'profile'
-  | 'library' | 'interview';
+  | 'dashboard' | 'plan' | 'lesson' | 'flashcards' | 'practice' | 'kit-practice'
+  | 'library' | 'progress' | 'mistakes' | 'profile' | 'discussions';
 
 export type Topic = {
   id: string; module: string; title: string; description: string;
@@ -20,6 +19,8 @@ export type Topic = {
 
 export type Pack = {
   topicId: string; title: string; verification: any; depth?: string;
+  /** Guest/baseline markers returned by the public read-only kit endpoint. */
+  guest?: boolean; baseline?: boolean;
   readingMinutes?: number; generatedAt?: string;
   notes: { sections: any[] }; videos: any[]; flashcards: any[]; quiz: any[]; pyqs: any[];
   codeExamples?: any[]; diagrams?: any[]; cheatSheet?: string[];

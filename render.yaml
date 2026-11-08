@@ -58,8 +58,6 @@ services:
         value: '30000'
       - key: AGENT_RUNTIME_MAX_WAIT_MS
         value: '600000'
-      - key: AGENT_CHAT_TIMEOUT_MS
-        value: '240000'
   - type: web
     name: eduswarm-agent
     runtime: python

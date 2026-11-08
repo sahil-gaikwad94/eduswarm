@@ -166,7 +166,7 @@ const DIAGRAMS: Diagram[] = [
   },
   {
     match: ['dynamic programming', 'recurrence'], title: 'DP: overlap once, reuse forever', caption: 'Memoization turns exponential trees into DAGs.',
-    mermaid: 'flowchart TD\n  F5[f(5)] --> F4[f(4)]\n  F5 --> F3a[f(3)]\n  F4 --> F3b[f(3) cached]\n  F4 --> F2[f(2)]',
+    mermaid: 'flowchart TD\n  F5["f(5)"] --> F4["f(4)"]\n  F5 --> F3a["f(3)"]\n  F4 --> F3b["f(3) cached"]\n  F4 --> F2["f(2)"]',
   },
   {
     match: ['ml', 'training', 'model', 'mlops'], title: 'ML lifecycle loop', caption: 'Monitor → retrain → redeploy, forever.',

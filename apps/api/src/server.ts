@@ -3,11 +3,11 @@
  *
  * Sections:
  *  1. App setup, auth + sessions
- *  2. Curriculum, quiz catalog, agents, recommendations
+ *  2. Curriculum, quiz catalog, guest reads, discussions (public read)
  *  3. Topic jobs (agent runtime + local recovery) with SSE progress
  *  4. Learning content, progress, practice, adaptive engine, mistakes
  *  5. Intelligence: dashboard, search, study plans, SRS flashcards
- *  6. Mock exams, code lab, doubts, diagnostics, analytics, achievements
+ *  6. Mock exams, doubts, diagnostics, analytics, achievements
  */
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
@@ -37,15 +37,11 @@ import {
   generateStudyPlan,
   type ProgressLike,
 } from './intelligence.js';
-import { runJavaScript, type RunCase } from './codeRunner.js';
-import { CODE_CHALLENGES, challengeById, publicChallenges } from './challenges.js';
-import { buildInterview, evaluateAnswer, buildReport, type InterviewTrack } from './interview.js';
-import { TRACK_META } from './interviewBank.js';
 import { buildLocalPack, type PackDepth } from './localPack.js';
 import { resourcesFor } from './resources.js';
 import { issueToken, verifyToken, issueLoginCode, redeemLoginCode, bearerFromHeader } from './auth.js';
-import { buildSystemPrompt, localSpecialistReply, type AgentContext } from './agentBrain.js';
-import { completeChat, llmConfigured, modelChain, type ChatMessage } from './llm.js';
+import { buildDoubtSystemPrompt, localDoubtReply, type DoubtContext } from './doubtBrain.js';
+import { completeChat, modelChain } from './llm.js';
 
 // ------------------------------------------------------------------ setup
 
@@ -58,7 +54,7 @@ const allowedOrigins = new Set(
   (process.env.CORS_ORIGINS || 'http://localhost:5173').split(',').map((o) => o.trim()).filter(Boolean),
 );
 const runtime = normalizeServiceUrl(process.env.AGENT_RUNTIME_URL || 'http://localhost:8000');
-const authMode = process.env.AUTH_MODE || (process.env.NODE_ENV === 'production' ? 'google' : 'demo');
+const currentAuthMode = () => process.env.AUTH_MODE || (process.env.NODE_ENV === 'production' ? 'google' : 'demo');
 const allowLocalFallback =
   process.env.ALLOW_LOCAL_FALLBACK === 'true' ||
   (process.env.ALLOW_LOCAL_FALLBACK !== 'false' && process.env.NODE_ENV !== 'production');
@@ -66,7 +62,6 @@ const allowLocalFallback =
 // request: a structured lesson can take several provider/tool steps.
 const runtimeTimeoutMs = Math.max(3000, Number(process.env.AGENT_RUNTIME_TIMEOUT_MS || 30_000));
 const runtimeMaxWaitMs = Math.max(5000, Number(process.env.AGENT_RUNTIME_MAX_WAIT_MS || 600_000));
-const agentChatTimeoutMs = Math.max(10_000, Number(process.env.AGENT_CHAT_TIMEOUT_MS || 240_000));
 // A stale browser reconnect must not trigger recovery before the active runtime
 // job receives its configured generation window.
 const staleJobRecoveryMs = runtimeMaxWaitMs + 60_000;
@@ -76,16 +71,6 @@ const sessionCookie = 'eduswarm_session';
 const oauthStateCookie = 'eduswarm_oauth_state';
 const sessionTtlMs = 1000 * 60 * 60 * 24 * 30;
 
-const AGENT_CATALOG = [
-  { id: 'socratic-tutor', name: 'Socratic Tutor', role: 'Concept guide', description: 'Asks the right next question instead of giving away the answer.', bestFor: 'Breaking through confusing concepts', icon: '◌' },
-  { id: 'pyq-coach', name: 'PYQ Coach', role: 'Exam strategist', description: 'Turns missed GATE questions into patterns, shortcuts, and timed drills.', bestFor: 'GATE CSE preparation', icon: '⌁' },
-  { id: 'doubt-solver', name: 'Doubt Solver', role: 'Concept debugger', description: 'Unsticks you on any question with hints first, then a full worked solution.', bestFor: 'Stuck on a problem right now', icon: '?' },
-  { id: 'code-reviewer', name: 'Code Reviewer', role: 'Practice partner', description: 'Reviews your implementation for correctness, complexity, and edge cases.', bestFor: 'Full-stack and AI/ML projects', icon: '</>' },
-  { id: 'mock-examiner', name: 'Mock Examiner', role: 'Test analyst', description: 'Designs timed drills and dissects your mock performance subject by subject.', bestFor: 'Exam temperament and speed', icon: '◷' },
-  { id: 'revision-planner', name: 'Revision Planner', role: 'Study architect', description: 'Builds a realistic next-session plan from your confidence and weak topics.', bestFor: 'Keeping momentum over time', icon: '↗' },
-  { id: 'career-mentor', name: 'Career Mentor', role: 'Pathfinder', description: 'Maps your skills to roles, projects, and interview readiness.', bestFor: 'Placements and direction', icon: '★' },
-];
-
 app.use(cors({ origin: (origin, cb) => cb(null, !origin || allowedOrigins.has(origin)), credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 
@@ -93,8 +78,9 @@ app.use(express.json({ limit: '1mb' }));
 
 const buckets = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMITS: Array<[RegExp, number]> = [
-  [/^\/api\/code\/run$/, 60],
   [/^\/api\/jobs$/, 60],
+  [/^\/api\/discussions$/, 30],
+  [/^\/api\/discussions\/[^/]+\/comments$/, 40],
   [/^\/api\//, 1200],
 ];
 app.use((req: Request, res: Response, next: NextFunction) => {
@@ -195,7 +181,7 @@ async function userFor(req: Request) {
     const tokenUser = await store.getUser(verifyToken(token) || '');
     if (tokenUser) return tokenUser;
   }
-  if (authMode === 'demo') {
+  if (currentAuthMode() === 'demo') {
     const id = String(req.headers['x-demo-user'] || 'demo-user');
     let user = await store.getUser(id);
     if (!user) user = await store.upsertUser(defaultUser(id));
@@ -254,11 +240,11 @@ app.get('/api/metrics', (_req: Request, res: Response) =>
 app.get('/api/session', async (req: Request, res: Response) => {
   const user = await userFor(req);
   if (!user) return res.status(401).json({ authenticated: false });
-  res.json({ authenticated: true, user, mode: authMode });
+  res.json({ authenticated: true, user, mode: currentAuthMode() });
 });
 
 app.get('/auth/google', (_req: Request, res: Response) => {
-  if (authMode !== 'google') return res.redirect(publicWebUrl());
+  if (currentAuthMode() !== 'google') return res.redirect(publicWebUrl());
   if (!process.env.GOOGLE_CLIENT_ID) return res.status(503).send('Google OAuth is not configured');
   const state = randomBytes(24).toString('base64url');
   setCookie(res, oauthStateCookie, sign(state), 10 * 60 * 1000);
@@ -334,7 +320,7 @@ app.post('/api/auth/exchange', async (req: Request, res: Response) => {
 /** Diagnostic for the web app: which auth path is live, and is the AI brain up? */
 app.get('/api/auth/status', (_req: Request, res: Response) => {
   res.json({
-    mode: authMode,
+    mode: currentAuthMode(),
     tokenAuth: true,
     ai: {
       runtimeUrl: runtime,
@@ -477,8 +463,6 @@ app.get('/api/quiz/catalog', (req: Request, res: Response) => {
   });
 });
 
-app.get('/api/agents', (_req: Request, res: Response) => res.json({ agents: AGENT_CATALOG }));
-
 app.get('/api/recommendations/videos', (req: Request, res: Response) => {
   const topicId = String(req.query.topicId || '');
   const topic = getTopic(topicId);
@@ -570,11 +554,20 @@ app.get('/api/learning/content', async (req: Request, res: Response) => {
 });
 
 app.get('/api/learning/content/:topicId', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
+  const user = await userFor(req);
+  const topic = getTopic(param(req.params.topicId));
+  // Reverse-trial guest access: anyone can read the curated baseline kit for a
+  // topic — instant, ₹0, and 100% verified. It is never persisted and carries
+  // no user data. Authenticated learners get their saved AI-enriched kit.
+  if (!user) {
+    if (!topic) return res.status(404).json({ error: 'Unknown topic' });
+    const pack = buildLocalPack(topic.id, topic, 'standard');
+    return res.json({ ...pack, guest: true });
+  }
   const content = await store.getContent(user.id, param(req.params.topicId));
-  if (!content) return res.status(404).json({ error: 'No saved learning package' });
-  res.json(content.package);
+  if (content) return res.json(content.package);
+  if (topic) return res.json({ ...buildLocalPack(topic.id, topic, 'standard'), guest: true, baseline: true });
+  return res.status(404).json({ error: 'No saved learning package' });
 });
 
 app.post('/api/learning/progress', async (req: Request, res: Response) => {
@@ -713,143 +706,116 @@ app.post('/api/mistakes/:id/repair', async (req: Request, res: Response) => {
   });
 });
 
-// ------------------------------------------------ specialist agent sessions
+// ---------------------------------------------------------------- discussions
 
-app.post('/api/agents/:agentId/sessions', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const agent = AGENT_CATALOG.find((item) => item.id === param(req.params.agentId));
-  if (!agent) return res.status(404).json({ error: 'Unknown agent' });
-  const goal = String(req.body?.goal || user.activeGoal || user.goals?.[0]?.type || 'gate-cs');
-  const session = await store.saveAgentSession({
-    id: randomUUID(), ownerId: user.id, agentId: agent.id, agent, goal, topicId: req.body?.topicId || null,
-    messages: [{
-      role: 'assistant', provider: 'system', model: 'eduswarm',
-      text: `I am ${agent.name} — ${agent.role.toLowerCase()} for ${GOAL_TITLES[goal] || goal}. Paste the exact question, option list, or code you are stuck on and I will work it with you.`,
-    }],
-    createdAt: now(), updatedAt: now(),
-  });
-  res.status(201).json(session);
-});
+const DISCUSSION_KINDS = new Set(['doubt', 'thought', 'shared-kit']);
+const MAX_POSTS_PER_USER_PER_DAY = 20;
+const MAX_COMMENTS_PER_USER_PER_DAY = 60;
+const URL_PATTERN = /https?:\/\/\S+/gi;
 
-app.get('/api/agents/sessions', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (user) res.json({ sessions: await store.listAgentSessions(user.id) });
-});
-
-app.post('/api/agents/sessions/:id/messages', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const session = await store.getAgentSession(user.id, param(req.params.id));
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-  const text = String(req.body?.text || '').trim().slice(0, 8000);
-  if (!text) return res.status(400).json({ error: 'Message required' });
-
-  const goal = String(session.goal || user.activeGoal || user.goals?.[0]?.type || 'gate-cs');
-  const topic = session.topicId ? getTopic(String(session.topicId)) || null : null;
-  const mistakes = await store.listMistakes(user.id).catch(() => [] as any[]);
-  const weakTopics = [...new Set(mistakes.map((m: any) => String(m.topic || '')))].filter(Boolean);
-  const context: AgentContext = {
-    agentId: session.agentId,
-    agentName: session.agent?.name || 'Specialist Tutor',
-    agentRole: session.agent?.role || 'Learning specialist',
-    learnerName: user.name,
-    skillLevel: user.skillLevel,
-    dailyMinutes: user.dailyMinutes,
-    goal,
-    goalTitle: GOAL_TITLES[goal] || goal,
-    topic,
-    weakTopics,
+function publicDiscussion(post: any, viewerId: string | null) {
+  const { upvoterIds, seededVotes, ...rest } = post;
+  return {
+    ...rest,
+    upvotes: (upvoterIds?.length || 0) + (seededVotes || 0),
+    upvotedByMe: viewerId ? (upvoterIds || []).includes(viewerId) : false,
+    commentCount: (post.comments || []).length,
   };
-  const system = buildSystemPrompt(context);
-  const history = (session.messages || []).slice(-12);
-  const failures: string[] = [];
+}
+const publicDiscussionList = (posts: any[], viewerId: string | null) => posts.map((post) => publicDiscussion(post, viewerId));
 
-  let reply = '';
-  let provider = 'local';
-  let model = 'curriculum-fallback';
-  let note = '';
+/** Count user posts/comments created today (UTC) to keep the shared feed high-signal. */
+async function actionsToday(userId: string, kind: 'post' | 'comment') {
+  const today = dateKey();
+  const mine = await store.listDiscussions({ authorId: userId, limit: 100 }).catch(() => []);
+  if (kind === 'post') return mine.filter((post) => String(post.createdAt || '').startsWith(today)).length;
+  return mine.reduce((sum, post) => sum + (post.comments || []).filter((comment: any) => comment.authorId === userId && String(comment.createdAt || '').startsWith(today)).length, 0);
+}
 
-  // 1. Agent runtime — preferred: it adds Qdrant retrieval to the same prompt.
-  try {
-    const ai = await fetch(`${runtime}/v1/agent-chat`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        agent_id: context.agentId, agent_name: context.agentName, agent_role: context.agentRole,
-        topic_id: session.topicId || null, topic_title: topic?.title || null, goal,
-        system, messages: history.concat({ role: 'user', text }),
-      }),
-      signal: AbortSignal.timeout(agentChatTimeoutMs),
-    });
-    if (ai.ok) {
-      const data = (await ai.json()) as any;
-      if (typeof data?.reply === 'string' && data.reply.trim().length > 40) {
-        reply = data.reply.trim();
-        provider = 'runtime';
-        model = String(data.model || 'agent-runtime');
-      } else failures.push('runtime returned an empty reply');
-    } else {
-      failures.push(`runtime HTTP ${ai.status}: ${(await ai.text().catch(() => '')).slice(0, 160)}`);
-    }
-  } catch (error: any) {
-    failures.push(`runtime unreachable (${error?.message || error})`.slice(0, 200));
-  }
+async function discussionStreak(userId: string) {
+  const activities = await store.listActivities(userId, 90).catch(() => [] as any[]);
+  return streakInfo(activities.map((activity: any) => String(activity.date || '')).filter(Boolean)).current;
+}
 
-  // 2. Direct LLM from the API — keeps the specialists real when the runtime is
-  //    asleep, cold-starting, or misconfigured.
-  if (!reply) {
-    try {
-      const messages: ChatMessage[] = [
-        { role: 'system', content: system },
-        ...history.map((m: any) => ({ role: m.role === 'assistant' ? 'assistant' as const : 'user' as const, content: String(m.text || '') })),
-        { role: 'user', content: text },
-      ];
-      const result = await completeChat(messages);
-      reply = result.text;
-      provider = 'openrouter';
-      model = result.model;
-    } catch (error: any) {
-      failures.push(String(error?.message || error).slice(0, 240));
-    }
-  }
-
-  // 3. Curriculum-grounded local answer — never the same paragraph twice.
-  if (!reply) {
-    reply = localSpecialistReply(context, text);
-    provider = 'local';
-    model = 'curriculum-fallback';
-    note = failures[0] || 'The AI brain did not answer, so this came from your curriculum.';
-    if (llmConfigured()) console.warn('[agents] fell back to local guidance:', failures.join(' | '));
-  }
-
-  session.messages = [
-    ...(session.messages || []),
-    { role: 'user', text },
-    { role: 'assistant', text: reply, provider, model, note },
-  ];
-  session.updatedAt = now();
-  const saved = await store.saveAgentSession(session);
-  res.json({ ...saved, meta: { provider, model, note, failures: failures.slice(0, 3) } });
-});
-
-/** Live capability check so the UI can say whether the AI brain is answering. */
-app.get('/api/agents/status', async (_req: Request, res: Response) => {
-  let runtimeOk = false;
-  let runtimeModel = '';
-  try {
-    const health = await fetch(`${runtime}/health`, { signal: AbortSignal.timeout(4000) });
-    runtimeOk = health.ok;
-    if (health.ok) runtimeModel = String(((await health.json()) as any)?.model || '');
-  } catch { /* runtime is asleep or unconfigured */ }
-  res.json({
-    runtime: { online: runtimeOk, model: runtimeModel, url: runtime },
-    directLlm: llmConfigured(),
-    models: modelChain().slice(0, 4),
-    answerPath: runtimeOk ? 'runtime' : llmConfigured() ? 'direct-llm' : 'curriculum-fallback',
+app.get('/api/discussions', async (req: Request, res: Response) => {
+  const viewer = await userFor(req);
+  const limit = Math.min(Math.max(Number(req.query.limit) || 30, 1), 50);
+  const posts = await store.listDiscussions({
+    kind: req.query.kind ? String(req.query.kind) : undefined,
+    topicId: req.query.topicId ? String(req.query.topicId) : undefined,
+    questionId: req.query.questionId ? String(req.query.questionId) : undefined,
+    search: req.query.search ? String(req.query.search).slice(0, 120) : undefined,
+    limit,
   });
+  res.json({ discussions: publicDiscussionList(posts, viewer?.id || null) });
 });
 
-// ============================================================ INTELLIGENCE
+app.post('/api/discussions', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const kind = String(req.body?.kind || 'doubt');
+  if (!DISCUSSION_KINDS.has(kind)) return res.status(400).json({ error: 'kind must be one of doubt | thought | shared-kit' });
+  const title = String(req.body?.title || '').trim();
+  const body = String(req.body?.body || '').trim();
+  if (title.length < 3 || title.length > 160) return res.status(400).json({ error: 'Title must be 3-160 characters.' });
+  if (body.length < 3 || body.length > 4000) return res.status(400).json({ error: 'Body must be 3-4000 characters.' });
+  const topicId = req.body?.topicId ? String(req.body.topicId) : undefined;
+  if (topicId && !getTopic(topicId)) return res.status(400).json({ error: 'Unknown topic' });
+  const questionId = req.body?.questionId ? String(req.body.questionId).slice(0, 120) : undefined;
+  const urls = body.match(URL_PATTERN) || [];
+  if (urls.length > 2) return res.status(400).json({ error: 'Keep it focused: at most two links per post.' });
+  if (await actionsToday(user.id, 'post') >= MAX_POSTS_PER_USER_PER_DAY) {
+    return res.status(429).json({ error: 'Daily posting limit reached - quality over quantity. Come back tomorrow.' });
+  }
+  const createdAt = now();
+  const post = await store.saveDiscussion({
+    id: randomUUID(), kind: kind as 'doubt' | 'thought' | 'shared-kit',
+    authorId: user.id, authorName: user.name, authorStreak: await discussionStreak(user.id),
+    title, body, topicId, questionId,
+    topicTitle: topicId ? getTopic(topicId)?.title : undefined,
+    upvoterIds: [], comments: [],
+    isResolved: false, createdAt, updatedAt: createdAt,
+  } as any);
+  void logActivity(user.id, 'discussion', { kind, topicId });
+  res.status(201).json(publicDiscussion(post, user.id));
+});
+
+app.post('/api/discussions/:id/upvote', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const result = await store.toggleDiscussionUpvote(param(req.params.id), user.id);
+  if (!result) return res.status(404).json({ error: 'Post not found' });
+  res.json({ upvoted: result.upvoted, upvotes: (result.post.upvoterIds?.length || 0) + (result.post.seededVotes || 0) });
+});
+
+app.post('/api/discussions/:id/comments', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const body = String(req.body?.body || '').trim();
+  if (body.length < 2 || body.length > 2000) return res.status(400).json({ error: 'Comment must be 2-2000 characters.' });
+  if (await actionsToday(user.id, 'comment') >= MAX_COMMENTS_PER_USER_PER_DAY) {
+    return res.status(429).json({ error: 'Daily comment limit reached - take a review day, then come back.' });
+  }
+  const comment = {
+    id: randomUUID(), postId: param(req.params.id),
+    authorId: user.id, authorName: user.name, body, createdAt: now(),
+  };
+  const post = await store.addDiscussionComment(comment.postId, comment);
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  res.status(201).json(publicDiscussion(post, user.id));
+});
+
+app.post('/api/discussions/:id/resolve', async (req: Request, res: Response) => {
+  const user = await requireUser(req, res);
+  if (!user) return;
+  const post = await store.getDiscussion(param(req.params.id));
+  if (!post) return res.status(404).json({ error: 'Post not found' });
+  if (post.authorId !== user.id) return res.status(403).json({ error: 'Only the author can mark a doubt resolved.' });
+  const updated = await store.setDiscussionResolved(post.id, !post.isResolved);
+  res.json(publicDiscussion(updated, user.id));
+});
+
+// ------------------------------------------------------------= INTELLIGENCE
 
 type LearnerSnapshot = {
   progress: ProgressLike[];
@@ -859,14 +825,17 @@ type LearnerSnapshot = {
   mocks: any[];
   activities: any[];
   content: any[];
+  helpfulUpvotes: number;
 };
 
 async function snapshot(userId: string): Promise<LearnerSnapshot> {
-  const [progress, mistakes, reviews, mocks, activities, content] = await Promise.all([
+  const [progress, mistakes, reviews, mocks, activities, content, discussions] = await Promise.all([
     store.listProgress(userId), store.listMistakes(userId), store.listReviews(userId),
     store.listMocks(userId), store.listActivities(userId, 500), store.listContent(userId),
+    store.listDiscussions({ authorId: userId, limit: 500 }).catch(() => [] as any[]),
   ]);
-  return { progress: progress as ProgressLike[], attempts: progress.flatMap((p: any) => p.attempts || []), mistakes, reviews, mocks, activities, content };
+  const helpfulUpvotes = (discussions || []).reduce((sum: number, post: any) => sum + ((post.upvoterIds?.length || 0) + (post.seededVotes || 0)), 0);
+  return { progress: progress as ProgressLike[], attempts: progress.flatMap((p: any) => p.attempts || []), mistakes, reviews, mocks, activities, content, helpfulUpvotes };
 }
 
 function xpFromSnapshot(snap: LearnerSnapshot): number {
@@ -875,7 +844,7 @@ function xpFromSnapshot(snap: LearnerSnapshot): number {
   for (const p of snap.progress) if (p.completed) xp += 40;
   xp += snap.reviews.length * 4;
   xp += snap.mocks.filter((m) => m.status === 'submitted').length * 30;
-  xp += snap.activities.filter((a) => a.kind === 'code' && a.solved).length * 20;
+  xp += snap.helpfulUpvotes * 2;
   return xp;
 }
 
@@ -943,9 +912,9 @@ app.get('/api/dashboard', async (req: Request, res: Response) => {
   if (totalDue > 0) nextActions.push({ kind: 'review', icon: '▤', title: `Review ${totalDue} due card${totalDue === 1 ? '' : 's'}`, detail: 'Spaced repetition keeps recall sharp.', page: 'flashcards' });
   if (snap.mistakes.length > 0) nextActions.push({ kind: 'repair', icon: '!', title: `Repair ${snap.mistakes.length} mistake${snap.mistakes.length === 1 ? '' : 's'}`, detail: `Start with ${snap.mistakes[0].topic || 'your latest miss'}.`, page: 'mistakes' });
   if (nextNew) nextActions.push({ kind: 'learn', icon: '◈', title: `Continue: ${nextNew.title}`, detail: nextNew.module, page: 'lesson', topicId: nextNew.id });
-  if (weakModule && snap.attempts.length > 0) nextActions.push({ kind: 'drill', icon: '✓', title: `Drill ${weakModule.module}`, detail: `Mastery ${weakModule.score}% — adaptive questions first.`, page: 'quiz' });
-  if (snap.progress.filter((p) => p.completed).length >= 3) nextActions.push({ kind: 'mock', icon: '◷', title: 'Take a mini mock', detail: 'Timed, with GATE negative marking.', page: 'mocks' });
-  if (!nextActions.length) nextActions.push({ kind: 'explore', icon: '▦', title: 'Explore the syllabus', detail: 'Pick any topic to generate your first kit.', page: 'syllabus' });
+  if (weakModule && snap.attempts.length > 0) nextActions.push({ kind: 'drill', icon: '✓', title: `Drill ${weakModule.module}`, detail: `Mastery ${weakModule.score}% — adaptive questions first.`, page: 'practice' });
+  if (snap.progress.filter((p) => p.completed).length >= 3) nextActions.push({ kind: 'mock', icon: '◷', title: 'Take a mini mock', detail: 'Timed, with GATE negative marking.', page: 'practice' });
+  if (!nextActions.length) nextActions.push({ kind: 'explore', icon: '▦', title: 'Explore the syllabus', detail: 'Pick any topic to generate your first kit.', page: 'dashboard' });
 
   const bySubject = new Map<string, { correct: number; total: number }>();
   for (const a of snap.attempts) {
@@ -1237,79 +1206,6 @@ app.post('/api/mock-exams/:id/submit', async (req: Request, res: Response) => {
   });
 });
 
-// ---------------------------------------------------------------- code lab
-
-app.get('/api/code/challenges', (_req: Request, res: Response) => {
-  res.json({ challenges: publicChallenges() });
-});
-
-app.post('/api/code/run', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const code = String(req.body?.code || '');
-  const challengeId = req.body?.challengeId ? String(req.body.challengeId) : null;
-  let cases: RunCase[];
-  let challenge: any = null;
-  if (challengeId) {
-    challenge = challengeById(challengeId);
-    if (!challenge) return res.status(404).json({ error: 'Unknown challenge' });
-    cases = challenge.tests;
-  } else if (Array.isArray(req.body?.tests)) {
-    try {
-      cases = (req.body.tests as any[]).slice(0, 10).map((t, i) => {
-        if (!t || !Array.isArray(t.args) || !('expected' in t)) throw new Error(`Test ${i + 1} needs {args:[...], expected}`);
-        return { args: t.args, expected: t.expected, label: t.label || `Case ${i + 1}` };
-      });
-      if (!cases.length) throw new Error('empty');
-    } catch {
-      return res.status(400).json({ error: 'Custom tests must look like [{args:[...], expected}] (max 10).' });
-    }
-  } else {
-    return res.status(400).json({ error: 'challengeId or custom tests are required' });
-  }
-  const result = runJavaScript(code, cases);
-  const solved = Boolean(result.ok && result.passed === result.total && result.total > 0);
-  if (challengeId) void logActivity(user.id, 'code', { challengeId, passed: result.passed, total: result.total, solved, xp: solved ? 20 : 5 });
-  res.json({ ...result, challengeId, solved });
-});
-
-app.post('/api/code/review', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const code = String(req.body?.code || '');
-  if (code.trim().length < 10) return res.status(400).json({ error: 'Submit your solution code for review.' });
-  const challenge = req.body?.challengeId ? challengeById(String(req.body.challengeId)) : null;
-  try {
-    const response = await fetch(`${runtime}/v1/evaluate-code`, {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        language: 'javascript', code: code.slice(0, 8000),
-        problem: challenge ? `${challenge.title}: ${challenge.prompt}` : 'General JavaScript solution review',
-      }),
-      signal: AbortSignal.timeout(60000),
-    });
-    if (response.ok) return res.json({ ...(await response.json()), provider: 'agent' });
-  } catch { /* static review below */ }
-  const findings: string[] = [];
-  const strengths: string[] = [];
-  if (!/function\s+solve/.test(code)) findings.push('Define solve(...) as a top-level function so the runner can invoke it.');
-  else strengths.push('solve(...) is defined and invocable.');
-  if (!/return\b/.test(code)) findings.push('No return statement found — every test path must return a value.');
-  if (/\bfor\b|\bwhile\b|\.map\b|\.reduce\b/.test(code)) strengths.push('Uses iteration or higher-order traversal.');
-  else findings.push('Consider whether the problem needs a loop or a direct formula.');
-  if (code.length > 3000) findings.push('Long solution — extract a helper to keep solve(...) readable.');
-  if (/console\.log/.test(code)) findings.push('Remove console.log before treating this as final.');
-  if (/\[\]|\bnull\b|length\s*===?\s*0/.test(code)) strengths.push('Shows awareness of empty-input edge cases.');
-  else findings.push('Add explicit handling for empty inputs.');
-  const score = Math.max(20, Math.min(95, 55 + strengths.length * 12 - findings.length * 8));
-  res.json({
-    provider: 'local-static',
-    verdict: score >= 75 ? 'Strong solution — polish edge cases.' : score >= 55 ? 'Working direction — tighten correctness.' : 'Needs rework — revisit the approach.',
-    score, findings, strengths,
-    complexity: 'Estimate time/space beside your loops and state whether the bound is worst-case.',
-  });
-});
-
 // ------------------------------------------------------------------ doubts
 
 app.post('/api/doubt', async (req: Request, res: Response) => {
@@ -1339,14 +1235,13 @@ app.post('/api/doubt', async (req: Request, res: Response) => {
 
   // Direct model when the runtime is unavailable — doubts deserve a real answer.
   try {
-    const doubtContext: AgentContext = {
-      agentId: 'doubt-solver', agentName: 'Doubt Solver', agentRole: 'Concept debugger',
+    const doubtContext: DoubtContext = {
       learnerName: user.name, skillLevel: user.skillLevel,
       goal: String(user.activeGoal || user.goals?.[0]?.type || 'gate-cs'),
       goalTitle: GOAL_TITLES[String(user.activeGoal || user.goals?.[0]?.type || 'gate-cs')] || 'your syllabus',
       topic,
     };
-    const system = `${buildSystemPrompt(doubtContext)}${lessonContext ? `\n\nLesson context:\n${lessonContext.slice(0, 3000)}` : ''}`;
+    const system = `${buildDoubtSystemPrompt(doubtContext)}${lessonContext ? `\n\nLesson context:\n${lessonContext.slice(0, 3000)}` : ''}`;
     const result = await completeChat([{ role: 'system', content: system }, { role: 'user', content: question }]);
     return res.json({ answer: result.text, provider: 'direct-model', model: result.model, topicId, related: [] });
   } catch { /* curriculum guide below */ }
@@ -1357,8 +1252,7 @@ app.post('/api/doubt', async (req: Request, res: Response) => {
     .sort((a, b) => b._score - a._score)
     .slice(0, 3)
     .map(({ answer: _a, _score: _s, ...rest }) => rest);
-  const doubtFallback = localSpecialistReply({
-    agentId: 'doubt-solver', agentName: 'Doubt Solver', agentRole: 'Concept debugger',
+  const doubtFallback = localDoubtReply({
     learnerName: user.name, skillLevel: user.skillLevel,
     goal: String(user.activeGoal || user.goals?.[0]?.type || 'gate-cs'),
     goalTitle: GOAL_TITLES[String(user.activeGoal || user.goals?.[0]?.type || 'gate-cs')] || 'your syllabus',
@@ -1378,8 +1272,6 @@ const DIAGNOSTIC_IDS = [
 ];
 
 app.get('/api/diagnostic', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
   const questions = DIAGNOSTIC_IDS.map((id) => questionById(id)).filter(Boolean) as any[];
   const pool = questions.length === 5 ? questions : filterQuestions({ course: 'gate-cs', source: 'all' }).slice(0, 5);
   res.json({ questions: stripAnswers(pool), total: pool.length });
@@ -1459,7 +1351,7 @@ app.get('/api/achievements', async (req: Request, res: Response) => {
     reviews: snap.reviews.length,
     mocksSubmitted: submitted.length,
     bestMockPct: submitted.reduce((best, m) => Math.max(best, Number(m.result?.pct || 0)), 0),
-    challengesSolved: snap.activities.filter((a) => a.kind === 'code' && a.solved).length,
+    helpfulUpvotes: snap.helpfulUpvotes,
     comebacks,
     streak: streakInfo(snap.attempts.map((a) => dateKey(a.answeredAt || ''))).current,
   });
@@ -1514,13 +1406,11 @@ app.get('/api/challenge/daily', (req: Request, res: Response) => {
   const seed = `${goal}:${dateKey()}`;
   const pool = filterQuestions({ course: goal });
   const question = seededShuffle(pool, `${seed}:question`)[0];
-  const code = seededShuffle(CODE_CHALLENGES, `${seed}:code`)[0];
-  if (!question || !code) return res.status(404).json({ error: 'No daily challenge available for this goal.' });
+  if (!question) return res.status(404).json({ error: 'No daily challenge available for this goal.' });
   res.json({
     date: dateKey(),
     topicId: topicIdForQuestion(goal, question.topic),
     question: stripAnswers([question])[0],
-    code: { id: code.id, title: code.title, difficulty: code.difficulty },
   });
 });
 
@@ -1530,8 +1420,9 @@ app.get('/api/notes/:topicId', async (req: Request, res: Response) => {
   const user = await requireUser(req, res);
   if (!user) return;
   const note = await store.getNote(user.id, param(req.params.topicId));
-  if (!note) return res.status(404).json({ error: 'No notes for this topic yet' });
-  res.json({ text: note.text, updatedAt: note.updatedAt });
+  // Missing notes are the normal first-visit state — answer quietly instead of
+  // making every lesson open log a 404.
+  res.json({ text: note?.text || '', updatedAt: note?.updatedAt || null });
 });
 
 app.put('/api/notes/:topicId', async (req: Request, res: Response) => {
@@ -1541,54 +1432,6 @@ app.put('/api/notes/:topicId', async (req: Request, res: Response) => {
   const text = String(req.body?.text || '').slice(0, 20_000);
   const note = await store.saveNote({ id: `${user.id}:${topicId}`, ownerId: user.id, topicId, text, updatedAt: now() });
   res.json({ text: note.text, updatedAt: note.updatedAt });
-});
-
-// ------------------------------------------------------------ interview sim
-
-app.get('/api/interviews/meta', (_req: Request, res: Response) => {
-  const tracks = (Object.keys(TRACK_META) as InterviewTrack[]).map((track) => ({
-    track, title: TRACK_META[track].title, rounds: TRACK_META[track].rounds,
-  }));
-  res.json({ tracks });
-});
-
-const interviewSessions = new Map<string, { track: InterviewTrack; interviewId: string; evals: Array<ReturnType<typeof evaluateAnswer>> }>();
-
-app.post('/api/interviews', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const track = String(req.body?.track || '') as InterviewTrack;
-  if (!(track in TRACK_META)) return res.status(400).json({ error: 'Unknown interview track' });
-  const interviewId = randomUUID();
-  const flow = buildInterview(track, interviewId);
-  interviewSessions.set(interviewId, { track, interviewId, evals: [] });
-  void logActivity(user.id, 'interview', { track, interviewId });
-  res.status(201).json(flow);
-});
-
-app.post('/api/interviews/:id/answer', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const session = interviewSessions.get(param(req.params.id));
-  if (!session) return res.status(404).json({ error: 'Interview not found' });
-  try {
-    const evaluation = evaluateAnswer(session.track, session.interviewId, String(req.body?.itemId || ''), {
-      selected: req.body?.selected, explanation: req.body?.explanation, code: req.body?.code, answerText: req.body?.answerText,
-    });
-    session.evals.push(evaluation);
-    res.json({ evaluation });
-  } catch (error: any) {
-    res.status(400).json({ error: error?.message || 'Could not evaluate answer' });
-  }
-});
-
-app.post('/api/interviews/:id/complete', async (req: Request, res: Response) => {
-  const user = await requireUser(req, res);
-  if (!user) return;
-  const session = interviewSessions.get(param(req.params.id));
-  if (!session) return res.status(404).json({ error: 'Interview not found' });
-  const report = buildReport(session.track, session.interviewId, session.evals);
-  res.json(report);
 });
 
 // ================================================== runtime job orchestration
@@ -1743,6 +1586,21 @@ async function runLocalFallback(id: string, topicId: string) {
     await recordLessonCompletion({ ownerId: completed.ownerId, topicId, regenerate: completed.regenerate, hadContent: completed.hadContent });
   }
 }
+
+// ------------------------------------------------------- 404 + error hygiene
+// Unknown API routes answered as HTML (Express default) and unexpected errors
+// leaked stack traces; both are JSON now.
+
+app.use('/api', (_req: Request, res: Response) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use((error: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('[api] unhandled error:', error);
+  if (res.headersSent) return;
+  res.status(500).json({ error: 'Something went wrong on our side — please retry.' });
+});
 
 export { app, store };
 

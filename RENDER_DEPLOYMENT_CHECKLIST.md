@@ -120,7 +120,8 @@ The API and agent are separate services. Redeploy the agent first, then the API.
 curl -i https://eduswarm-agent.onrender.com/health
 curl -i https://eduswarm-agent.onrender.com/ready
 curl -i https://eduswarm-api.onrender.com/ready
-curl -s https://eduswarm-api.onrender.com/api/agents/status
+curl -s https://eduswarm-api.onrender.com/api/auth/status
+curl -s https://eduswarm-api.onrender.com/api/discussions | head -c 300
 ```
 
 Expected: HTTP 200 from the first three, `providerConfigured: true` in the agent
@@ -131,22 +132,22 @@ so Render's health check cannot be slowed down by a provider incident. Its
 `models` array shows the first four ids in the current chain — if it lists ids
 you never configured, that is the discovery working as intended.
 
-`/api/agents/status` tells you which brain will answer specialists:
+`/api/auth/status` tells you which brain will answer the doubt solver:
 
 ```json
-{"runtime":{"online":true,"model":""},
- "directLlm":true,"models":["…"],"answerPath":"runtime"}
+{"mode":"google","tokenAuth":true,
+ "ai":{"runtimeUrl":"https://eduswarm-agent.onrender.com","runtimeKeyConfigured":true,"models":["…"]}}
 ```
 
-- `answerPath: "runtime"` — best case, retrieval-grounded answers.
-- `answerPath: "direct-llm"` — the runtime is down but the API has a key; still
-  a real model.
-- `answerPath: "curriculum-fallback"` — neither path has a working key. Add
-  `OPENROUTER_API_KEY` to the service that is missing it.
+- The runtime is the preferred brain (retrieval-grounded answers).
+- If the runtime is asleep, the API calls the model directly with the discovered
+  chain; if that fails too, the built-in concept library answers.
+- `runtimeKeyConfigured: true` means a model key is visible to the API — add it
+  to both services or one of the two paths stays dark.
 
-Every assistant reply in the UI is labelled with the brain that produced it
-(`✦ AI model · <id>` or `⚠ Offline guidance`), so a learner can tell without
-reading logs.
+Guest reads (curated baseline lesson, PYQ catalog, discussions feed) work without
+sign-in, so the Render cold-start screen should only ever hit returning users —
+new visitors land on the public reverse-trial flow immediately.
 
 After readiness passes, create a new study topic. Existing failed jobs remain
 failed and should not be reused.
