@@ -298,7 +298,7 @@ export const operatingSystems: Record<string, TopicLesson> = {
       },
       {
         title: "Dining philosophers and priority inversion.",
-        body: `Five philosophers, five forks, each needs two adjacent forks to eat — all pick left simultaneously → nobody can eat → circular wait → deadlock; solutions: (a) limit to four at table, (b) odd-even asymmetric pickup, (c) waiter (semaphore for fork pickup permission); priority inversion: low-priority task holds mutex needed by high-priority task → high waits — unbounded inversion possible with medium tasks抢占中 — cure: priority inheritance (holder temporarily boosted to waiter\'s priority) or priority ceiling (mutex pre-elevated — immediate inheritance, prevents chains); the Mars Pathfinder reset was caused by this exact bug — the most famous OS bug report in history.`,
+        body: `Five philosophers, five forks, each needs two adjacent forks to eat — all pick left simultaneously → nobody can eat → circular wait → deadlock; solutions: (a) limit to four at table, (b) odd-even asymmetric pickup, (c) waiter (semaphore for fork pickup permission); priority inversion: low-priority task holds mutex needed by high-priority task → high waits — unbounded inversion possible with medium-priority tasks preempt it repeatedly — cure: priority inheritance (holder temporarily boosted to waiter\'s priority) or priority ceiling (mutex pre-elevated — immediate inheritance, prevents chains); the Mars Pathfinder reset was caused by this exact bug — the most famous OS bug report in history.`,
       },
     ],
     worked: [

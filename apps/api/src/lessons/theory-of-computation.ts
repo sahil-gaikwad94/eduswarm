@@ -317,7 +317,7 @@ export const theoryOfComputation: Record<string, TopicLesson> = {
       },
       {
         title: "Classify ten languages: decidable, RE, or neither.",
-        body: `DECIDABLE: {a^n b^n}, regular, CFL, finite languages, complements of deciders. RE not decidable: A_TM, EVEN_TM (accepts infinitely but doesn\'t halt — RE), EQ_TM (non-RE actually), K finitely modified K. NON-RE: complement of A_TM, ALL_TM (with RE? it\'s co-RE actually — careful), diagonal self-reference complements; the taxonomic skill: RE if you can enumerate members, decidable if you can always stop, co-RE if complements recognizable; practice with عشرة examples once — pattern recognition locked for life.`,
+        body: `DECIDABLE: {a^n b^n}, regular, CFL, finite languages, complements of deciders. RE not decidable: A_TM, EVEN_TM (accepts infinitely but doesn\'t halt — RE), EQ_TM (non-RE actually), K finitely modified K. NON-RE: complement of A_TM, ALL_TM (with RE? it\'s co-RE actually — careful), diagonal self-reference complements; the taxonomic skill: RE if you can enumerate members, decidable if you can always stop, co-RE if complements recognizable; practice with ten examples once — pattern recognition locked for life.`,
       },
     ],
     exam: [

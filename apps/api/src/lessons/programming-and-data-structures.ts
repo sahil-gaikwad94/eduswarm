@@ -1,518 +1,750 @@
-import type { TopicLesson } from "../topicLessons.js"; /** * Programming and Data Structures — 8 authored topic lessons. * * Standalone chapters per topic. No module-level essay, no runtime * composition, no study-coach preamble. The subject begins in the first * sentence and the revision schedule is the only meta material, kept last. * * Code language for the gate-cs track is C for the programming and data * structure topics, with explanations carrying the language-appropriate * reasoning a GATE C paper expects. */
+import type { TopicLesson } from "../topicLessons.js";
+
+/**
+ * Programming and Data Structures — 8 authored topic lessons.
+ *
+ * Standalone chapters per topic. Subject-first prose, foundations, core
+ * concepts, worked examples, exam practice, cheat sheet, recap. C is the
+ * exam language for the gate-cs track. No shared templates.
+ */
 export const programmingAndDataStructures: Record<string, TopicLesson> = {
   "gate-cs-programming-and-data-structures-c-programming-fundamentals": {
-    intro: `C is a small systems language whose design forces the programmer to think like an examiner: every value has an explicit type, every object has an address, and every computation is performed by the programmer or by the compiler on typed data. The language provides a small set of types, a set of operators that map closely onto the hardware, and the programmer must manage memory, declare prototypes before use, and understand the storage class of every object. The subject of this chapter is the complete C program: how to declare and initialize variables, how integer types map to ranges, how control flow and functions are expressed, how storage classes affect lifetime, and how to read a C program the way an examiner reads one. Mastery here is not about language trivia; it is about understanding what the compiler knows that the programmer must declare, and how the type system constrains every operation.`,
-    foundations: `C's type system is the foundation: an int is a signed integer of a machine-dependent width, commonly 32 bits; a char is an integer subtype used for character constants and small integers; a float is single precision; a double is double precision; a pointer is an integer capable of holding an address. The integer operators follow the usual arithmetic conversions, promoting small types to int before arithmetic; division of two ints is integer division truncating toward zero, and division by zero is undefined behavior. Storage classes — auto, register, static, extern — control the lifetime and scope of objects; auto objects live on the stack, register hints the compiler to keep the variable in a register, static gives file or block scope persistence, extern links to a definition in another translation unit. Functions must be declared before use; the return type defaults to int if omitted, and parameters default to int. All of these rules are checkable, and GATE questions on C test exactly these boundaries.`,
+    intro: `C is the language GATE uses to interrogate how a programmer models machines: every value has a type with a fixed width and range, every object has an address, every computation happens inside rules the compiler enforces and the hardware executes. The subject is the complete C program — declarations and scope, integer ranges and the usual arithmetic conversions, control flow and functions, storage classes, and the small print of evaluation order — taught at the level where reading a ten-line program and predicting its output is a skill you possess, not a lottery you enter.`,
+    foundations: `The C machine model: bytes are bytes; an int is signed, at least 16 bits, commonly 32; a char is at least 8 bits and typically exactly 8; a float is IEEE single (≈7 significant digits), a double IEEE double (≈15); a pointer holds a virtual address and its arithmetic scales by the pointed-to type's size. Integer arithmetic follows integer promotion: operands narrower than int promote to int; unsigned meets signed of equal rank → the signed operand converts to unsigned (a negative then wraps to a huge positive — the classic GATE trap). Integer division truncates toward zero; division by zero is undefined behavior; overflow of signed arithmetic is undefined behavior (unsigned wraps by design). Storage classes: auto (default, stack, lifetime = block), static (lifetime = program, scope = file or block), extern (declaration of an external definition), register (hint, not a promise). Functions must be declared before use. All of this is checkable by the compiler, and every GATE C question is written against exactly these rules.`,
     concepts: [
       {
-        title: "C types, ranges, and integer representation.",
-        body: `The C integer types and their typical ranges: char is 8 bits, short int at least 16, int at least 16 and typically 32, long int at least 32 and typically 64, long long int at least 64. Signed ranges for a k-bit two's complement integer are −2^(k−1) through 2^(k−1)−1; unsigned ranges are 0 through 2^k−1. Integer literals become int, long, long long, or unsigned depending on value; a literal that does not fit int becomes long. The key exam skill is converting decimal to binary, octal, and hexadecimal, and recognizing overflow when a computed value exceeds the range. GATE questions often ask for the range of a char array or the number of bits needed for a value; the answer is derived from the type widths and two's complement. The programmer must know the widths because array sizes and pointer arithmetic are expressed in terms of them, and assuming a 32-bit int when the platform uses 64-bit changes the answers. A deep understanding of the type system is the first step to reading C like an examiner.`,
+        title: "Integer types and the representation contract.",
+        body: `Every integer type carries a minimum width and a maximum range: char ≥ 8 bits, int ≥ 16, long ≥ 32, long long ≥ 64 — actual widths are implementation-chosen, but on modern 32/64-bit targets int is 32 and long long is 64 in practice. Two's complement is the universal signed representation: range −2^(n−1) .. 2^(n−1)−1; unsigned n-bit is 0 .. 2^n − 1. Signed overflow is UB (compilers exploit it — a loop "while (x + 1 > x)" is optimized to infinity if you signed anything), which is why exam questions refuse to predict answers here and instead test your understanding of representations that are well-defined. Bitwise operations (AND/OR/XOR/shifts) are unsigned territory — left-shifting a negative signed value is UB; right-shifting negatives is implementation-defined historically (arithmetic shift in practice). Mask idioms: x & (x−1) clears the lowest set bit; 1u << k is the safe way to name a bit; (x >> k) & 1 reads bit k.`,
       },
       {
-        title: "Control flow, operators, and operator precedence.",
-        body: `C control flow uses if/else, switch/case, loops (for, while, do-while), and goto for jumps; switch is a jump table based on integral values, and case labels fall through unless break is used. Operators: arithmetic (+, −, ×, /, %), relational (==, !=, <, >, <=, >=), logical (&&, ||, !), bitwise (&, |, ^, ~, <<, >>), assignment (=, +=, −=, etc.), and increment/decrement. Operator precedence follows a fixed hierarchy; parentheses override. The notorious precedence rule is that multiplication/division have higher precedence than addition/subtraction, and relational operators have lower precedence than equality; the shift operators are lower precedence than additive but higher than relational in C's ordering. An examiner expects the programmer to know these precedence rules because misreading precedence changes the meaning of an expression; GATE questions frequently test expression evaluation order and short-circuit behavior of && and ||, where the right operand is not evaluated if the left determines the result. The do-while loop executes the body at least once, unlike while. The for loop has three parts: initialization, condition, and increment, all optional. These are the building blocks for reading any C program or C output question.`,
+        title: "Declarations, scope, and the type rules.",
+        body: `Declarations announce; definitions instantiate. File scope: declared outside functions — visible until end of file (static file scope = this file only). Block scope: declared inside braces — visible to end of block. Function parameters: block scope in the containing function. Shadowing: an inner declaration hides the outer for the duration of the inner scope — the outer object still exists, unchanged. Linkage: extern shares, static hides. The declaration order rule: identifiers must be declared before use — the compiler is greedy, reading one pass, and every cryptic GATE C question about "why does this compile or not" reduces to declaration order and implicit int (removed in C99: missing return type is an error, not a default). Initialization defaults: static objects are zero-initialized (bss) — a common exam answer; auto objects are uninitialized garbage — reading one is undefined, and the exam loves showing you code that "works on my machine" and asking what it proves (nothing).`,
       },
       {
-        title: "Functions, prototypes, and the call stack.",
-        body: `Functions in C are declared with a return type, a name, and parameter declarations; the prototype must appear before a call, and the definition repeats the types. The return type defaults to int if omitted; parameters default to int if not specified; a parameter declared as a pointer receives an address. Function calls use a call stack: push arguments, push return address, jump; on return, pop arguments and return address, jump to return address, place return value in an accumulator register. Recursion is supported through the same stack discipline; each recursive call pushes a new stack frame, and the base case stops the descent. The exam-relevant skill is tracing the call stack by hand: for each function call, determine which registers hold arguments and the return address, and for recursion, count stack depth. GATE questions on function calls test understanding of pass-by-value (pointers passed as addresses), return value handling, and the stack discipline. The concept of stack frames and the order of evaluation of arguments is a source of potential surprises, though C does not define the order of evaluation of multiple arguments, so well-written code avoids it. Understanding the stack is essential for recursion and for understanding stack overflow.`,
+        title: "Control flow, functions, and evaluation order.",
+        body: `C provides exactly the branches and loops hardware provides: if/else, switch (jump table), while, do-while (body always executes at least once), for (init; condition; update). switch uses integer promotion on the expression, matches constants, falls through unless you break — forgetting break is the classic fallthrough question. Functions pass arguments by value: arrays decay to pointers and are passed as addresses (the only "reference" in C), pointers passed as values let the callee see the caller's object. Evaluation order: C does not specify operand order for f(a(), b()) — any interleaving is legal (the old ambiguity trap in exams); sequence points exist only at &&, ||, ?:, comma, and function call boundaries. printf("%d %d", i++, i++) — undefined; the exam asks "what does this print" and the answer is "cannot be determined" or the compiler-specific result. Functions: declaration (prototype) before call; default-argument promotion promotes floats to double, char/short to int — mixing promotes silently, which is why printf() needs the format string exactly.`,
       },
       {
-        title: "Storage classes, memory layout, and scope.",
-        body: `C storage classes: auto (block scope, stack), register (suggest register, usually ignored), static (file or block scope, persists across calls; internal static is file-scoped), extern (declares a global defined elsewhere). The memory layout of a C program is: text (code), data (initialized globals and static), bss (zero-initialized globals and statics), heap (malloc'd), stack (automatic locals). The stack grows downward; the heap grows upward from a base pointer. Pointers point to addresses; the relationship between array name, pointer, and address is subtle: an array name is a constant pointer to its first element, and array indexing is syntactic sugar for pointer arithmetic. Scope rules: block scope (inner braces), function scope (function body), file scope (global), and the effect of static in limiting scope. The GATE questions on storage classes test whether the candidate knows that static variables persist and that extern links to a global. Understanding the memory layout is the foundation for understanding pointers, dynamic allocation, and the heap. The classic mistakes: using a pointer to an automatic variable after the function returns, or forgetting that a local array is on the stack and will not persist. A deep understanding of when memory lives where is the difference between a C programmer and a C examiner.`,
+        title: "Pointer types and the address story.",
+        body: `A pointer is an integer that indexes the virtual address space; its type tells the compiler how to scale and how to dereference. int *p declares p as a pointer to int; p + 1 advances by sizeof(int); *p reads the pointed-to int; & takes an address. Pointer arithmetic past the end of an array is UB (one-past is fine, two-past is not); comparing pointers of unrelated objects with < is UB (equality on void pointers is fine); casting int to pointer is implementation-defined. NULL is the distinguished zero pointer; dereferencing it is UB. The & and * operators are exact inverses on valid operands; forgetting that &arr[i] is the same as arr + i is the start of every pointer confusion. A pointer and an array name are interchangeable in most expressions — sizeof(array-name) is the exception (yields array size, not pointer size) — the exception that proves the decay rule is the exam's favorite.`,
       },
       {
-        title: "Pointers and pointer arithmetic.",
-        body: `A pointer is a variable that holds an address; the type of a pointer indicates the type of the object it points to, and the compiler uses this to scale pointer arithmetic and to enforce that arithmetic stays within the pointed-to object. Arrays are contiguous memory of a fixed element size; the array name decays to a pointer to its first element in most contexts, so the name is a constant pointer. Pointer arithmetic: adding an integer n to a pointer adds n × sizeof(type) bytes to the address; this is why (ptr + 1) on an int pointer moves by sizeof(int) bytes, not by 1 byte. Dereferencing with * reads or writes through the pointer; the address-of operator & creates a pointer from an lvalue. Memory regions: text, initialized data, bss, heap, stack; the stack grows downward, the heap grows upward. The relationship between arrays and pointers: arr[i] is equivalent to *(arr + i), and this equivalence is the source of both the power and the danger of C. The danger: pointer arithmetic beyond the array bounds is undefined behavior; the programmer must track sizes manually. The deep foundation is the type system, which tracks whether an object is an int, a pointer, a float, etc., and the compiler uses that type information for arithmetic scaling and bounds checking. The subject begins here and runs through arrays, strings, and dynamic allocation, all unified by the pointer model. The chapter teaches this from first principles because everything later depends on it. The depth required is high because the interaction of types, addresses, and arithmetic is subtle and central.`,
-      },
-      {
-        title: "Dynamic memory allocation: malloc, calloc, realloc, free.",
-        body: `C provides four allocation functions: malloc(size) returns a pointer to a block of that many bytes, uninitialized; calloc(n, size) returns zeroed memory; realloc(ptr, size) resizes a block and may move it; free(ptr) releases a block back to the heap. The allocation must be paired with a free; leaks occur when free is skipped or when the pointer to the block is lost. The understanding: malloc takes the number of bytes, so for an array of N ints the size must be N × sizeof(int); calloc takes the number of elements and the element size and zeroes them. The programmer must track the pointer returned by malloc to free it correctly; double free and free of an invalid pointer are undefined or dangerous. The lesson: dynamic memory is manual and requires discipline; the size computation is the most error-prone part, and a deep understanding of the memory interface is required for all data structures that need variable-size storage. The chapter covers the interface thoroughly. The understanding: the size argument to malloc is in bytes, not elements; this is the most common source of error in C memory code. The chapter teaches that the programmer is responsible for all of this; unlike C++, there are no smart pointers. The GATE data structure questions like linked list insertion use malloc and free; the candidate must allocate nodes correctly. The deep chapter includes a worked linked list insertion example using malloc for new nodes and free for removed nodes. The memory management discipline is part of the subject. The chapter concludes that dynamic memory is the only way C supports variable-size data structures, and that all such structures are built from malloc/free plus the primitive types. The depth required here is high because the subject is the foundation of C programming and of the data structures that follow.`,
+        title: "Preprocessor, macros, and translation units.",
+        body: `The preprocessor runs before the compiler proper: #include pastes the named file's contents literally (system headers in <>, local headers in ""), #define names textual substitutions — macros are text expansion, not functions; they do not respect types or scopes, and they re-evaluate their arguments (the classic max(a,b) macro double-evaluation footgun) — always parenthesize arguments and the whole expansion. #define SQUARE(x) ((x)*(x)) — without both parenthesizations, SQUARE(1+1) expands to 1+1*1+1 = 3, a trap every C exam checks. Conditional compilation #if/#ifdef/#else/#endif and header-guard patterns (#ifndef X_H / #define X_H / ... / #endif) prevent multiple inclusion — no external modules, no packages: C builds a program from translation units glued by #include and the linker. The phases: preprocessing → translation → compilation to .o → linking into an executable — the pipeline every systems engineer internalizes.`,
       },
     ],
     worked: [
       {
-        title: "Write a C function to swap two integers using pointers.",
-        body: `The classic swap using pointers: void swap(int *a, int *b) { int t = *a; *a = *b; *b = t; } The caller passes addresses via pointers; the function dereferences to read and write. The key point is that the swap happens in the caller's memory because the pointers carry addresses; the local variable t holds one value during the exchange. The alternative without pointers — swapping by value — cannot work because the values are local to the caller and must be exchanged through addresses. The examiner should verify the pointer arithmetic: the parameter a is a pointer to an int, so *a is the int at that address; &x gives the address of x; passing &x to the function passes the address, and the function can write through the pointer. The point: pass-by-value for the pointer means the function gets a copy of the address, but the memory it points to is shared, so writes affect the caller. The swap example also shows that the temporary is required because the exchange needs three locations. The GATE-style question: given an array of ints and two indices, write a function that swaps the elements; the solution uses a pointer to the array element, which is the address of the array plus an offset computed by pointer arithmetic. The deep skill is constructing the address by pointer arithmetic and dereferencing correctly. The example should also note that swapping in place modifies the array, which is the expected behavior, and that returning a value from swap would not affect the caller's array unless the array is returned. The point: arrays and pointers are the same memory with different syntactic wrapping, and understanding this unifies all C memory code.`,
+        title: "Range of types — fill the table.",
+        body: `Given 32-bit two's complement machine: char (signed): −128..127; unsigned char: 0..255; short: −32768..32767; int: −2147483648..2147483647; unsigned int: 0..4294967295; long long: −9223372036854775808..9223372036854775807. GATE asks either a range (compute 2^n − 1) or the outcome of a comparison after conversion (e.g., -1 < 1u → false, because −1 converts to UINT_MAX). The whole exercise reduces to: know the width, know the rule that mixed-sign comparison is unsigned, recite the range. Verification: −1 < 1u is a 1-bit pattern compared as unsigned — 0xFFFFFFFF vs 0x00000001 — the second is smaller, so the relation is false.`,
       },
       {
-        title: "Trace the call stack for a recursive function.",
-        body: `Consider int fact(int n) { if (n <= 1) return 1; return n * fact(n - 1); }. Tracing for n = 4: fact(4) calls fact(3) which calls fact(2) which calls fact(1), which returns 1; fact(2) = 2×1 = 2; fact(3) = 3×2 = 6; fact(4) = 4×6 = 24. Each call pushes a stack frame with the parameter n and the return address; the base case (n ≤ 1) stops the recursion; the return value is propagated back up the chain. The understanding: the multiplication happens on the way back up, not on the way down; the computation is naturally expressed as a recursion tree, and the evaluation order is post-order. The GATE question on recursion often asks for the output of a recursive program; the candidate must trace the stack and the returns correctly. The deep skill includes converting recursion to iteration, which replaces the stack with an explicit stack data structure; this is a classic interview and GATE topic. The worked example should show both the recursive trace and the iterative equivalent using an explicit stack or an array, demonstrating that the two are equivalent. The lesson: recursion is a way of thinking, and the call stack is the machine that implements it; understanding both gives full control. The chapter should also discuss tail recursion and whether C optimizes it (it does not in general, so tail recursion still uses the stack). The examiner should know that C does not perform tail call optimization, so even tail-recursive programs consume stack. The understanding of stack depth and overflow is important. The chapter concludes with the conversion to iteration as the practical optimization.`,
+        title: "What does this print?",
+        body: `int a = 5, b = 7; a++; printf("%d %d %d\\n", a++, ++b, a + b); — predict: arguments evaluated in an unspecified order but typically right-to-left on x86: a + b uses CURRENT a (still 5) and CURRENT b (7) → 12; ++b → 8; a++ yields 6 (a becomes 6). Output on most compilers: "6 8 12" (argument order is unspecified — some compilers print differently, but every answer is tied to the right-to-left x86 idiom, and the exam accepts it because evaluation order on this platform is that). The point: the exam wants you to know (a) postfix yields old value, (b) prefix increments first, (c) operand evaluation order is unspecified. Interior answer: with -O0 on gcc x86-64: "6 8 12".`,
       },
       {
-        title:
-          "Write a function that allocates an array of n integers and sums them.",
-        body: `int *arr = (int *)malloc(n * sizeof(int)); for (int i = 0; i < n; i++) arr[i] = i; long sum = 0; for (int i = 0; i < n; i++) sum += arr[i]; free(arr); The critical line is the size computation: n * sizeof(int), not n. The malloc takes bytes; the cast from void* to int* is allowed in C but unnecessary in C++. The array is filled with values; the sum uses integer arithmetic; free releases the memory. The point: the size must be in bytes, and using n instead of n * sizeof(int) leads to buffer overflow. The examiner should also know that the allocated memory is uninitialized, so the fill loop is necessary. The free must be called with the exact pointer returned by malloc; after free, the pointer is dangling and must not be used. The chapter should include error handling: if (arr == NULL) return error; The lesson: dynamic allocation in C is manual and requires discipline; a small error in size computation or a missing free leads to memory corruption or leaks. The worked example is short but must be technically exact; the GATE-relevant content is the size computation and the pair of malloc/free. The chapter should also demonstrate calloc for zero-initialized arrays, contrasting with malloc. The understanding of the memory allocation interface is the subject. The chapter concludes that dynamic arrays are allocated on the heap, unlike stack arrays, and that the heap lifetime is managed by the programmer. The point: the difference between the number of elements and the number of bytes is the most common source of error in C memory code.`,
+        title: "Storage class trace.",
+        body: `static int counter(void) { static int n = 0; return ++n; } — called three times: returns 1, 2, 3. The static object n is initialized once (zero-initialized from bss, then assigned at first use block entry in C99 semantics of static initialization — here explicit 0 which equals bss zero anyway), persists across calls. In contrast, auto n = 0 would return 1 every call; extern leakage outward is forbidden for statics at file scope. GATE asks: value returned on nth call — trivially this one; the subtle variant asks where n lives (static storage, bss + data segments) and whether main() without static shares it (no — static at block scope is local to the function).`,
+      },
+      {
+        title: "Integer conversion trap.",
+        body: `int x = -1; unsigned y = 1; if (x < y) printf("less\\n"); else printf("greater\\n"); — usual arithmetic conversions turn the comparison into unsigned: x wraps to 4294967295; 4294967295 < 1 false — prints "greater". The same trap in loops: for (unsigned i = 10; i >= 0; i--) infinite — subtracting 1 from 0 wraps to UINT_MAX and the condition never fails; the classic infinite-loop question; the fix: signed loop counter or i != 0 with pre-decrement in the body. Every C exam with integers checks exactly this conversion corner once.`,
       },
     ],
     exam: [
       {
-        question: `What is the output of the following C code? int arr[5] = {1,2,3,4,5}; printf("%d %d %d", arr[1], arr[3], *(arr+2));`,
-        answer: `The output is 2 4 3. arr[1] is element 1 (= 2), arr[3] is element 3 (= 4), and *(arr+2) dereferences the pointer arr+2, which points at element 2 (= 3). The subscript operator and pointer arithmetic are the same computation in two notations: arr[i] is *(arr+i). The trap is reading *(arr+2) as element from the end or as arr[3]; it means exactly element at index 2. Every output question of this shape is this rule applied repeatedly.he understanding: array names decay to pointers in most contexts, which is why arr[i] and *(arr+i) are identical. This equivalence is the foundation of understanding C arrays and pointers. The lesson should emphasize this.`,
+        question: "On a 32-bit machine, what is the range of int?",
+        answer:
+          "−2,147,483,648 .. +2,147,483,647 (two's complement, 2^31 − 1 on the positive side, −2^31 on the negative). Every GATE boundary question wants these exact numbers or the formula −2^(n−1) and 2^(n−1)−1.",
       },
       {
-        question: `Which of the following is true about pointers in C? (A) A pointer stores the value pointed to. (B) A pointer stores the address of the variable. (C) Pointer arithmetic is not scaled by the element size. (D) Arrays and pointers are completely unrelated.`,
-        answer: `The correct choice is (B). A pointer stores an address of the variable or memory location; dereferencing with * accesses the value at that address; & takes the address; arrays and pointers are closely related via pointer arithmetic, where adding an integer to a pointer moves by the size of the pointed-to type; and arr[i] is equivalent to *(arr+i). The deep explanation covers each option: (A) is false because a pointer holds an address, not a value; (C) is false because pointer arithmetic is scaled by the element size; (D) is false because an array name decays to a pointer to its first element, making them intimately related. The correct choice is (B), and the answer explains why the others fail.`,
+        question: 'What does printf("%d", 3 / 2) print and why?',
+        answer:
+          "1 — integer division truncates toward zero. 3 / 2 = 1; 3 / -2 = -1 (truncation toward zero rules on both signs — older C99-and-earlier implementations used floor for negatives, another trap the exam sometimes asks about). Non-integer 3.0/2 = 1.5 requires a double operand.",
       },
       {
-        question: `What does the following C code print? int a = 10; int b = 20; printf("%d %d %d", a, b, (a + b));`,
-        answer: `The answer is 10 20 30. The variables are printed by value; the third argument is the sum computed at runtime. The point is that printf arguments are evaluated before the call and passed by value; the sum is an int expression. The examiner should know that C evaluates arguments in unspecified order for multiple parameters, but here the values are simple.`,
+        question: "What is the printed value of (unsigned)(-1) > 1u?",
+        answer:
+          "TRUE (prints true/1) — (unsigned)-1 wraps to UINT_MAX; UINT_MAX > 1u is true. The trap is believing any comparison with negative integers stays signed; usual arithmetic conversions silently convert both sides to unsigned the moment any unsigned operand appears.",
+      },
+      {
+        question: "What does static int x; at file scope give you?",
+        answer:
+          "A single object with static storage duration (lives for the whole program run, zero-initialized) whose name is visible only inside this translation unit — the C equivalent of a module-private global. Other translation units declaring extern int x get a *different* x or a link error, by design.",
       },
     ],
     cheat: [
-      "int is at least 16 bits, typically 32; long long is at least 64; ranges use twos complement.",
-      "arr[i] is equivalent to *(arr + i); array name decays to a pointer in most contexts.",
-      "Pointer arithmetic is scaled by the element size: ptr + 1 moves by sizeof(pointed-to-type).",
-      "malloc takes bytes (N × sizeof(T)); calloc takes N elements of size sizeof(T) and zeroes; free releases; realloc resizes.",
-      "Static persists across calls and is file-scoped if declared at file scope; auto is stack; extern links to global.",
-      "Integer division truncates toward zero; division by zero is undefined in C.",
-      "Recurse via call stack; C does not optimize tail calls; iteration is the stack-free alternative.",
+      "int ≥ 16, commonly 32; long long ≥ 64; two's complement: −2^(n−1) .. 2^(n−1)−1.",
+      "Integer promotion: < int → int; mixed sign → unsigned; division truncates toward zero.",
+      "static: program lifetime, zero-init; auto: stack, garbage unless initialized; extern: external.",
+      "arr[i] ≡ *(arr+i); sizeof(arr) is array size; sizeof decayed ptr is pointer size.",
+      "printf/argument eval order unspecified; sequence points at ||, &&, ?:, comma, call.",
+      "Macros are text substitution — parenthesize args and expansion; SQUARE(1+1) = 3 trap.",
+      "unsigned loops never hit 0; use signed counters or i != 0 decrement-body idiom.",
     ],
-    recap: `C programming is a discipline of explicit types, explicit memory, and explicit control flow. The type system defines ranges and operations; the operator precedence and control flow structure govern evaluation; functions and the call stack govern computation; storage classes govern lifetime and scope; pointers and dynamic allocation govern memory. Reading C like an examiner means tracing types, evaluating expressions by precedence, following the call stack, and reasoning about where memory lives. Mastery of these pillars makes every subsequent C data structure topic straightforward. The chapter closes the C programming and data structures foundation, preparing for stacks, queues, linked lists, trees, and heaps, which are all implemented using structs and dynamic memory.`,
+    recap: `C is the machine's contract with the programmer: fixed-width types with defined ranges, conversions that follow one rule everywhere (usual arithmetic conversions), pointer arithmetic scaled by type size, and storage classes declaring exactly how long every object lives — because GATE's C questions are not trivia, they are the shared rules of every compiler you will ever read disassembly from.`,
     code: {
-      title: "C: array sum with dynamic allocation and free",
+      title: "Integer promotion trap demo",
       language: "c",
-      code: `#include <stdio.h>\n#include <stdlib.h>\n\nint main(void) {\n int n = 10;\n int *arr = (int *)malloc(n * sizeof(int)); /* bytes = n * sizeof(int) */\n if (!arr) return 1;\n for (int i = 0; i < n; i++) arr[i] = i;\n long sum = 0;\n for (int i = 0; i < n; i++) sum += arr[i];\n printf("sum = %ld\\n", sum);\n free(arr);\n return 0;\n}`,
+      code: `unsigned u = 1;\nif (-1 < u) printf("never printed"); else printf("greater");`,
       explanation:
-        "The only correct size computation is n * sizeof(int); malloc takes the byte count, and omitting the sizeof is the classic buffer overflow. The array is filled before summing because malloc does not initialize memory; free releases the heap block. The pattern of allocate → use → free is the entire discipline of C dynamic memory.",
+        "The whole class of signed/unsigned traps in two lines — the exam asks precisely this comparison in half a dozen disguises.",
     },
     diagram: {
-      title: "C memory layout and allocation",
+      title: "Translation pipeline",
       caption:
-        "Text → data → bss → heap → stack; malloc lives on the heap, locals on the stack.",
-      mermaid: `flowchart TD\n A[Text: code] --> B[Data: initialized globals]\n B --> C[BSS: zero-init globals]\n C --> D[Heap: malloc/calloc]\n C --> E[Stack: local variables]\n D --> E`,
+        "Preprocess → compile → link: every C question begins in exactly one of these three phases.",
+      mermaid: `flowchart LR\n  S[Source .c] --> P[Preprocessor]\n  P --> C[Compiler to .o]\n  C --> L[Linker to executable]`,
     },
   },
   "gate-cs-programming-and-data-structures-pointers-arrays-and-memory": {
-    intro: `Pointers, arrays, and memory are the heart of C, and the heart of the C-based data structures that follow. An array is a contiguous run of elements of a fixed type; a pointer is an integer holding an address; array indexing is syntactic sugar for pointer arithmetic; a pointer can be reassigned to point anywhere, including into the middle of an array. The subject is how these three concepts interlock, why the interlock matters, and how to avoid the classic failure modes: buffer overruns, dangling pointers, and pointer arithmetic errors. This chapter builds from the address model upward, showing exactly what each construct means at the bit level and how the C type system expresses it. The goal is not just to use pointers correctly but to reason about memory safely, because nearly every C exam and interview question about data structures is ultimately a question about pointers and memory.`,
-    foundations: `The address model: a pointer is a variable that holds an address; the type of a pointer indicates the type of the object it points to, and the compiler uses this to scale pointer arithmetic and to enforce that arithmetic stays within the pointed-to object. Arrays are contiguous memory of a fixed element size; the array name decays to a pointer to its first element in most contexts, so the name is a constant pointer. Pointer arithmetic: adding an integer n to a pointer adds n × sizeof(type) bytes to the address; this is why (ptr + 1) on an int pointer moves by sizeof(int) bytes, not by 1 byte. Dereferencing with * reads or writes through the pointer; the address-of operator & creates a pointer from an lvalue. Memory regions: text, initialized data, bss, heap, stack; the stack grows downward, the heap grows upward. The relationship between arrays and pointers: arr[i] == *(arr + i) == *(arr + i × sizeof(type)); the equivalence is exact for arrays of known size, and is the source of both the power and the danger of C. The danger: pointer arithmetic beyond the array bounds is undefined behavior; the programmer must track sizes manually. The deep foundation is the type system, which tracks whether an object is an int, a pointer, a float, etc., and the compiler uses that type information for arithmetic scaling and bounds checking. The subject begins here and runs through arrays, strings, and dynamic allocation, all unified by the pointer model. The chapter teaches this from first principles because everything later depends on it. The depth required is high because the interaction of types, addresses, and arithmetic is subtle and central.`,
+    intro: `Pointers and arrays are the single most examined subject in the C portion of GATE: pointer arithmetic scaled by type, arrays decaying to pointers, why sizeof lies to you about arrays, and how the stack and the heap store every object you create. The subject takes the small set of addressing rules every C program executes and makes them something you can reason about exactly — drawing the memory map, predicting the addresses, and surviving the exam's favorite traps.`,
+    foundations: `Memory has three regions: text (program code, read-only), initialized/uninitialized data (static and global objects — bss for zeros), and stack (auto objects, function call frames) plus heap (malloc'd objects, programmer-managed). A pointer is typed: int *p points to an int, and p + 1 advances sizeof(int) bytes; void *p points to anything (arithmetic forbidden in standard C; cast for use). Arrays are contiguous slabs; the array name in most expressions decays to a pointer to its first element; indexing arr[i] is *(arr + i) — plus 0 is the same object, minus 1 is UB before the start. Two-dimensional arrays are row-major with each row contiguous. malloc takes bytes, calloc zeroes, realloc grows (possibly moving), free returns to the heap — freeing twice is heap corruption, never checking malloc's NULL is instant UB on exhaustion, and every leaked pointer before program end is memory you no longer own but cannot reclaim.`,
     concepts: [
       {
-        title: "Arrays: contiguous memory and the array name as pointer.",
-        body: `An array in C is a contiguous block of memory holding N elements of a single type; the elements are laid out side by side with no gaps, and the address of element i is base_address + i × sizeof(type). The array name, when used in most contexts, is a constant pointer to the first element; this is why array indexing is pointer arithmetic under the hood. The size of the array must be a compile-time constant for static arrays; for dynamic arrays, the size is computed at runtime via malloc. The contiguous layout means that for loops over arrays can be efficient because the addresses are increasing; it also means that copying an array requires either a loop or memcpy, because there is no built-in array copy. The understanding of the array name as pointer is critical: it explains why array parameters in functions decay to pointers to the first element, and why passing an array to a function gives the function a pointer, not the array itself; the function cannot determine the array length unless it is passed as a separate parameter. The GATE question on arrays asks about the memory layout, the address computation, and the effect of sizeof; the candidate must know that sizeof(arr) for a statically declared array gives the total bytes of all elements, not the bytes of one element, while sizeof(arr[i]) gives the element size. The deep skill: computing addresses via base + index × element_size, and understanding that the array is contiguous.`,
+        title: "Array layout and row-major order.",
+        body: `int a[2][3] is stored as six contiguous ints in order a[0][0],a[0][1],a[0][2],a[1][0],a[1][1],a[1][2] — offset of a[i][j] from base is (i * 3 + j) * sizeof(int). GATE asks for the address given the base address and the size — every variant is this same formula (it appears with char/short/double too; substitute sizeof). a + i points to row i — type int (*)[3]; a[0] points to the first element of row 0 — type int *; &a[0][0] points at the very first bytes; &a and a have the same numeric value but different types (pointer-to-array vs pointer-to-element) — printed the same, scaled differently. The decay rule: array name decays to pointer in value contexts, except in sizeof(arr) (yields full array size) and &arr (yields pointer to array).`,
       },
       {
-        title: "Strings: char arrays and the null terminator.",
-        body: `A C string is a char array whose last element is the null terminator \0, and the string ends at the first null; the length is the index of the null terminator. Strings are not a distinct type in C; they are arrays of char. The null terminator is what allows functions like strlen, printf("%s") to know where the string ends; without it, the string would continue past its intended end. The understanding: a string literal is stored in the read-only text segment, while a char array can be modified; the null terminator is required for safety; the maximum length of a string literal is implementation-defined. The pointer arithmetic applies to strings too: a string is a contiguous char array, and s + i points to the i-th character; the null terminator terminates the sequence. The GATE question on strings often asks for the length or the content of a string using pointer arithmetic and the null check; the candidate must loop until the null. The lesson: strings are just arrays of char with a special terminator, and pointer arithmetic works uniformly. The chapter explains that char is an integer type, so characters can be compared, and that the null terminator is an int 0. The understanding of the string model is essential for parsing and for understanding arrays of strings.`,
+        title: "Pointer arithmetic and bounds.",
+        body: `int *p = a; p + 1 points to a[1], p + 3 points one past a[2] (legal to form, illegal to dereference). Subtraction of pointers within one array yields the element count — p2 - p1 = 3 for a[2] vs a[-1]... careful: &a[2] - &a[0] = 2. Relational comparisons on pointers into different arrays are UB; equality comparison on void pointers is fine. Casting: intptr_t preserves pointer width for round-trip via integer; uintptr_t similarly; casting an arbitrary integer to a pointer is implementation-defined at best, usually garbage. The rules all reduce to: pointers carry (address, type), arithmetic is scaled, bounds are mostly on the programmer, and the machine enforces none of it.`,
       },
       {
-        title:
-          "Dynamic memory: malloc, calloc, realloc, free, and heap management.",
-        body: `The heap is the region for dynamic allocation; malloc(size) returns a pointer to a block of the requested size, uninitialized; calloc(n, size) returns zeroed memory; realloc(ptr, size) resizes a block and may move it; free(ptr) releases a block back to the heap. The programmer must track pointers and pair each allocation with a free; leaks and dangling pointers are the consequences of disuse. The understanding: malloc takes the number of bytes, so for an array of N ints the size must be N × sizeof(int); calloc takes the number of elements and the element size and zeroes them. The lesson: dynamic allocation is manual, and the size computation is the most error-prone part; a deep understanding of the memory interface is required for all data structures that need variable-size storage. The chapter covers the interface thoroughly. The understanding: the size argument to malloc is in bytes, not elements; this is the most common source of error in C memory code. The chapter teaches that the programmer is responsible for all of this; unlike C++, there are no smart pointers. The GATE data structure questions like linked list insertion use malloc and free; the candidate must allocate nodes correctly. The deep chapter includes a worked linked list insertion example using malloc for new nodes and free for removed nodes. The memory management discipline is part of the subject. The chapter concludes that dynamic memory is the only way C supports variable-size data structures, and that all such structures are built from malloc/free plus the primitive types.`,
+        title: "Stack vs heap vs static: where objects live.",
+        body: `static and global objects live in data/bss — one copy per program, alive for the whole run, zero-initialized if not otherwise (bss). auto/block locals live on the stack — allocated on function entry, released on return; returning a pointer to a stack local is the classic bug (dangling pointer to a frame that no longer exists). malloc/calloc/realloc/free live on the heap — programmer-managed, non-scoped, leaks and double-frees are yours to prevent; free(NULL) is legal and does nothing (the only free that is always safe); realloc(p, 0) is technically free-like but implementation-defined — don't use it as a curiosity answer. String literals live in read-only text — char *s = "abc"; s[0] = 'x' is UB on modern platforms (segfault).`,
       },
       {
-        title: "Memory regions and the stack, heap, and static storage.",
-        body: `The C memory model divides memory into text (code), initialized data, bss (zero-initialized), heap, and stack; the stack holds automatic variables and grows downward, the heap grows upward from a base; static and global variables live in data or bss. The understanding: local arrays are on the stack and have automatic storage; heap data is dynamic; static variables persist across calls; the lifetime of each object is determined by its storage class. The interaction of these regions is the subject of the chapter; for example, a local array in a function is on the stack and its address is the same each call, but the contents are re-initialized each call; a static array persists and retains values across calls. The lesson: understanding when each object is allocated and freed is the key to avoiding leaks and dangling pointers.`,
+        title: "malloc/calloc/realloc discipline.",
+        body: `malloc(n * sizeof(T)) — sizeof multiplication order safety (n * sizeof(T) never overflows early vs sizeof(T) * n — equal anyway); always check !ptr → handle failure. calloc(n, sizeof(T)) — zeroed memory, same check. realloc(ptr, newsize) — may copy and free old block; returns NULL on failure and leaves original intact — do not write realloc(ptr, sz) directly into ptr without a temp (leak on failure). free(p) — p must point to a malloc'd block; freeing interior pointers or stack addresses corrupts the heap; double free is undefined; use-after-free reads freed memory (allocator metadata overwrites it — the classic exploit once that metadata is attacker-controlled). To zero a struct with one line: struct T obj = {0}; to free-then-NULL safety: p = NULL after free — no compiler stops accidental reuse, only discipline does.`,
+      },
+      {
+        title: "Pointers to pointers, function pointers, and callbacks.",
+        body: `int **pp points to a pointer to int — arrays of pointers (char *argv[]) decay to char **; ragged rows in C are arrays of pointers, each row malloc'd separately — that is how C expresses jagged 2D. Function pointers: int (*fp)(int, int) = &sum; fp(2,3) — parenthesis rule (*fp) matters (without parens, (int *fp)(int,int) would declare a function returning int*); typedef to tame syntax: typedef int (*BinOp)(int,int); — every GATE question on function pointers is this declaration or calling through it. void *callbacks (qsort(base, n, size, cmp)) — the generic callback pattern: the comparator reads raw bytes and returns int<0/=0/>0; the library never knows your type. One mistake common: forgetting to cast function to void (*)(void) loses the signature discipline; proper prototypes keep it safe.`,
       },
     ],
     worked: [
       {
-        title:
-          "Compute the address of an array element using pointer arithmetic.",
-        body: `Given int arr[10]; the address of arr[3] is (int *)&arr + 3, or more precisely arr + 3, because arr decays to a pointer to arr[0]; the address of element i is (int *)&arr + i × sizeof(int) = base + i × 4. The point: the address computation must account for the element size; for a char array, the stride is 1, for int it is 4, etc. The example: arr[5] address = base + 5 × 4 = base + 20. The examiner should verify by computing the pointer value. The answer: the address of arr[3] is arr + 3 (in pointer terms), and expanding gives base + 3 × sizeof(int). The understanding: the subscript operator is defined in terms of pointer arithmetic, so the two notations are consistent.`,
+        title: "Where does it live: static / stack / heap / text?",
+        body: `char *s = "hold"; s[0] = 'H'; — text/rodata, undefined (segfaults). int x = 42; inside main — stack. static int y = 7; inside main — data segment (initialized data). char *t = malloc(8); — heap; string literal "hold" still lives in text; t points to heap. Global int z; — bss (zero-initialized data). GATE asks each of these five; the answer pattern is the region + one line why. The struct-of-arena example: static const array → rodata; const int → rodata or data depending on initialization (const static = rodata).`,
       },
       {
-        title:
-          "Write a function that counts the characters in a string using pointer arithmetic.",
-        body: `int strlen(char *s) { int len = 0; while (*s) { len++; s++; } return len; } The loop dereferences the pointer, checks for the null terminator, increments the pointer. The point: incrementing a char* moves one byte at a time, because sizeof(char) = 1; for an int*, incrementing moves by 4 bytes. The example counts until the null. The answer: the length is the number of characters before the null. The understanding: the pointer is both the index and the iterator; this is a clean way to express traversal.`,
+        title: "Row-major offset: a[2][4][6] of int.",
+        body: `a is 2×4×6 ints; base address B; index a[i][j][k] at B + ((i*4 + j)*6 + k)*4 bytes. For a[1][2][3]: (1*4+2)*6+3 = 39 → B + 156 bytes. The formula generalizes: multiply stride per dimension — every GATE 3-D address question is this exact expansion; substitute element size and accumulate; done. Verification by spot-checking corner elements: a[0][0][0] = B, a[1][0][0] = B + 96 = B + (4*6)*4. ✓`,
+      },
+      {
+        title: "The classic dangling pointer.",
+        body: `int *f(void) { int x = 5; return &x; } int *p = f(); printf("%d", *p); — the function returned; the frame is gone; *p reads freed stack — undefined; prints garbage (looks like 5 on many machines, which is exactly why the test is careful — the answer is "indeterminate"/"undefined", never "5"). The one-line fix: return x by value (int f(void)) or malloc and let the caller free. Every interviewer and examiner has this question in their pocket.`,
+      },
+      {
+        title: "qsort comparator by hand.",
+        body: `int cmp(const void *a, const void *b) { const int *x = a, *y = b; return (*x > *y) - (*x < *y); } qsort(arr, n, sizeof(int), cmp); — returns negative/0/positive without branchy code; every comparator is this shape; ordering a struct by field: cast to const struct T *, subtract comparison results. GATE asks what the comparator must return and what qsort's guarantee is (non-decreasing, O(n log n) average, unstable). The face-value question is always: subtraction trick *x - *y overflows for INT range edge — the (a>b)-(a<b) idiom is overflow-safe; the exam occasionally asks precisely that.`,
       },
     ],
     exam: [
       {
-        question: `In C, what is the size of a pointer on a 64-bit system? (A) 2 bytes (B) 4 bytes (C) 8 bytes (D) Depends on the type pointed to.`,
-        answer: `The correct choice is (C) 8 bytes. On a 64-bit system, a pointer typically holds an address that requires 64 bits, so it is 8 bytes. The point: the size of a pointer is independent of the type pointed to; a char* and an int* are both typically 8 bytes on a 64-bit system, though the int* arithmetic is scaled by 4. The answer is (C). The depth includes the distinction between pointer size and element size.`,
+        question: "What is the offset in bytes of a[2][1] in int a[4][3]?",
+        answer:
+          "(2*3 + 1) * 4 = 28 bytes from a. Row-major: all of row 0 (12 bytes) then row 1, then offset 1 element (4 bytes) into row 2 → 28. The row-major expansion is the mechanical procedure GATE wants demonstrated on paper.",
       },
       {
-        question: `What is the output of the following code? int arr[3] = {10,20,30}; int *p = arr; printf("%d %d %d", *(p+1), p[2], arr[0]);`,
-        answer: `The answer is 20 30 10. *(p+1) = *(arr+1) = 20; p[2] = *(p+2) = *(arr+2) = 30; arr[0] = 10. The point: p is a pointer to arr[0], and p+1 advances to arr[1]; p[2] is *(p+2) = arr[2]. The equivalence between pointer subscript and deref is central.`,
+        question: "What does free(p) do to p itself?",
+        answer:
+          "Nothing to the variable p — p keeps its old (now dangling) address value; the block returns to the heap. Double-free or use-after-free later is undefined behavior; setting p = NULL after free removes the footgun. The exam asks what free does NOT do — answer: does not set p to NULL, does not clear the bytes.",
+      },
+      {
+        question:
+          "Given int arr[N], is sizeof(arr) == sizeof(&arr[0]) on a 64-bit system with N = 100?",
+        answer:
+          "No: sizeof(arr) = N * sizeof(int) = 400; sizeof(&arr[0]) = 8 (a pointer). This single contrast is the sharpest sizeof trap GATE produces, and it is verbatim across years.",
+      },
+      {
+        question: "What does malloc(0) legally return?",
+        answer:
+          "Either NULL or a unique pointer that may be passed to free(), but not dereferenced — the standard permits both answers, so any exam answer is legal if it matches this sentence; the gotcha is candidates who swear it always returns NULL.",
       },
     ],
     cheat: [
-      "Arrays are contiguous; arr[i] address = base + i × sizeof(type).",
-      "Array name decays to a pointer to first element; arr[i] == *(arr + i).",
-      "Pointer arithmetic scaled by element size: (int*)ptr + 1 → next int.",
-      "malloc takes bytes (N × sizeof(T)); calloc takes N elements of size sizeof(T) and zeroes; free releases; realloc resizes.",
-      "free(ptr) releases; dangling pointers result from using freed memory.",
-      "Strings are char arrays ending with null terminator; traversal via pointer until *s == 0.",
+      "arr decays to pointer; sizeof(arr) is the exception; &arr is pointer-to-array.",
+      "p + 1 advances sizeof(*p); one-past-end legal to form, UB to dereference.",
+      "Row-major: offset = (i*cols + j) * sizeof(T) — substitute, multiply, done.",
+      "Stack = auto lifetime; data/bss = static; heap = malloc/calloc/free; text = rodata.",
+      "malloc: check NULL; realloc: temp variable; free(NULL) safe; double-free = heap corruption.",
+      "Function pointer: int (*fp)(int,int); qsort comparator returns negative/0/positive.",
+      "String literals are const memory; assignment through their decay is UB.",
     ],
-    recap: `Pointers, arrays, and memory form the C data model: arrays are contiguous typed memory, arrays are pointers to first elements, pointer arithmetic is scaled by element size, and dynamic allocation uses malloc/calloc/free on the heap. Mastery means reasoning about addresses, sizes, and lifetimes without fear, because every C data structure is built on this model. The chapter closes the C programming and data structures foundation, preparing for stacks, queues, linked lists, trees, and heaps, which are all implemented using structs and dynamic memory.`,
+    recap: `Pointers and arrays are the arithmetic of the address space: typed slabs of memory, scaled arithmetic, row-major layout, three lifetime regions, and the allocator contract — because every C exam question about memory is this exact map wearing a disguise, the prepared candidate traces offsets on paper and the unprepared one guesses.`,
     code: {
-      title: "C: array sum with dynamic allocation and free",
-      language: "c",
-      code: `#include <stdio.h>\n#include <stdlib.h>\n\nint main(void) {\n int n = 10;\n int *arr = (int *)malloc(n * sizeof(int)); /* bytes = n * sizeof(int) */\n if (!arr) return 1;\n for (int i = 0; i < n; i++) arr[i] = i;\n long sum = 0;\n for (int i = 0; i < n; i++) sum += arr[i];\n printf("sum = %ld\\n", sum);\n free(arr);\n return 0;\n}`,
+      title: "Row-major address computation",
+      language: "text",
+      code: "addr(a[i][j]) = base + (i * ncols + j) * sizeof(elem_type)",
       explanation:
-        "The only correct size computation is n * sizeof(int); malloc takes the byte count, and omitting the sizeof is the classic buffer overflow. The array is filled before summing because malloc does not initialize memory; free releases the heap block. The pattern of allocate → use → free is the entire discipline of C dynamic memory.",
+        "The one formula behind every 2-D address and stack-layout question in the module.",
     },
     diagram: {
-      title: "C memory layout and allocation",
-      caption:
-        "Text → data → bss → heap → stack; malloc lives on the heap, locals on the stack.",
-      mermaid: `flowchart TD\n A[Text: code] --> B[Data: initialized globals]\n B --> C[BSS: zero-init globals]\n C --> D[Heap: malloc/calloc]\n C --> E[Stack: local variables]\n D --> E`,
+      title: "Address space regions",
+      caption: "Text, data, stack, heap — four regions, one pointer law.",
+      mermaid: `flowchart LR\n  T[Text/rodata] --> D[Initialized data]\n  D --> B[BSS]\n  B --> H[Heap]\n  H --> S[Stack]`,
     },
   },
   "gate-cs-programming-and-data-structures-structs-unions-and-dynamic-allocation":
     {
-      intro: `A struct is a composite type that groups multiple variables of different types under one name, and a union overlays several types at the same memory location; both are mechanisms for building higher-level data types from primitive C types, and both are central to implementing linked lists, trees, and other data structures in C. The subject is the design of composite types, the memory layout of structs and unions, and the discipline of dynamic allocation and deallocation that makes these types usable. The deep content covers the ordering of members within a struct, the size of the struct being the sum of its members rounded to alignment, the union size being the largest member, and the use of dynamic allocation for variable-length structures. This chapter treats structs and unions as first-class design tools, not just syntax.`,
-      foundations: `A struct declaration defines a tag and a list of members with types and optional initializers; the struct type is complete until the closing brace, and an incomplete type can be completed later; pointers to structs require an incomplete type at declaration (via typedef or pointer) and completion at use. A union declares a set of members that share the same memory; the size of the union is the size of its largest member, and writing one member overwrites the others. Struct alignment: the size of a struct is the sum of member sizes rounded up to the alignment of the largest member; padding may exist between members. The deep foundation: the memory layout is implementation-defined for padding, but the semantic content is well-defined; the union size is the largest member. The understanding of alignment is important for correctness of pointer arithmetic and for understanding why sizes are not always the naive sum.`,
+      intro: `Structs, unions and dynamic memory allocation are the compound-type machinery of C: structs pack values into one object with member offsets and alignment padding, unions overlay members on the same bytes, and malloc/free hand you the heap — because GATE examines compound objects at byte granularity, the subject covers layout arithmetic, sizeof rules, and the discipline of allocating exactly what you consume.`,
+      foundations: `A struct is laid out member-by-member: each member starts at an offset divisible by its alignment requirement (char = 1, short = 2, int/pointer = 4 on 32-bit, 8 on 64-bit targets); the struct's alignment is the max of members' alignments; the size rounds up to that maximum. Members in the same allocation may be separated by padding. A union sizes to its largest member; all members share the offset 0; reading one member's stored bytes as another (type punning) reinterprets the bytes — legal but implementation-defined at edges. Dynamic allocation: malloc(n) returns void* to n uninitialized bytes; calloc(n, size) zeroes them; realloc grows/shrinks preserving contents; free returns them. The malloc contract: success gives a pointer valid until free; failure returns NULL; freeing twice is corrupting the allocator's metadata — every debugging story starts with these four lines.`,
       concepts: [
         {
-          title: "Structs: declaration, initialization, and memory layout.",
-          body: `A struct groups members; the tag names the type; members can be any type including pointers, arrays, and other structs. Stack allocation of a struct is straightforward; heap allocation of a struct uses malloc(sizeof(struct T)) and requires casting to the struct pointer. Initialization: partial initialization is allowed, remaining members are zero; aggregate initialization assigns values to members in order; designated initializers assign by member name. The lesson: a struct is a contiguous block of memory with fields at fixed offsets; the offsets are determined by alignment and padding; the size is the offset of the last member plus its size, rounded to alignment. The understanding: for a struct with an int followed by a char, there may be padding between them due to alignment; the size calculation is not simply the sum of member sizes. The GATE question on struct size requires this calculation.`,
+          title: "Struct layout, padding, and sizeof.",
+          body: `struct { char c; int i; } — char occupies offset 0; int must start at offset divisible by 4; bytes 1-3 are padding; int at 4; struct alignment 4; size = offset 8 rounded to 4 = 8. Reordering members as int, char would give 4 + 1 → size 5 rounded to 8 (alignment 4)? No — 5 bytes rounds to 8 anyway. Rule: total size is the final rounded size — commonly 8 for both orders here, but for struct { char a; double b; char c; }: a at 0, pad to 8, b at 8, c at 16, size 24 with alignment 8; reorder c,b,a → 0, pad 8, 8, size 17→24. Padding is per-struct and invisible unless you printf offsetof — GATE loves asking for sizeof(struct) on different member orders — the members sort differently and the padding changes with them.`,
         },
         {
-          title: "Unions: overlay of multiple types at one address.",
-          body: `A union stores one value at a time among several possible types; all members share the same memory, so the size is the largest member; writing one member overwrites the others; reading a member after writing another is allowed only if the type is compatible, otherwise it is undefined. The lesson: the union size is the max of the member sizes, and the members overlay at the same memory; this is useful for type punning in low-level code and for memory-efficient variant types, though C discourages type punning. The understanding: the union is a single memory location with multiple type interpretations.`,
+          title: "Alignment rules across platforms.",
+          body: `Every type carries an alignment equal to its size for primitives (1,2,4,8 bytes) but not always: long double may align to 4 or 16; pointer = 8 on 64-bit, 4 on 32-bit; alignof/offsetof (stddef.h) reveal both — offsetof(struct T, member) gives exact bytes. Why padding exists: hardware reads aligned words in one cycle — misaligned access faults or crawls; the ABI dictates the rules so compilers, debuggers, and assembly all agree. The classic trap: packed structs annotated attribute((packed)) (gcc) squeeze members with no padding — every access may then be misaligned — fast for storage, slow for reads; GATE rarely tests attributes but the layout law is required knowledge.`,
         },
         {
-          title: "Dynamic allocation of structs and nested pointers.",
-          body: `When a struct contains pointers, dynamic allocation must initialize each pointer (usually to NULL) before use, and the memory for the struct itself is allocated with malloc(sizeof(struct T)). For a linked list, each node is a struct with data and next pointers; the node is malloc'd, the next pointer initialized, and the list is built by linking nodes. The lesson: the ownership of memory is explicit; malloc for nodes, and the list head pointer; free must walk the list or be given the head, freeing each node. The understanding: a struct with a pointer field must initialize that pointer before dereferencing; a malloc'd struct does not initialize fields, so the programmer must set them.`,
+          title: "Union semantics: overlay, not addition.",
+          body: `union { int i; float f; char bytes[4]; } — one field at a time; bytes used: all three members start at offset 0; the union's size = max member rounded to the union's alignment; assigning u.i writes the int's bytes; reading u.f reinterprets those bytes as float bits — bit patterns for the same number differ (1 as int = 0x00000001; reinterpreted as float = 1.4 × 10^−45). Union punning is implementation-defined but universal (it is how every serialization layer works in C); legal type punning alternatives: memcpy(&dst, &src, sizeof src) — always safe, compiles to nothing. One union use: tagged unions — { int tag; union payload {...} u; } — the poor-man's enum + variant everywhere in embedded/protocols.`,
+        },
+        {
+          title: "malloc/calloc/realloc/free: the contract in detail.",
+          body: `void *malloc(size_t bytes) — returns zeroed? NO: malloc leaves bytes uninitialized (reading is indeterminate); calloc(n, size) zeroes (and checks multiplication overflow of n*size). void *realloc(void *p, size_t bytes) — copies contents to a new block and frees the old (when moving); returns NULL on failure leaving the ORIGINAL intact — writing realloc(p, n) into p unconditionally leaks on failure (never do it — temp pointer first). free(p) — p must be the original pointer (interior pointers UB); free(NULL) does nothing; freeing stack → heap metadata corruption; double free → allocator detects or corrupts silently. Track: every successful malloc gets exactly one free; every path through your function releases its own acquisitions — GATE asks which line frees, or which call leaks.`,
+        },
+        {
+          title: "Linked lists with malloc: the eternal exercise.",
+          body: `struct Node { int data; struct Node *next; }; — creation: struct Node *head = NULL; head = malloc(sizeof *head); — sizeof *head works without naming the type (the malloc idiom); assign fields; link head->next. Traversal: for (p = head; p; p = p->next) — p advances by next pointer; free each node after processing: save n = p->next first (free then lose the chain!). Insert at head: new node, new->next = head, head = new. The discipline: every malloc checked (\!p), every free followed by NULL or by a proof the pointer dies, every function owns its own allocations. The exam shows ten lines of list code and asks what the output is or where the leak is — pointer surgery line by line.`,
         },
       ],
       worked: [
         {
-          title: "Allocate and free a struct array of nodes for a linked list.",
-          body: `struct Node { int data; struct Node *next; }; struct Node *head = NULL; struct Node *n1 = (struct Node *)malloc(sizeof(struct Node)); n1->data = 5; n1->next = NULL; head = n1; The malloc returns void*, which in C is implicitly converted to any pointer type; the cast is optional in C but conventional. The struct fields must be assigned before use. The point: sizeof(struct Node) gives the size of the struct including any padding; the next pointer is at some offset after the data field. The understanding: when freeing, walk the list and free each node; do not free the head pointer variable itself (it is just a pointer), free the nodes.`,
+          title: "sizeof demo: order matters?",
+          body: `struct A { int i; char c; }; struct B { char c; int i; }; — A: i at 0, c at 4, size 8 (align 4 → 1 byte + 3 pad). B: c at 0, pad 1-3, i at 4, size 8. Same size here! Try struct C { char c; short s; int i; }: 0, 2, 4, size 8. Reorder { short s; int i; char c; }: 0, 4, 8, size 12. The rule: members keep their declared order; the compiler only pads, never reorders (C never reorders members) — padding is the entire variable; every sizeof-difference question is an offsetof arithmetic exercise.`,
+        },
+        {
+          title: "offsetof walk-through.",
+          body: `offsetof(struct T, x) expands to ((size_t)&((struct T *)0)->x) — the compiler emits the offset directly from its layout table; print addresses minus base via cast: printf("%zu\n", (char *)&obj.x - (char *)&obj); for obj = { .i = 1, .c = 'a' } on struct A above: i → 0, c → 4. GATE asks offsetof or which address is stored where; both resolve by hand from member order and alignments.`,
+        },
+        {
+          title: "Leak hunt: find the missing free.",
+          body: `int *f(int n) { int *a = malloc(n * sizeof *a); if (!a) return NULL; for (...) a[i] = i; return a; } — who frees a? Caller. Leak pattern: returning malloc'd pointer is a contract — the caller must free; the most common leak is the caller forgetting; second: error path returns before free on partially built structures; third: realloc(p, n) overwriting p before checking NULL (original block pointer lost — true leak even though bytes still allocated). GATE shows a 10-line function and asks at which line memory leaks — the answer is always "the line where the only owning pointer goes out of scope un-freed".`,
+        },
+        {
+          title: "Union printout.",
+          body: `union U { int i; float f; } u; u.i = 0x40200000; printf("%f\n", u.f); — 0x40200000 is the IEEE bits for 2.5f (sign 0, exp 128, mantissa 1.01000...) → prints "2.5". The exercise is the whole point of unions: same bits, two lenses. GATE asks: given the bit pattern, what does the other member print — decode IEEE fields from hex, out come out. Every variant recycles the same three fields.`,
         },
       ],
       exam: [
         {
-          question: `What is the size of a C struct containing an int and a char? (A) 5 bytes (B) 8 bytes (C) 4 bytes (D) Implementation-defined.`,
-          answer: `The correct choice is (D). Struct layout is computed member by member: each member starts at the next offset divisible by its alignment, and the total size rounds up to the largest member alignment — char at offset 0, padding to offset 4, int at 4, total 8 bytes. The naive sum (5) forgets padding. Implementation-defined means the compiler chooses the alignment (typically int alignment = 4), so the answer is not a fixed constant across platforms.`,
+          question:
+            "What is sizeof(struct { char c; double d; char e; }) on a 64-bit system?",
+          answer:
+            "24 — c at 0, pad 1–7, d at 8 (8-alignment), e at 16, total 17 rounded to 8-alignment = 24. The question is a pure padding exercise; the answer changes if members reorder.",
         },
         {
-          question: `What does sizeof(struct { char c; int i; }) typically return on a 4-byte-aligned system?`,
-          answer: `8 — the int member forces 4-byte alignment: the char occupies offset 0, three padding bytes fill offsets 1–3, and the int sits at offset 4 with size 4; the struct's total size rounds up to its largest alignment, 8 bytes. The naive 5-byte answer forgets padding on both sides of the member. Struct layout is always computed member by member with alignment before each member and round-up at the end.`,
+          question:
+            "What does realloc return on failure, and what happens to the original block?",
+          answer:
+            "realloc returns NULL and the ORIGINAL block remains allocated and unchanged; the bytes you asked to grow stay as they were. Never assign realloc's return directly over your only pointer — store in a temporary, check, then replace.",
+        },
+        {
+          question:
+            "What is the legal range of bytes you can write through free()?",
+          answer:
+            "None — free takes no byte count; it consults the allocator's metadata for the block size attached at allocation time. Any mismatch (interior pointer, wrong block, half-size) corrupts adjacent metadata or faults in the allocator. malloc's bookkeeping is entirely implicit — that is why you must keep the pointer and never fabricate it.",
+        },
+        {
+          question: "Why does union { char s[8]; int x; } size to 8?",
+          answer:
+            "All members share offset 0 — the union is the largest member's footprint (alignment included): char[8] = 8 bytes, int = 4 — union = 8. Members overlay one address space; writing x overwrites the first 4 bytes of s. Every union question is the max-member rule applied with alignment round-up.",
         },
       ],
       cheat: [
-        "Struct size = offset of last member + size, rounded to alignment; padding may exist.",
-        "Union size = size of its largest member; members overlay at the same address.",
-        "malloc(sizeof(struct T)) allocates the struct; fields need explicit initialization.",
-        "Linked list nodes: malloc struct, set data and next, link, free nodes.",
-        "Partial initialization zeroes the rest; designated initializers assign by name.",
-              "sizeof reads the padded size; writing past it corrupts the heap, not just the variable.",
-        "Union punning reads one member's bytes as another — useful, UB where the language forbids it.",
-],
-      recap: `Structs group typed fields into composite types with a defined layout; unions overlay types at one memory location; dynamic allocation of structs and nested pointers requires explicit initialization of pointer fields; the memory layout (including padding) determines size and offsets. Mastery means designing types with full knowledge of their memory footprint and managing their lifetimes correctly.`,
+        "Struct size: member alignment, round up; sizeof never decreases elements; padding.",
+        "Union size = max member (aligned); all members at offset 0; punning = reinterpret bits.",
+        "malloc: bytes, uninitialized, check NULL; calloc: zeroed, n × size checked overflow.",
+        "realloc: temp pointer, NULL → original intact; free(NULL) = no-op; double free = heap corruption.",
+        "sizeof(struct T *) = pointer; sizeof(struct T) = full (padded) layout.",
+        "offsetof(T, m) = byte offset of member m — print it to see padding reality.",
+        "Tagged union { int tag; union {...} u; } = the universal C variant pattern.",
+      ],
+      recap: `Compound types are byte arithmetic: layout order fixed, padding negotiated with alignment, sizes rounded upward, unions overlaying the same bytes for free — while malloc/calloc/realloc/free contractually hand you the heap with three rules (check for NULL, free exactly what you took once, never write into freed memory) — because every sizeof and leak question on the exam is just these two contracts applied without ceremony.`,
       code: {
-        title: "C: struct node allocation for a linked list",
+        title: "malloc/realloc safe pattern",
         language: "c",
-        code: `struct Node { int data; struct Node *next; };\nstruct Node *n1 = (struct Node *)malloc(sizeof(struct Node));\nn1->data = 5; n1->next = NULL;`,
+        code: `int *p = malloc(n * sizeof *p);\nif (!p) return ENOMEM;\nint *q = realloc(p, 2 * n * sizeof *q);\nif (!q) { free(p); return ENOMEM; }\np = q;`,
         explanation:
-          "The malloc returns void*, implicitly converted in C; the cast is optional in C but conventional. The struct fields must be assigned before use; sizeof(struct Node) includes padding, and the next pointer sits at an offset after the data field.",
+          "Check, temp, replace — the three-step every safe realloc follows and the exam expects you to write.",
       },
       diagram: {
-        title: "Struct and union memory model",
+        title: "Struct padding timeline",
         caption:
-          "Struct = contiguous fields with alignment padding; union = overlay of members at one address.",
-        mermaid: `flowchart TD\n S[Struct: fields contiguous] --> P[Padding to alignment]\n U[Union: members overlay] --> L[Largest member size]`,
+          "Member order → offsets → alignment round-up — three passes, one number.",
+        mermaid: `flowchart LR\n  A[Member 1 at offset 0] --> B[Member 2 at next aligned offset]\n  B --> C[...]\n  C --> D[Round total up to alignment]`,
       },
     },
   "gate-cs-programming-and-data-structures-recursion": {
-    intro: `Recursion is the technique of defining a problem in terms of smaller instances of itself, with a base case that terminates. In C, recursion is implemented through the call stack, where each invocation pushes a stack frame containing parameters, local variables, and the return address; the base case stops the descent and the returns unwind the stack. The subject is not the syntax of recursion but the reasoning: how to identify the base case, how to structure the recursive step, how to trace the execution, and how to convert recursion to iteration when the stack depth becomes a problem. The deep content covers the recursion tree, the post-order evaluation that naturally results, tail recursion and its lack of optimization in C, and the conversion to an explicit stack for iterative solutions. This chapter teaches recursion as a first-class problem-solving method, with the C-specific mechanics of the call stack.`,
-    foundations: `The fundamental theorem of recursion: a recursive function has a base case and a recursive case; each recursive call works on a strictly smaller or simpler input, guaranteeing termination. The call stack mechanics: each invocation allocates a frame; parameters are copied into the frame; local variables are allocated; the return address is pushed; on return, the frame is popped and the return value passed back. The deep foundation: the recursion tree for a problem shows the sequence of subproblems; the evaluation order is determined by the return structure — for expressions like n * fact(n−1), the multiplication happens on the way up, after the recursive call returns. The understanding of post-order evaluation is essential.`,
+    intro: `Recursion is the discipline of a problem solving itself by descent: a function that calls itself on a smaller subproblem, stops at a base case, and recombines results on the way back up. The subject covers the call-stack mechanics, how to design correct recursive programs, recursive types and backtracking, complexity of recursion trees, and the GATE-favorite questions: counting calls, tail-call depth, and tracing recursive code by hand.`,
+    foundations: `Every recursive call pushes a new activation record on the stack: parameters, return address, saved registers, locals. Returns pop them in reverse order — strictly last-in first-out. Correct recursion needs two proofs: termination (each call strictly decreases a measure — a counter, a smaller input — and bottoms out at a base case the compiler can pin) and soundness (the helper assume/return contract: given correct answers for smaller inputs, the current combination is correct — induction). Depth = stack space; n recursive levels of constant-frame functions cost O(n) space. Tail calls: if the recursive call is the very last operation (return f(...)), the frame can be reused — but C does not mandate tail-call optimization (TCO), so even perfect tail recursion still costs frames on most compilers. Recursion enumerates spaces a loop cannot express: trees, subsets, permutations, backtracking searches — where branching logic, not iteration, expresses the search.`,
     concepts: [
       {
-        title:
-          "Recursion fundamentals: base case, recursive case, and stack frames.",
-        body: `A recursive function must have a base case that returns without recursion and a recursive case that calls itself with a smaller input; without a base case, infinite recursion leads to stack overflow. Each call pushes a stack frame; the frame contains parameters, return address, and saved registers; the depth of recursion equals the number of pending calls. The lesson: the call stack is the memory that makes recursion work; understanding frames explains depth limits and performance.`,
+        title: "Anatomy of a recursive call: frames, return, and depth.",
+        body: `int f(int n) { if (n <= 0) return 1; return n + f(n - 1); } — f(4) stack: f(4) → f(3) → f(2) → f(1) → f(0); f(0) returns 1; f(1) returns 1 + 1 = 2; f(2) returns 2 + 2 = 4; f(3) returns 3 + 4 = 7; f(4) returns 4 + 7 = 11. Sum = 1+2+3+4 + 1 = 11 = n(n+1)/2 + 1 — every trace multiplies frames identically; depth 5, each frame ~constant size, so memory = O(n). When GATE shows recursive code and asks for the return value, trace the stack explicitly — never in your head; write the frames on paper. The stack discipline also produces: recursion returns values in exactly reverse order of calls — every "what order does this print?" question reduces to tracing the reversal.`,
       },
       {
-        title: "Recursion and the call stack: tracing and complexity.",
-        body: `Tracing a recursive function involves following the chain of calls and the returns; for factorial, the depth is n and the total work is O(n). The lesson: recursion depth equals the maximum number of nested calls; converting to iteration can avoid stack overflow but requires an explicit stack. The chapter includes the factorial and Fibonacci examples with complexity analysis; Fibonacci is exponential in naive form and linear in memoized form.`,
+        title: "Designing recursion: base case and shrinking argument.",
+        body: `The two-step method: (1) define the smallest case — the input for which the answer is known without recursion (n ≤ 0, empty list, single element); (2) define how to express f(n) in terms of f(strictly smaller) with an exact combination. Every correct recursive function passes the "shrink test": does each recursive invocation receive strictly less input (smaller n, shorter list, lowered bound)? Negate either and you get infinite descent (stack overflow) or a loop masquerading as recursion. Factorial: fact(n) = n * fact(n−1); fact(0) = 1. Fibonacci: fib(n) = fib(n−1) + fib(n−2) — overlapping subproblems, exponential time, memoize or DP; the exam asks complexity, not the value. Hanoi towers: hanoi(n, from, to, via) = hanoi(n−1, from, via, to); move one; hanoi(n−1, via, to, from) — O(2^n) moves, every GATE paper tests it once.`,
       },
       {
-        title:
-          "Recursion to iteration: replacing the call stack with an explicit stack.",
-        body: `Any recursive function can be converted to iteration by using an explicit stack (array-based or linked) to simulate the call frames; the recursive case pushes work, the base case processes and pops. The lesson: the stack discipline of recursion maps to an explicit stack data structure; the conversion is mechanical.`,
+        title: "Recursion on data structures: linked lists and trees.",
+        body: `Linked lists are recursive by nature: list = empty | node.next + tail — the code mirrors the type: void print(Node *p) { if (!p) return; printf("%d ", p->data); print(p->next); } — the recursion consumes the list (stack depth = length — for 100-node lists risky; for 10 fine). Tree recursion: void walk(Node *r) { if (!r) return; walk(r->left); visit(r); walk(r->right); } — every traversal (in/pre/post-order) is this exact frame with the visit placed in/inside/between the two calls; returning values: int height(Node *r) { if (!r) return 0; return 1 + max(height(r->left), height(r->right)); } — max is the combine; the whole subject fits in three templates. GATE asks for the output order or the count of recursive calls — count = 2×(nodes) − 1 (every node visited twice minus empty leaves).`,
       },
       {
-        title: "Tail recursion and the lack of TCO in C.",
-        body: `Tail recursion is when the recursive call is the last operation, so the current frame is no longer needed; an optimizing compiler could reuse the frame, but C does not require tail call optimization, and most compilers do not implement it, so tail recursion still consumes stack. The lesson: in C, even tail-recursive functions use O(n) stack; iteration is the only stack-free option.`,
+        title: "Backtracking and subset enumeration.",
+        body: `Backtracking = recursion over a decision tree: at each node, choose an option, recurse into the subtree, undo before the next option. The skeleton: void solve(state) { if (goal(state)) record(state); else for (choice : options(state)) { apply(choice); solve(state with choice); undo(choice); } } — subsets of {a,b,c}: choose/decline each element — 2^n leaves; permutations: 3! leaves; N-queens: prune branches when columns clash (pruning = exponential saved). GATE asks the number of nodes expanded for a given input or the order of solutions — trace the tree explicitly for n ≤ 4; formulae: subsets 2^n, permutations n!, with pruning dependent. The template is universal; only goal() and options() vary.`,
+      },
+      {
+        title: "Complexity of recursion: trees and recurrences.",
+        body: `Recursion cost = sum over nodes of the work per node — read it off the recursion tree. T(n) = 2T(n/2) + n → leaves n × O(1), internal levels log n × n each → Θ(n log n). T(n) = T(n−1) + 1 → depth n → Θ(n). T(n) = 2T(n/2) + 1 → geometric tree: 2^{i} nodes per level, log n levels → Θ(n). Naive Fibonacci T(n) = T(n−1) + T(n−2) + 1 → two trees barely overlapping at top, exponential — Θ(φ^n). Master theorem case check: compare f(n) to n^(log_b a). GATE asks one of: recurrence from code, complexity from recurrence, or (rarely) the exact count for tiny n — count via tree drawing, every time.`,
       },
     ],
     worked: [
       {
-        title: "Trace factorial(5) through the call stack.",
-        body: `factorial(5) calls factorial(4) calls factorial(3) calls factorial(2) calls factorial(1) which returns 1; then factorial(2) = 2×1 = 2; factorial(3) = 3×2 = 6; factorial(4) = 4×6 = 24; factorial(5) = 5×24 = 120. The stack depth is 5; the evaluation is post-order. The answer: factorial(5) = 120. The understanding: the multiplication happens on the way back up.`,
+        title: "Trace f(5) with these exact values.",
+        body: `int f(int n) { if (n < 2) return n; return f(n - 1) + 2 * f(n - 2); } — f(0)=0, f(1)=1; f(2)=f(1)+2f(0)=1; f(3)=f(2)+2f(1)=3; f(4)=f(3)+2f(2)=5; f(5)=f(4)+2f(3)=11. Calls count: f called 11 times? Count tree: C(n)=C(n−1)+C(n−2)+1 → C(0)=1, C(1)=1, C(2)=2, C(3)=4, C(4)=7, C(5)=12. GATE asks "how many times is f invoked" — 12. The habit: define C(n) alongside f(n) — always.`,
+      },
+      {
+        title: "Depth of recursion for factorial.",
+        body: `fact(10) → frames: 10,9,...,0 = 11 simultaneous live frames at deepest point (or 10 if counting only frames below main). Stack memory ≈ 11 × sizeof(frame) ≈ hundreds of bytes. GATE: "what is the space complexity" — O(n). The iterative version uses O(1). Every interviewer cares; every examiner asks one of these two forms.`,
+      },
+      {
+        title: "Hanoi towers move count for n = 3.",
+        body: `hanoi(3, A, C, B): move A→C stack of 2 (3 moves: A→C, A→B, C→B for disks 1,2 using B as helper... standard trace: 3 → A: diska→C, diskb→B, diska→B (disk1 → B via C? rule: move top disk only, onto empty or onto larger): moves: 1:A→C, 2:A→B, 1:C→B, 3:A→C, 1:B→A, 2:B→C, 1:A→C — 7 moves = 2^3 − 1 ✓. GATE asks moves for n disks: 2^n − 1 — the exponential is the entire point.`,
+      },
+      {
+        title: "In-order traversal order print.",
+        body: `Tree: root 4, left child 2 (with 1, 3), right 6 (5, 7). In-order: walk(left) → 2's subtree → 1, 2, 3; visit(4); right subtree → 5, 6, 7 → output 1 2 3 4 5 6 7. Pre-order: 4 2 1 3 6 5 7; post-order: 1 3 2 5 7 6 4. The GATE question: given the tree, print one order — or given two orders, reconstruct the tree (inorder + preorder is enough). The whole traversal subject is where the three templates live.`,
       },
     ],
     exam: [
       {
-        question: `The depth of recursion for factorial(n) is: (A) O(1) (B) O(n) (C) O(log n) (D) O(n²).`,
-        answer: `The correct choice is (B) O(n); the depth equals the number of nested calls, which is n for factorial(n). The explanation: each call waits for the next, so the depth is the number of calls in the longest chain; factorial(n) has depth n. The answer is (B). The depth includes the convention.`,
+        question:
+          "How many times is f called for f(4) where f calls itself with f(n-1) and f(n-2)?",
+        answer:
+          "9 times (C(n)=C(n-1)+C(n-2)+1 with C(0)=C(1)=1 → C(4)=9). Every such question is a count-tree walk or a recurrence — never trust mental math here; write the small tree.",
       },
       {
-        question: `How many times is the function called for f(5) where f recurses f(n - 1) with base n <= 0?`,
-        answer: `6 times total — f(5), f(4), f(3), f(2), f(1), f(0); the base case terminates the chain. Each call creates one stack frame, so the maximum activation-record depth is 6. Every recursive counting question reduces to enumerating the chain from n down to the base condition inclusive — one extra call for the terminating base, never fewer and never more.`,
+        question: "What is the space complexity of naive recursive Fibonacci?",
+        answer:
+          "O(n) stack space despite exponential time — depth equals the longest chain (fib(n) → fib(n-1) → ... → fib(0), depth n). The time/space contrast is exactly what GATE asks to make candidates conflate recursion depth with total calls.",
+      },
+      {
+        question:
+          "Is this tail-recursive: int f(int n) { return n <= 1 ? 1 : n * f(n - 1); }?",
+        answer:
+          "No — the recursive call is not the last operation; the multiply happens after it returns. A tail-recursive version accumulates: int f(int n, int acc) { return n <= 1 ? acc : f(n - 1, n * acc); } — in C, either version still consumes stack frames (no mandated TCO).",
+      },
+      {
+        question: "What does in-order traversal of a BST yield?",
+        answer:
+          "Keys in sorted ascending order — left subtree fully, node, right subtree recursively. Every BST question in the exam banks on this property; validation questions (is-this-a-BST) are answered by carrying min/max bounds or in-order sequence checks.",
       },
     ],
     cheat: [
-      "Base case stops recursion; recursive case reduces input toward base case.",
-      "Call stack: each call pushes frame; depth = longest chain of pending calls.",
-      "Post-order evaluation: recursive results combine on the way back up.",
-      "C does not optimize tail calls; tail recursion uses stack like any other.",
-      "Convert to iteration with explicit stack when depth or performance matters.",
-            "Depth costs one stack frame per call; n-level recursion is O(n) space.",
-],
-    recap: `Recursion is defined by a base case and a recursive case, executed via the call stack; depth equals pending calls, evaluation is post-order, and C lacks tail call optimization, so iteration with an explicit stack is the alternative. Mastery means tracing recursions correctly, analyzing complexity, and converting to iteration when needed.`,
+      "Two requirements: termination (measure strictly decreases) + soundness (combination inductive).",
+      "One frame per call; O(n) depth; printing happens in reverse call order — trace with frames.",
+      "C does not guarantee TCO — tail recursion still costs stack; iteration is free.",
+      "Backtracking skeleton: choose, recurse, undo; prune branches = exponential saved.",
+      "Recurrence from code; complexity from tree; C(n) = call count recurrence alongside f.",
+      "Trees: 2×nodes − 1 calls; in-order BST = sorted; inorder+preorder ⇒ unique reconstruction.",
+      "Hanoi = 2^n − 1 moves; Fibonacci naive = exponential time, linear space.",
+    ],
+    recap: `Recursion is divide-and-descend programming: a base case where the answer is known, a step where the answer is built from strictly smaller inputs, and a stack of frames carrying state upward — because the machine keeps your state for you, the correctness burden is the two proofs (termination, soundness), and the art is seeing the recursion tree before writing the code.`,
     code: {
-      title: "C: recursion depth and factorial",
+      title: "Call-count recurrence alongside f",
       language: "c",
-      code: `int fact(int n) { return n <= 1 ? 1 : n * fact(n - 1); }`,
+      code: `int f(int n) { if (n < 2) return n; return f(n-1) + 2*f(n-2); }\n/* C(n) = C(n-1) + C(n-2) + 1, C(0)=C(1)=1 */`,
       explanation:
-        "The base case is n <= 1; the recursive case reduces n toward the base case; the depth is n and evaluation is post-order. C does not perform tail call optimization, so even tail-recursive programs consume stack.",
+        "Every GATE call-count question is just this pair of definitions walked to n.",
     },
     diagram: {
-      title: "Recursion and the call stack",
+      title: "Recursion tree for Fibonacci",
       caption:
-        "Base case stops descent; each call pushes a frame; returns unwind the stack.",
-      mermaid: `flowchart TD\n R[Recursive call] --> D[Depth = pending calls]\n D --> B[Base case stops]\n B --> W[Post-order combine]`,
+        "Work recomputes the same subproblems — the argument for memoization.",
+      mermaid: `flowchart TD\n  F5["f(5)"] --> F4["f(4)"]\n  F5 --> F3["f(3)"]\n  F4 --> F3b["f(3) again"]\n  F4 --> F2["f(2)"]`,
     },
   },
   "gate-cs-programming-and-data-structures-stacks-queues-and-linked-lists": {
-    intro: `Stacks and queues are the two fundamental linear data structures, and linked lists are the fundamental non-array-based structure for representing sequences. A stack is LIFO (last in, first out): push adds, pop removes the most recent; a queue is FIFO (first in, first out): enqueue adds at the back, dequeue removes from the front. A linked list is a sequence of nodes where each node holds data and a pointer to the next node; it supports insertions and deletions at known positions without shifting all elements. The subject is the operations, the invariants, the complexity of each operation, and the implementation in C using structs and dynamic memory. This chapter is the bridge from the primitive C data types to the structured data types that dominate interviews and GATE data structure questions.`,
-    foundations: `Stack: LIFO; operations push (add to top) and pop (remove from top); peek/top reads; empty check; implemented with array (fixed top index) or linked list (top pointer). Queue: FIFO; operations enqueue (add to rear) and dequeue (remove from front); implemented with array (front/rear indices) or linked list (front/rear pointers); a queue implemented with a stack or vice versa requires either two stacks or an auxiliary queue. Linked list: each node holds data and next pointer; head points to first node; insertion at head is O(1), at tail is O(n) without a tail pointer; search is O(n). The deep foundation: the invariants — for a stack, the top pointer must be consistent; for a queue, the front and rear; for a list, the next pointers must not create cycles.`,
+    intro: `Stacks, queues and linked lists are the three container disciplines every algorithm syllabus builds on: a stack enforces last-in first-out (LIFO), a queue first-in first-out (FIFO), and a linked list threads objects together with pointers so that insertion and deletion happen without ever shifting a byte. The subject covers the array and list implementations of both, the invariants that make them work, and the GATE staples: parenthesization and monotonic-stack problems, circular queues, and pointer-twiddling list surgery.`,
+    foundations: `Stack operations: push, pop, top/peek, isEmpty — all O(1); array implementation: a[MAX], int top = -1 (empty); push: a[++top] = x; pop: return a[top--]; every GATE question demands this exact invariant. Queue: enqueue/dequeue/front — O(1) with circular buffers (rear and front advance modulo N, sacrificing one slot or tracking count to distinguish full from empty) or with two pointers on a linked list. Linked list: each node { value, next }; singly linked: O(1) insert/delete at head, O(n) at tail without tail pointer; doubly linked adds prev for O(1) delete given a node; circular variants join the end to the front. Common list pitfalls: losing the head reference, not saving next before free, off-by-one at NULL termination, confusion between empty list and list containing a zero value.`,
     concepts: [
       {
-        title: "Stack: LIFO semantics and implementations.",
-        body: `Stack operations: push adds an element to the top; pop removes and returns the top; top/peek returns the top without removal; isEmpty checks. The conceptual rule: the last element added is the first one removed. Implementations: array-based with a top index (grows with size, may need realloc; or fixed capacity); linked list-based with top pointer (dynamic size). The lesson: a stack is a special case of a list, and the array implementation is preferred when the maximum size is known; the linked list when it is not.`,
+        title: "Stacks: LIFO and the parenthesization classic.",
+        body: `A stack remembers nested state — the exact data structure matched to nested languages. Balanced-parentheses checker: scan; on opening push; on closing, pop and confirm type matches; at EOF, stack must be empty — ([{ mismatch = false, overflow = false, leftover = false — three failure modes, one algorithm. Postfix evaluation: push operands; on operator, pop b, pop a, push a⊕b; final stack holds the answer. Monotonic stack: maintain increasing/decreasing order by popping violators — solves next-greater-element, largest rectangle, asteroid collision in O(n). Browser history and function-call traces are stacks by construction — GATE asks to state the sequence of pops for a given op list; simulate mechanically with a diagram.`,
       },
       {
-        title: "Queue: FIFO semantics and implementations.",
-        body: `Queue operations: enqueue adds to rear; dequeue removes from front; front/peek reads front; isEmpty checks. Implementations: array-based with front and rear indices (circular array for fixed capacity; or dynamic array with shifting); linked list-based with front and rear pointers (enqueue at rear O(1), dequeue at front O(1)). The lesson: the queue is a linear structure with two pointers; circular array avoids shifting. The understanding of the circular array technique is part of the subject.`,
+        title: "Queues and circular buffers.",
+        body: `A queue serves arrivals in order — BFS layers it level by level; OS scheduling rounds through it; printer spooling is a queue. Array-backed: int q[N], front = 0, rear = 0; enqueue: q[rear] = x, rear = (rear+1) % N; full vs empty ambiguity: always sacrifice one slot (rear+1 ≡ front ⇒ full, front ≡ rear ⇒ empty) or track a count (n == N ⇒ full). Linked queue: maintain head and tail pointers, O(1) both ends; dequeue advances head, enqueue appends at tail. Deque: both ends O(1) — sliding-window maximum, palindrome checks. Priority queue is NOT a FIFO queue — it's heap-ordered; GATE loves contrasting queue semantics with heap semantics in one question.`,
       },
       {
-        title:
-          "Linked lists: node structure, insertion, deletion, and traversal.",
-        body: `A linked list is a sequence of nodes; each node has data and a next pointer; head points to first or NULL; traversal follows next until NULL. Insertion at head is O(1) (just update head); at tail is O(n) without tail pointer, O(1) with; deletion at head O(1), at tail O(n) without tail pointer. The lesson: linked lists trade O(1) head operations and dynamic size for O(n) random access and no contiguous memory; arrays trade contiguous memory and O(1) random access for fixed size and O(n) insertion.`,
+        title: "Singly linked list surgery: insert, delete, reverse.",
+        body: `Insert at head: new->next = head; head = new — O(1), always correct including empty list. Insert at tail: walk to last node — O(n); keep a tail pointer for O(1). Delete at head: tmp = head; head = head->next; free(tmp) — the classic three-liner; forgetting tmp before free loses the old head forever. Delete middle: walk with prev and cur; prev->next = cur->next; free(cur). Reverse: three pointers (prev = NULL, cur = head) — while (cur) { nxt = cur->next; cur->next = prev; prev = cur; cur = nxt; } head = prev — the canonical exam trace; draw every arrow for n = 4 and never reverse again by accident. Cycle detection: Floyd's hare-tortoise — fast/slow pointers, meet ⟹ loop; cycle entrance: reset one to head, advance both by 1 — they meet at entrance — the famous formula, GATE 1-maker.`,
       },
       {
-        title: "Complexity of linear structures.",
-        body: `Stack: push/pop/top/peek/empty all O(1); array-based with fixed top is O(1); linked list O(1). Queue: all operations O(1) with proper implementation (circular array or linked with front/rear list pointers). Linked list: search O(n), insert/delete at head O(1), at tail O(n) without tail pointer, at arbitrary position O(n). Array: search O(n), insert/delete O(n) due to shifting; access O(1). The lesson: the complexity table is a key exam artifact; the candidate must know each operation's cost.`,
+        title: "Doubly linked lists and the predecessor advantage.",
+        body: `{ value, prev, next } — deletion of an arbitrary node given its pointer is O(1): node->prev->next = node->next; node->next->prev = node->prev; — singly linked needs a scan for predecessor. LRU cache is a doubly linked list + hashmap: O(1) get/put with splice-out and splice-to-front — the canonical interview/exam hybrid. Cost: double the pointer memory, extra maintenance on both directions. GATE: why does DLL delete beat singly linked for arbitrary nodes? — no predecessor scan; the answer is always the same.`,
+      },
+      {
+        title: "Array vs linked: the big constant-factor war.",
+        body: `Arrays: contiguous, O(1) indexing, perfect cache locality, O(n) insertion/deletion (shifting); Linked: scattered, O(n) indexing, pointer-chasing cache misses, O(1) insertion/deletion at known positions. Arrays win for size-known-in-advance, scan-heavy work; lists for unknown size, frequent middle insertion with a cursor. The exam's choice question: "you need k lookups and m inserts at a cursor — array or list?" — count the costs; the answer is asymptotics, never vibes. Memory overhead: linked node = 2× pointer width per element; for tiny payloads, arrays dominate by overhead percentage alone.`,
       },
     ],
     worked: [
       {
-        title: "Implement a stack with an array in C.",
-        body: `int *arr; int top = -1; push: top++; arr[top] = val; pop: return arr[top--]; top: return arr[top]; empty: top == -1. The point: top = -1 means empty; push increments then assigns; pop decrements after reading; top reads without decrementing. The understanding of the invariant (top == -1 iff empty) is essential.`,
+        title: "Parenthesization trace: ((a+b)*[c]){d}.",
+        body: `Scan: ( push → [(]; ( push → [(, (]; a,b operands; ) pop matches ( ✓ → [(]; + operand region; * operands; [ push → [(, []; c; ] pop matches [ ✓; ) pop matches ( ✓, stack empty at ) boundary; { push; d; } pop matches { ✓; EOF stack empty ⟹ balanced ✓. The algorithm reports success — every input with mixed bracket types is validated this way; failure = mismatched pop or leftover stack. The exam asks for "is balanced" or the failing character — identify it step by step.`,
       },
       {
-        title: "Implement a queue with a circular array.",
-        body: `front = 0, rear = -1 (or size-1 for full); enqueue: rear = (rear + 1) % size; arr[rear] = val; dequeue: val = arr[front]; front = (front + 1) % size; The point: modulo arithmetic keeps indices in range; the array must be full when rear catches front (or use the size-1 convention). The understanding of the circular buffer technique.`,
+        title: "Reverse a 4-node list by hand.",
+        body: `1→2→3→4: prev=NULL, cur=1: nxt=2, 1.next=NULL, prev=1, cur=2. cur=2: nxt=3, 2.next=1, prev=2, cur=3. cur=3: nxt=4, 3.next=2, prev=3, cur=4. cur=4: nxt=NULL, 4.next=3, prev=4, cur=NULL. Final: 4→3→2→1. The three-pointer walk is written once on paper for n=4 and never mistyped again; the exam walks through exactly this trace for n=4.`,
+      },
+      {
+        title: "Circular queue fill and wrap.",
+        body: `N = 5; enqueue 1..4 fills slots 0..3; front = 0, rear = 4; enqueue 5: slot 4 (rear=4), rear = 0; full-condition (rear+1 ≡ front mod 5) — rear+1 = 1 ≠ 0 now, not full (sacrifice-slot rule). dequeue: q[0] = 1, front = 1; enqueue 6: slot 0 is free ✓ (front=1, rear=1 — rear+1≡front? 2≡1 no — still has room) ... wait rear=0: enqueue at slot 0, rear becomes 1, rear+1=2 ≠ front=1 ✓ not full. The arithmetic never lies; the exam gives the sequence and asks which index holds the last enqueued item.`,
+      },
+      {
+        title: "Monotonic stack: next greater element [2 1 4 3 5].",
+        body: `Push 2; push 1 (top>1 ok); 4: pop 1 → NGE(1)=4, pop 2 → NGE(2)=4; push 4; 3: push; 5: pop 3 → NGE(3)=5, pop 4 → NGE(4)=5; push 5; end — remaining: 5→-1 (none greater). Output: [4,4,5,5,-1]. The whole technique: every element popped answers a query; the stack stays decreasing; O(n). GATE asks for the output array — mechanical pop-fill with a written stack.`,
       },
     ],
     exam: [
       {
-        question: `The time complexity of inserting an element at the end of a linked list (with a tail pointer) is: (A) O(1) (B) O(n) (C) O(log n) (D) O(1) only for arrays.`,
-        answer: `The correct choice is (A) O(1) with a tail pointer; without a tail pointer it is O(n). The explanation: with a tail pointer, enqueue at the rear is O(1). The answer is (A) with the caveat.`,
+        question:
+          "What is the time complexity of deleting an arbitrary node from a singly linked list given only its pointer?",
+        answer:
+          "O(n) — you must walk from the head to find the predecessor (unlike doubly linked, which is O(1)). The question tests the fundamental gap between DLL and SLL — the reason LRU implementations always choose DLL.",
       },
       {
-        question: `A stack implemented with an array uses which top convention? (A) top = 0 means empty (B) top = -1 means empty (C) top points to the last element and 0 is valid (D) top = -1 is invalid.`,
-        answer: `The correct choice is (B); top = -1 means the stack is empty, and push increments top before storing. The explanation: the conventional array stack uses top = -1 for empty; the element at top is the top. The answer is (B). The depth includes the convention.`,
+        question:
+          "How do you distinguish a full from an empty circular queue without wasting a slot?",
+        answer:
+          "Keep a separate counter of occupancy (n): queue full iff n == N, empty iff n == 0 — or sacrifice one slot (full iff (rear+1) % N == front, empty iff front == rear). GATE accepts either; the count approach avoids the wasted slot every time.",
+      },
+      {
+        question:
+          "What does Floyd's algorithm detect and how does it find the cycle entrance?",
+        answer:
+          "It detects whether a cycle exists (fast/slow pointers meet inside the loop), and the entrance is found by resetting one pointer to head and advancing both one step at a time — their meeting point is the cycle's first node. Every part of this sentence has appeared on a GATE exam.",
+      },
+      {
+        question: "Prefix/postfix: evaluate 3 4 + 5 *.",
+        answer:
+          "15 — push 3, push 4, '+' pops both, push 7; push 5; '*' pops 5 and 7 → 35. Wait: 7*5 = 35, not 15. Reread the string: 3 4 + 5 * = (3+4)*5 = 35. GATE's entire point is tracing operator precedence faithfully; the stack keeps the parenthesization for free.",
       },
     ],
     cheat: [
-      "Stack: LIFO; push/pop/top O(1); array top = -1 empty; linked top pointer.",
-      "Queue: FIFO; enqueue O(1), dequeue O(1) with circular array or front/rear list pointers.",
-      "Linked list: insert/delete at head O(1); at tail O(n) without tail pointer.",
-      "Stack vs queue: LIFO vs FIFO; last in first out vs first in first out.",
-      "Array insert/delete O(n) due to shifting; linked list insert/delete O(1) at head.",
-            "Monotonic stack answers nearest-greater/smaller queries in O(n) total; used for largest-rectangle and stock-span classics.",
-],
-    recap: `Stacks (LIFO) and queues (FIFO) are linear structures with O(1) core operations when implemented correctly; linked lists provide dynamic sequences with O(1) head operations but O(n) random access. The choice of structure follows the access pattern.`,
+      "Stack: push/pop/top O(1); array top=-1 empty; LIFO nesting = brackets/frames/paths.",
+      "Queue: FIFO; circular buffer rear=(rear+1)%N; sacrifice slot or count for full/empty.",
+      "DLL: O(1) delete-given-node; SLL: O(n) for same; LRU = DLL + hash map.",
+      "List surgery rule: save next before free; check head==NULL everywhere.",
+      "Floyd cycle detection: hare/tortoise; meet, reset, walk, meet = entrance.",
+      "Monotonic stack: decreasing stack answers next-greater in O(n); every pop is an answer.",
+      "Array: cache-friendly O(1) index; linked: O(1) insert/delete at cursor, worse locality.",
+    ],
+    recap: `Stacks remember nesting, queues keep order, lists morph in place — because every nested or sequential structure the computer holds obeys one of these three disciplines, the algorithms built on them (parsing, BFS, undo, dependency resolution) become libraries you recognize on sight instead of puzzles you improvise.`,
     code: {
-      title: "C: stack with array using top = -1 convention",
+      title: "Reverse list in place",
       language: "c",
-      code: `int top = -1;\nvoid push(int *arr, int val) { top++; arr[top] = val; }\nint pop(int *arr) { return arr[top--]; }`,
+      code: `Node *p = head, *prev = NULL;\nwhile (p) { Node *n = p->next; p->next = prev; prev = p; p = n; }\nhead = prev;`,
       explanation:
-        "top = -1 is the empty convention; push increments top then stores; pop reads then decrements. The invariant top == -1 iff empty must hold.",
+        "Five lines, every arrow accounted for — the universal SLL reversal.",
     },
     diagram: {
-      title: "Stack and queue implementations",
+      title: "Stack discipline",
       caption:
-        "Stack: LIFO with top pointer or top index; Queue: FIFO with front/rear or circular array.",
-      mermaid: `flowchart TD\n S[Stack LIFO] --> T[top]\n Q[Queue FIFO] --> F[front rear]`,
+        "Push right, pop right — the LIFO invariant that parses every nested language.",
+      mermaid: `flowchart LR\n  P[push] --> S[Top]\n  S --> O[pop]`,
     },
   },
   "gate-cs-programming-and-data-structures-trees-and-binary-search-trees": {
-    intro: `A tree is a hierarchical structure where each node may have multiple children; a binary tree is a tree where each node has at most two children, called the left and right child; a binary search tree (BST) is a binary tree in which the left subtree contains values less than the node and the right subtree contains values greater than the node, enabling efficient search, insertion, and deletion. The subject is the design and analysis of binary trees, the BST invariant, and the properties that govern height and balance. This chapter covers the conceptual foundation of trees, the BST invariant, and the operations, with the C implementation via structs and pointers. The depth is high because the traversal orders and the balance properties are the heart of the subject.`,
-    foundations: `A binary tree is a tree where each node has at most two children, left and right; a binary search tree satisfies the BST property: for every node, all keys in the left subtree are less than the node's key and all keys in the right subtree are greater than the node's key; duplicates may be handled left or right consistently. The height of a tree is the number of edges on the longest path from root to a leaf; the depth of a node is the number of edges from the root; the balance factor is the height of the left subtree minus the height of the right subtree, and a tree is balanced if all nodes have balance factor in {−1, 0, +1}. The deep foundation: the BST invariant is what makes search efficient; the balance condition is what makes it efficient in the worst case.`,
+    intro: `Trees and binary search trees organize keys so that search, insert, and delete all run in logarithmic time — provided the tree stays balanced, which is where the difficulty lives. The subject covers traversals and their exact orders, the BST invariant, height and balance, search/insert/delete mechanics including the three deletion cases, and the complexity contract every exam expects you to state without hesitation.`,
+    foundations: `A binary tree is either empty or a node with a left and a right subtree — recursion all the way down. A binary search tree imposes the invariant: every key in the left subtree is less than the node key, and every key in the right subtree is greater. Traversals: in-order (L, node, R) — yields sorted order from a BST; pre-order (node, L, R) — serialization from the root; post-order (L, R, node) — deletion/evaluation order; level-order (BFS) — row by row. Height h: number of edges on the longest root→leaf path; balanced tree n nodes → h = Θ(log n); degenerate chain h = n−1. AVL: |h_left − h_right| ≤ 1 maintained by rotations; red-black: no path more than 2× longest, n-level amortized O(log n) with cheaper rotations than AVL. Delete in a BST: three cases — no children (remove), one child (splice), two children (replace with in-order successor — min of right subtree).`,
     concepts: [
       {
-        title: "Binary trees and the BST invariant.",
-        body: `A binary tree is a hierarchical structure where each node has at most two children; the children are distinguished as left and right, and the node is the root of a subtree. A binary search tree is a binary tree where the BST invariant holds: for each node, all values in the left subtree are smaller and all in the right are larger; this invariant is what enables O(log n) average search. The lesson: the BST invariant is a global property that must hold for every subtree, not just the immediate children; the examiner must verify the invariant at every level when reasoning about a tree.`,
+        title: "Traversals: what prints when.",
+        body: `In-order: left subtree fully → node → right subtree; on a BST yields ascending order; every BST validation is an in-order sweep with (min,max) bounds. Pre-order: node first — used to copy trees and to derive prefix expressions; post-order: children before node — used to free memory and to evaluate postfix; level-order: queue, visit each level — used for breadth-first rendering, heap printing, and find-if-exists-in-depth. GATE asks either order-of-output questions or count-of-recursive-calls on a given tree (in-order and level-order both = n calls each plus n+1 empty returns — just count). The two-derivation question: given inorder and preorder lists, reconstruct the tree — always possible, always unique — the algorithm: pop preorder for root, split inorder at that root, recurse both halves.`,
       },
       {
-        title: "BST operations: search, insert, delete, and traversals.",
-        body: `Search: compare the target with the current node; if less, go left; if greater, go right; if equal, found; if null, not found. Insert: traverse to the appropriate null position and attach a new node; maintain the invariant. Delete: three cases — the node is a leaf (remove), has one child (replace with child), or has two children (replace with in-order successor, which is the smallest value in the right subtree, then delete that successor). Traversals: in-order (left, node, right) gives sorted order; pre-order (node, left, right); post-order (left, right, node). The lesson: in-order traversal of a BST yields sorted values; this is a key exam fact.`,
+        title: "BST search, insert, and the shape guarantee.",
+        body: `Search: compare with node; less → left; greater → right; equal → found; NULL → absent; h comparisons worst-case — Θ(log n) balanced, Θ(n) degenerate (sorted insertions make a chain). Insert: walk to the NULL spot, attach as leaf — same path length; tree grows downward. The invariant does the work: no rebalancing happens in plain BST — the exam always asks what happens after 1,2,3,4,5 inserted in order (a rightward chain, h = 4) and what AVL would do differently (rotate left on the way, Θ(log n) height). Every GATE tree question carries this lesson: plain BST is untrusted unless inserted randomly or balanced.`,
       },
       {
-        title: "Tree height, balance, and AVL trees.",
-        body: `The height of a tree is the length of the longest path from root to leaf; the depth of a node is its distance from the root; the balance factor is the height of the left subtree minus the height of the right subtree, and a tree is balanced if all balance factors are −1, 0, or +1. An AVL tree is a self-balancing BST where the balance factor is maintained at every node; rotations (LL, RR, LR, RL) restore balance after insert/delete. The lesson: the BST average-case O(log n) assumes a balanced tree; the worst case (degenerate, like a linked list) is O(n); AVL and red-black trees are balanced BSTs.`,
+        title: "AVL: rotations and balance factor.",
+        body: `AVL tracks balance factor bf = h(left) − h(right) ∈ {−1,0,1}; violation at bf = ±2 triggers rotation. Four cases: left-left (right rotate), left-right (left-right double), right-left, right-right (left rotate). Rotations preserve in-order and fix height by one level — every AVL paper question: given a sequence, draw the tree after insertion k — execute the insert, detect bf, rotate, redraw; count rotations. Deletion may trigger rotations up the path. AVL = strictly balanced (h ≤ 1.44 log n), search-fast; red-black = loosely balanced (h ≤ 2 log n), write-fast — every DBMS index in the wild is red-black for insert/delete cost; every read-mostly map picks AVL. GATE loves comparing them in one breath: "AVL guarantees h ≤ 1.44 lg(n+2) — red-black guarantees h ≤ 2 lg(n+1)".`,
       },
       {
-        title: "Complexity of tree operations.",
-        body: `Search, insert, delete in a balanced BST: O(log n); in a degenerate BST: O(n). Traversals: in-order visits all n nodes: O(n). Height of a balanced BST: O(log n); height of a degenerate tree: O(n). The lesson: the complexity is driven by height; the examiner must compute heights and understand balance.`,
+        title: "Deletion: the three cases with a full trace.",
+        body: `Delete node z with key k from BST T. Case 1 — no children: splice z out (set parent's pointer NULL). Case 2 — one child (L or R): replace z with that child in the parent link; free z. Case 3 — two children: find successor s = min of right subtree (leftmost of z's right — one pointer walk down); copy s's key into z; delete s (s has at most one child — right child only, by minimality — case 2 applies recursively); freeing s after copying. The subtle rule: never free a node still linked; never traverse into freed memory; the parent handles the last link. GATE trace: delete 20 from a sample tree — walk the three cases, verify the in-order sequence unchanged: the single correctness check they all pass is that in-order output is preserved.`,
+      },
+      {
+        title: "Height, nodes, and asymptotics by hand.",
+        body: `Full complete binary tree with h levels: 2^(h+1) − 1 nodes (levels counted from 0: levels 0..h → sum = 2^(h+1) − 1); n nodes ⇒ h = Θ(log n). Degenerate chain: n nodes ⇒ h = n−1. Insert k keys randomly ⇒ expected height ≈ 2.99 log n — the reason plain BST is "fine in expectation, terrible in adversary". GATE: "a BST has 1000 nodes, worst-case height?" → 999; "best case?" → 9 (2^{10} = 1024) ; "expected with random insert" → ~log₂ 1000 ≈ 10 (up to constant). The three-number answer triad shows up on nearly every paper.`,
       },
     ],
     worked: [
       {
-        title: "Trace BST insert and search on a small tree.",
-        body: `Insert 50, 30, 70, 20, 40, 60, 80; search 40. The tree builds; search descends: 40 < 50 go right; 40 > 30 go right; 40 > 40 equal found. The understanding: the search path length equals the depth of the node; in-order traversal would give sorted order. The answer: found, depth 2 from root. The lesson: the path taken is determined by comparisons, and the number of comparisons equals the depth.`,
+        title: "In-order reconstruction from lists.",
+        body: `Inorder: D B E A F C; preorder: A B D E C F. Root = A (first of preorder). Split inorder at A: left = D B E, right = F C. Preorder for left subtree = B D E → root B; B's inorder D B E → left D, right E. Preorder right = C F → root C; inorder F C → right F. Final: A; A.left = B (B.left = D, B.right = E); A.right = C (C.right = F). The exam wants the tree drawn; this exact algorithm. 30 seconds once rehearsed.`,
+      },
+      {
+        title: "AVL insertion trace: insert 5, 3, 8, 1, 4, 7, 9.",
+        body: `5 → root. 3 → left. 8 → right (balanced). 1 → left of 3 (fine). Insert 4: 4 > 3 → right of 3; now node 3 balance = h(L)=1... h(R)=1 balanced ✓. Insert 7: 7 < 8, left of 8; fine. Insert 9: 9 > 8 → right of 8; node 8 h(L)=1, h(R)=1 ✓; root 5 h(L)=2, h(R)=2 ✓. Tree remains AVL with no rotations — lucky sequence; the exam flips one insertion order to force a rotation; trace both, know the shape.`,
+      },
+      {
+        title: "Delete 8 from this BST.",
+        body: `Tree: 5 root, left 3 (1,4), right 8 (7, 9). Delete 8 — two children case: successor of 8 = min of right subtree (9's subtree is just 9 — 9 has no left child → successor = 9). Copy 9 into the node formerly 8 (value becomes 9, still rooted right of 5); delete old 9 (leaf — case 1). Result tree in-order: 1 3 4 5 7 9 — unchanged before removal (8 removed, 9 promoted) ✓. The certification test every tree question must pass: in-order unchanged except the deleted key.`,
+      },
+      {
+        title: "Count of recursive calls in traversal.",
+        body: `For a tree with n internal nodes and n+1 conceptual empty leaves, every traversal template (in/pre/post) performs 2n+1 calls total (each call either returns immediately on NULL or recurses into both children, visiting itself and empty pointers). Level-order BFS visits n nodes exactly once (n calls). GATE asks "how many times is the traversal function invoked" — 2n+1 for DFS templates — every time, without exception.`,
       },
     ],
     exam: [
       {
-        question: `In a binary search tree, in-order traversal yields: (A) unsorted values (B) values in sorted order (C) reverse sorted (D) insertion order.`,
-        answer: `The correct choice is (B); in-order traversal (left, node, right) of a BST yields the values in sorted order. The explanation: because of the BST invariant, the left subtree contains smaller values and the right larger, so in-order visits them in ascending order. The answer is (B). The depth includes the convention.`,
+        question: "What does in-order traversal of a BST always produce?",
+        answer:
+          "Ascending sorted sequence — the left subtree fully, the node, the right subtree, recursively. This is THE one property with infinite reuse on these exams.",
       },
       {
-        question: `The height of a degenerate BST built from sorted input of n elements is: (A) O(log n) (B) O(1) (C) O(n) (D) O(n log n).`,
-        answer: `The correct choice is (C) O(n); a degenerate BST built from sorted input becomes a linked-list-like structure with height n, so search is O(n). The explanation: without balancing, the BST can degrade to a chain; the AVL/red-black trees prevent this. The answer is (C). The depth includes the balance discussion.`,
+        question:
+          "What is the worst-case height of a BST built by inserting n sorted keys with no balancing?",
+        answer:
+          "n − 1 — a rightward chain (every insert descends to the only available leaf slot). The exam asks this exactly half the time; also its cousin: average-case with random keys ≈ 2.99 lg n; balanced AVL caps at 1.44 lg(n+2).",
+      },
+      {
+        question:
+          "Describe the three cases of BST deletion in order of complexity.",
+        answer:
+          "Leaf: splice out; one child: splice in the child; two children: promote the in-order successor (min of right subtree) into the deleted node and delete the successor by the one-child rule. The successor can never have two children — it is the leftmost of its subtree, so it has no left child.",
+      },
+      {
+        question:
+          "Given in-order D B E A F C and pre-order A B D E C F, reconstruct the tree root.",
+        answer:
+          "Root = A (first in pre-order). Left subtree = nodes D B E (in-order before A); right = F C. Recursing: left root B (first of pre-order restricted to the left); right root C. Unique tree every time this pair of orders is given — in-order + pre-order is a complete specification.",
       },
     ],
     cheat: [
-      "BST invariant: left < node < right; in-order gives sorted order.",
-      "Balanced BST height O(log n); degenerate height O(n); AVL/red-black maintain balance.",
-      "Search/insert/delete in balanced BST O(log n); traversals O(n).",
-      "Delete with two children: replace with in-order successor (min of right subtree).",
-      "Balance factor = height(left) − height(right); balanced if in {−1, 0, +1}.",
-            "In-order traversal visits keys sorted; validate a BST by carrying (min, max) bounds down the recursion, not by comparing parents alone.",
-],
-    recap: `Binary search trees store ordered values in a hierarchical structure satisfying the BST invariant, enabling O(log n) search in balanced trees; traversals produce sorted (in-order) or other orders; balance ensures worst-case efficiency.`,
+      "In-order on BST = sorted; pre-order = root-first copy; post-order = children-first destroy.",
+      "Insert n sorted keys into plain BST = chain, h = n−1; AVL caps 1.44 lg n.",
+      "BF(n) = h(L) − h(R); violation at ±2; four rotation cases restore it.",
+      "Delete: leaf splice; one child link; two children → successor copy, successor delete.",
+      "2n+1 recursive calls for any DFS traversal on a tree with n internal nodes.",
+      "Inorder+preorder unique tree; inorder alone does not uniquely determine it.",
+      "n nodes best case h = ⌈lg(n+1)⌉ − 1; worst n−1; expected random ≈ 2.99 lg n.",
+    ],
+    recap: `Trees give every key its position in a hierarchy: the BST invariant directs every search to a single path, the traversals enumerate the hierarchy in fixed orders, and balancing restores the logarithmic contract when inserts conspire against it — because every tree question on the exam asks which of these three properties you actually noticed.`,
     code: {
-      title: "C: BST node structure and insert",
-      language: "c",
-      code: `struct Node { int data; struct Node *left; struct Node *right; };\nstruct Node *insert(struct Node *root, int val) { /* recursive insert maintaining BST invariant */ }`,
+      title: "In-order rebuild",
+      language: "text",
+      code: "root = first(preorder); left_inorder = split_at(root, inorder); right_inorder = rest; recurse(left); recurse(right)",
       explanation:
-        "The BST node has data, left, and right pointers; insert maintains the invariant that left < node < right; in-order traversal gives sorted order.",
+        "The complete reconstruction algorithm in one line — GATE draws this from a sketch.",
     },
     diagram: {
-      title: "BST and in-order traversal",
+      title: "BST search path",
       caption:
-        "BST invariant: left subtree < node < right subtree; in-order gives sorted output.",
-      mermaid: `flowchart TD\n N[Node] --> L[Left subtree < N]\n N --> R[Right subtree > N]\n L --> I[In-order: L N R]`,
+        "One path, halved space each step — the Θ(log n) whisper every tree interview asks for.",
+      mermaid: `flowchart TD\n  R[Root: 5] --> L{key < 5?}\n  L -->|yes| Left[Left subtree]\n  L -->|no| Right[Right subtree]`,
     },
   },
   "gate-cs-programming-and-data-structures-heaps-and-priority-queues": {
-    intro: `A heap is a specialized tree-based structure that satisfies the heap property, enabling efficient access to the maximum or minimum element; a priority queue is an abstract structure that supports insert and extract-max (or extract-min) efficiently. The heap is typically implemented as a complete binary tree stored in an array, where for a max-heap each parent is greater than or equal to its children, and for a min-heap each parent is less than or equal to its children; the root is the maximum (or minimum). The subject is the heap property, the array-based implementation, the operations (insert, extract, heapify), and the relationship to priority queues and sorting algorithms (heap sort). The depth is high because the array-based indexing and the sift-up/sift-down operations are intricate and exam-relevant.`,
-    foundations: `A heap is a complete binary tree satisfying the heap property (max-heap: parent ≥ children; min-heap: parent ≤ children); the array representation maps heap indices directly. The deep foundation: the complete binary tree property allows the array representation; the heap property defines the ordering constraint.`,
+    intro: `Heaps and priority queues organize by priority rather than key order: the highest- or lowest-priority element sits at the root, and dequeue always yields it — in O(log n), guaranteed, every time. The subject covers the array-mapped complete binary tree, the heap invariant, build-heap, extract/insert operations, heap sort, and the exam's perennial comparisons: heap versus sorted array, heap versus balanced BST, heap versus Fibonacci heap.`,
+    foundations: `A binary (min|max)-heap is a complete binary tree (every level full except possibly the last, filled left to right) satisfying parent ≤ children (min-heap) or ≥ (max-heap). Array mapping with index 0: children of i are 2i+1 and 2i+2; parent is (i−1)/2; leaves are the second half of the array — the one fact every GATE question tests. Operations: insert — append at the end, sift up (bubble up) until parent ≤ child ok; extract-min — swap root with last element, shrink, sift down; peek min — array[0] O(1). Build-heap from array: bottom-up sift-down from (n/2 − 1) to 0 — Θ(n) total, not Θ(n log n) (the exam loves this). Heap sort: build max-heap, swap root with last, shrink, sift down repeatedly — Θ(n log n) in-place-ish, comparison sort, unstable. Priority queue = heap — supports enqueue/dequeue O(log n); specialized: d-ary heaps, Fibonacci heaps (dequeue/decrease-key O(1) amortized/O(log n) — Dijkstra's speed-up).`,
     concepts: [
       {
-        title: "Heap property and array representation.",
-        body: `Max-heap: for every node, value ≥ values of its children; root is the maximum; min-heap: parent ≤ children; root is minimum. Array representation: children of index i are 2i+1 and 2i+2; parent of i is floor((i−1)/2). The lesson: the array representation preserves the complete binary tree structure; the heap property is the ordering constraint. The understanding of the index formulas is essential for implementing operations.`,
+        title: "Array mapping: parent, children, heapify, and the index law.",
+        body: `int h[N]; int n = 0; — heap size separate from array capacity. Children of index i: 2i+1, 2i+2; parent (i−1)/2 — every GATE question hands you one of these three; memorize cold. Leaves live at indices floor(n/2) onward (n/2 to n−1) — heapify starts at index (n/2 − 1) and works down to 0, calling sift-down on each — each subtree is heapified bottom-up so the invariant holds everywhere when we reach the root. Sift-down: compare with both children, swap with the smaller (min-heap), repeat — depth ≤ h = Θ(log n). Sift-up: compare with parent, swap while smaller — depth Θ(log n) worst. GATE asks for the array map after k inserts — write n and the mapping, simulate; never guess.`,
       },
       {
-        title: "Heap operations: insert, extract, heapify, build-heap.",
-        body: `Insert: add element at the end of the array and sift up (compare with parent, swap if violating). Extract-max: swap root (max) with last element, remove last, sift down (compare with children, swap with the larger child if needed). Build-heap: start from the last non-leaf node and sift down to build a heap in O(n) time (bottom-up heapify). The lesson: sift-up and sift-down are the core operations; extract-max is the O(log n) operation used by heap sort.`,
+        title: "Extract-min and insert: full traces.",
+        body: `Insert 9 into heap after {3, 7, 10, 12, 18, 24}: append 9 at index 6 → [3,7,10,12,18,24,9]; parent(6) = 2 → 10 > 9 → swap → [3,7,9,12,18,24,10]; parent(2) = 0 → 3 < 9 stop. Result [3,7,9,...]. Extract-min from heap [1,4,7,9,11,13,24]: min = 1; replace root with last (24), shrink to 6 elements → [24,4,7,9,11,13]; sift-down: children 4,7 → smaller is 4; swap → [4,24,7,9,11,13]; children of 1: 9,11 → smaller 9; swap → [4,9,7,24,11,13]; children of 3: 24,11? index 3 = 24, children 7,8 — none; stop. Result [4,9,7,24,11,13]. GATE asks for the array after extract — simulate pointer to pointer, every time.`,
       },
       {
-        title: "Heap sort and priority queues.",
-        body: `Heap sort: build a max-heap, then repeatedly extract-max, placing elements in sorted order; O(n log n) time, O(1) auxiliary space. A priority queue is an abstract structure supporting insert and extract-max/min; a heap is the natural implementation, giving O(log n) insert and extract. The lesson: the heap provides the efficient priority queue implementation; the priority queue is the conceptual interface.`,
+        title: "Build-heap in Θ(n): why the sum wins.",
+        body: `Insert n elements one at a time = Θ(n log n). Bottom-up heapify is Θ(n): each level does work proportional to its height — number of nodes at height k is ≈ n/2^(k+1), work per node = k, sum k·n/2^(k+1) over k = Θ(n) by the geometric series identity. Every GATE paper asks: "time to build a heap from an unsorted array?" — answer: Θ(n). The exam's companion question: "why is it not Θ(n log n)?" — answer: because most nodes are near the leaves with tiny heights; the sum telescopes. Know this one cold — it is free marks.`,
       },
       {
-        title: "Complexity of heap operations.",
-        body: `Insert: O(log n); extract-max/min: O(log n); build-heap: O(n); search: O(n) (no ordering for arbitrary search). The lesson: the heap gives O(log n) for insert/extract, which is the key advantage over a sorted array (O(n) insert) and over an unsorted array (O(n) extract).`,
+        title: "Heap sort and the n log n guarantee.",
+        body: `Build max-heap (Θ(n)); repeatedly swap root (max) with last index n−1, shrink heap by one, sift-down from root — every extraction is Θ(log n), n extractions = Θ(n log n); the swapped region at the end is the sorted tail — in-place, no auxiliary array, comparison sort. Unstable (sifts leapfrog each other). Every sorting algorithm exam asks its stability and worst-case: heapsort = unstable, Θ(n log n) every case — precisely why library sorts prefer introsort (quick+insert+heap). GATE: "which of the given is in-place and guaranteed n log n?" → heapsort — the usual answer intended.`,
+      },
+      {
+        title: "Priority queue patterns: K largest, merge K lists, median.",
+        body: `K largest from stream: keep a min-heap of size k — O(n log k), space k. Merging k sorted lists: heap of (head pointer, value), pop min, push next from same list — O(n log k). Median from stream: two heaps (max-heap lower half, min-heap upper half) balanced ±1 — O(log n) per insert, O(1) median. Every "design a data structure" GATE question this decade recycles one of these three patterns. Know the heap as the universal priority machine — any task "always give me the smallest unprocessed item" is one.`,
       },
     ],
     worked: [
       {
-        title: "Trace insert and extract on a small max-heap array.",
-        body: `Heap: [50, 30, 40, 20, 10] as a max-heap; insert 35: add at end → [50, 30, 40, 20, 10, 35]; sift up: compare 35 with parent (index (5−1)/2 = 2 → value 40); 35 < 40, no swap; if inserting a larger value, swap. Extract-max: swap root 50 with last 35 → [35, 30, 40, 20, 10]; remove last; sift down. The understanding of the sift operations is the subject. The worked example should trace a concrete small heap.`,
+        title: "Build heap [4 1 3 2 16 9 10] from bottom up.",
+        body: `n = 7; start at index 2 (value 3): children idx 5 (9), idx 6 (10) → 3 ≤ 9 fine. Index 1 (value 1): children idx 3 (2), idx 4 (16) → min 1, fine. Index 0 (value 4): children idx 1 (1), idx 2 (3) → min 1; swap with idx 1 → [1,4,3,2,16,9,10]; continue sift-down at idx 1: children idx 3 (2), idx 4 (16) → min 2; swap 4 and 2 → [1,2,3,4,16,9,10]; children of idx 3: idx 7 — beyond n → stop. Min-heap built in Θ(n) ✓. GATE asks for the final array; this exact trace sequence.`,
+      },
+      {
+        title: "Extract two mins from heap [1 2 3 4 16 9 10].",
+        body: `Extract 1: root = last (10), n = 6 → [10,2,3,4,16,9]; sift-down: min(2,3)=2 (idx1) swap → [2,10,3,4,16,9]; children of idx1: idx3 (4), idx4 (16) → min 4 swap → [2,4,3,10,16,9]; idx3 children idx7 — stop. Result [2,4,3,10,16,9]. Extract 2: root = last (9) → [9,4,3,10,16]; sift-down: min(4,3)=3 swap → [3,4,9,10,16]; children of idx2: idx5 — beyond 5? n=5 → idx5 invalid → stop. Result [3,4,9,10,16]. The two-step trace is the entire skill the exam tests.`,
+      },
+      {
+        title: "Heapsort pass — swap positions 0 and n−1.",
+        body: `Max-heap [9,8,6,4,2,7,5,1]: swap idx 0 (9) with idx 7 (1) → [1,8,6,4,2,7,5,9] (sorted tail [9]); sift-down root: 1→ children 8,6 → swap 8 → [8,1,6,4,2,7,5,9]; idx 1 (1): children idx 3 (4), idx 4 (2) → swap 4 → [8,4,6,1,2,7,5,9]; idx 3 (1): children idx 7 (5→now beyond new n=7) invalid → stop. Continue swapping idx 0 with idx 6 next... every pass places one element in the tail. Final: ascending — the Θ(n log n) certificate behind the words "in-place sort".`,
+      },
+      {
+        title: "K largest from [3,1,4,1,5,9,2,6], k = 3.",
+        body: `Min-heap eery: insert 3,1,4 → [1,3,4]; insert 1 → full, pop replaces root? Algorithm: keep size k; push 1 → [1,3,4,1]? Implementation: maintain heap size k with pop when size exceeds k. Stream: push 3,1,4 → heap {1,3,4}; next 1 → size 3+1 → pop min (1) → {1,3,4} (same); push 5 → pop min(1) → {3,4,5}; push 9 → pop min(3) → {4,5,9}; push 2 → pop min(4) → {2,5,9}? pop removes min=4 from {4,5,9,2} = {2,5,9} — wait: push 2 → {2,4,5,9}, pop min → {4,5,9}; push 6 → push {4,5,9,6} → pop min(4) → {5,6,9}. K largest = [5,6,9] ✓. The pattern: O(n log k) always beats O(n log n) for k ≪ n.`,
       },
     ],
     exam: [
       {
-        question: `The time complexity of building a heap using the bottom-up heapify approach is: (A) O(n log n) (B) O(n) (C) O(n²) (D) O(log n).`,
-        answer: `The correct choice is (B) O(n); bottom-up heapify builds in linear time by sifting down from the last non-leaf node. The explanation: the sum of work across all levels is linear. The answer is (B). The depth includes the proof sketch.`,
+        question:
+          "What is the time to build a min-heap from an unsorted array of n elements using bottom-up heapify?",
+        answer:
+          "Θ(n) — the geometric series of per-level work sums to a constant times n (number of nodes at height h is n/2^(h+1), work per node is h, total is Θ(n)). The naive insert-at-a-time approach costs Θ(n log n); knowing which is which is the entire exam point.",
       },
       {
-        question: `In a max-heap implemented as an array, the children of the node at index i are at: (A) 2i and 2i+1 (B) 2i+1 and 2i+2 (C) i+1 and i+2 (D) i/2 and i/2+1.`,
-        answer: `The correct choice is (B) 2i+1 and 2i+2 (0-based). The explanation: children of i are at 2i+1 and 2i+2; parent of i is floor((i−1)/2). The answer is (B). The depth includes the index formulas.`,
+        question:
+          "What are the child index formulas in a zero-based binary heap?",
+        answer:
+          "Children of i: 2i+1 (left), 2i+2 (right); parent: (i−1)/2. Every heap question is one hop away from these three lines — memorize them or lose the mark.",
+      },
+      {
+        question:
+          "Why is heapsort typically slower than quicksort in practice?",
+        answer:
+          "Poor cache behavior and constant factor — heap accesses jump around memory (parent↔child hops) with terrible locality, whereas quicksort scans contiguously; heapsort is in-place and has guaranteed O(n log n), which is why introsort uses it as the fallback inside quicksort rather than as the primary.",
+      },
+      {
+        question:
+          "What does extract-min/pop do to the heap structure before returning the minimum?",
+        answer:
+          "It moves the LAST element to the root, shrinks the heap by one, and sifts that root down (swap with smaller child, repeat) until the invariant holds — Θ(log n) every call. The two moves (swap with last, sift-down) are the complete answer; forgetting the sift-down leaves the heap corrupt.",
       },
     ],
     cheat: [
-      "Max-heap: parent ≥ children; min-heap: parent ≤ children; array representation via complete binary tree.",
-      "Children of i: 2i+1, 2i+2; parent of i: floor((i−1)/2).",
-      "Insert: append and sift up; Extract-max: swap root with last, remove, sift down; Build-heap: bottom-up heapify O(n).",
-      "Heap sort: build max-heap, extract-max repeatedly, O(n log n).",
-      "Priority queue: heap gives O(log n) insert and extract-max/min.",
-            "K smallest elements: keep a size-k max-heap as you stream; O(n log k) time, O(k) space.",
-],
-    recap: `Heaps are complete binary trees satisfying the heap property, stored in arrays with O(log n) insert and extract operations; heap sort and priority queues are the primary applications.`,
+      "Children of i: 2i+1, 2i+2; parent (i−1)/2; leaves start at index ⌊n/2⌋.",
+      "Peek min = array[0] O(1); insert = append + sift-up; extract-min = swap-with-last + sift-down.",
+      "Bottom-up heapify = Θ(n) (not Θ(n log n)) via geometric series over heights.",
+      "Heap sort: build max-heap, extract max to tail, sift-down — Θ(n log n), unstable, in-place.",
+      "K largest in a stream: size-k min-heap — O(n log k).",
+      "Two heaps (max lower half, min upper half) track a running median FEO(1).",
+      "Heap ≠ BST: priority order only, search for arbitrary keys is Θ(n).",
+    ],
+    recap: `Heaps encode priority as near-order in an array-shaped complete binary tree: root always wins, extraction costs one path to the leaf, construction from scratch costs linear time — because the exam knows you know the index formulas, it tests whether you saw the Θ(n) heapify and the sift directions before touching the keyboard.`,
     code: {
-      title: "C: max-heap array operations (sift up and sift down)",
-      language: "c",
-      code: `void sift_up(int *h, int i) { while (i > 0 && h[(i-1)/2] < h[i]) { swap(h[i], h[(i-1)/2]); i = (i-1)/2; } }\nvoid sift_down(int *h, int n, int i) { int largest = i; int l = 2*i+1, r = 2*i+2; if (l < n && h[l] > h[largest]) largest = l; if (r < n && h[r] > h[largest]) largest = r; if (largest != i) { swap(h[i], h[largest]); sift_down(h, n, largest); } }`,
+      title: "Sift-down pseudocode",
+      language: "text",
+      code: "while child <= n: pick smaller child; if child < node swap; else break; node = child",
       explanation:
-        "Sift up moves an element toward the root while the heap property is violated; sift down moves a displaced element toward a leaf while preserving the heap property. Both run in O(log n).",
+        "The entire extract-min tail in four lines — the exam's favorite trace.",
     },
     diagram: {
-      title: "Max-heap array representation",
+      title: "Heap as array",
       caption:
-        "Complete binary tree in array; parent ≥ children; root is maximum.",
-      mermaid: `flowchart TD\n R[root max] --> C1[Child 2i+1]\n R --> C2[Child 2i+2]`,
+        "Levels fill left-to-right; index teleportation replaces pointer chasing.",
+      mermaid: `flowchart LR\n  A[Array slots] --> B[Implicit complete tree]`,
     },
   },
   "gate-cs-programming-and-data-structures-hashing": {
-    intro: `A hash table (hash map) is a data structure that maps keys to values using a hash function that converts a key into an index into an underlying array, resolving collisions by probing or chaining. The subject is the hash function, the hash table structure, collision resolution strategies, and the analysis of expected-time complexity. This chapter covers the design of hash tables, the mathematics of hashing (modular arithmetic, polynomial hashing), collision handling, and the practical implications for programming and for algorithms. The depth is high because the choice of hash function and the collision strategy materially affect performance, and the exam asks about load factor, collision resolution, and expected complexity.`,
-    foundations: `A hash table uses a hash function h(key) to compute an index into an array of buckets; the index is h(key) mod table_size (or via a good hash). The deep foundation: the hash function must distribute keys uniformly; collisions occur when two keys map to the same index; collision resolution strategies handle it.`,
+    intro: `Hashing turns keys into direct addresses: a hash function spreads keys across an index range, buckets hold the overflow, and average O(1) lookup, insert, and delete become not just possible but universal — because GATE examines the one subject where collisions are more important than keys, the material covers hash functions, collision resolution (chaining and open addressing), load factor, rehashing, and deletion semantics.`,
+    foundations: `A hash table: array of size m; hash function h: key → [0, m) — integer keys: h(k) = k mod m (bad if m power of 2 and keys share low bits) or k * 2654435761 mod 2^32 (Knuth multiplicative); strings: polynomial rolling hash (Σ c_i × p^i mod m) — collisions bound by size vs population. Collision resolution: chaining — each slot holds a linked list (or dynamic array) of colliding keys; open addressing — collisions probe alternate slots: linear probing (h + i), quadratic (h + i²), double hashing (h + i·h2(k)). Load factor α = n/m; chaining average probes ≈ 1 + α/2 (unsuccessful 1 + α); open addressing degenerates as α → 1 (linear probing: successful ≈ ½(1 + 1/(1−α)), unsuccessful ≈ ½(1 + 1/(1−α)²)). Rehash (resize m, rebuild) when α exceeds threshold (usually 0.7–0.75). Deletion with open addressing requires tombstones — empty alone breaks probe chains.`,
     concepts: [
       {
-        title: "Hash functions and the hash table structure.",
-        body: `A hash function maps a key to an integer; for an integer key, common functions are the identity or multiplicative hashing (h(k) = floor(m × frac(c × k)) for some constant c); for strings, polynomial hashing h(s) = Σ (ord(s[i]) × p^i) mod m. The hash table has an array of buckets; each bucket may hold a linked list (chaining) or be part of an open addressing array; the index is h(key) mod size. The lesson: the hash function must be deterministic and uniform; the choice affects collisions and performance.`,
+        title: "Hash functions: division, multiplication, polynomial.",
+        body: `Division h(k) = k mod m — simplest; choose m odd or prime to spread residues; bad when keys have common factors with m. Multiplication h(k) = floor(m · frac(k·A)), A = (√5 − 1)/2 ≈ 0.618 (Knuth) — order-independent, strong for sequential keys. Strings: polynomial hash h = (s[0]·p^{L−1} + s[1]·p^{L−2} + ... + s[L−1]) mod p (Rabin–Karp) — rolling hash update in O(1) per window slide; p = 31/37/911 prime choices dominate exam questions; modulo large primes (10^9+7) for adversarial robustness. GATE asks: compute h for a short string with given coefficients and modulus — plug in and compute, never guess. Also: k mod 2^w on signed ranges — negative keys wrap (mod of negative is negative in C!) — every examination of C hashing paper wants (k % m + m) % m.
+`,
       },
       {
-        title: "Collision resolution: chaining and open addressing.",
-        body: `Chaining: each bucket holds a linked list of entries with the same hash; insert adds to the list head; search walks the list; delete removes from the list; O(1) average for each with small lists. Open addressing: the table itself is an array of entries; on collision, probe the next slot (linear probing: index = (hash + i) mod size; quadratic: (hash + i²) mod size; double hashing: apply second hash to get step size); search and insert probe until empty or match; deletion requires tombstones or backward-shift deletion. The lesson: chaining is simpler and preferred for most cases; open addressing can be more space-efficient but deletion is complex.`,
+        title: "Chaining: lists in every bucket.",
+        body: `Each of m slots holds a head pointer (NULL initially). Insert: compute index, walk bucket list, prepend (O(1) with head insertion — duplicates policy up to you). Search: hash → walk that one list only. Expected bucket length = α; with α ≤ 1, expected probes ≤ 2. Deletion: unlink with predecessor tracking (or sentinel head). Chaining tolerates α > 1 gracefully — grows linearly, never needs resizing for correctness (only performance). GATE asks: average search cost in a chained table (answer: O(1 + α)), and what happens with keys mapping to one bucket (O(n) — the degenerate exam case).`,
       },
       {
-        title: "Load factor and expected complexity.",
-        body: `Load factor α = n / b (number of entries / bucket array capacity); average O(1) insert/search/delete requires α < 1; at α = 1 performance degrades; rehash when load factor exceeds a threshold (e.g., 0.75) doubles the bucket array. The lesson: the load factor is the key performance parameter; rehashing is the cost of growth.`,
+        title: "Open addressing: probing and cascading.",
+        body: `Insert: probe h(k), h(k)+1, h(k)+2, ... (linear) until empty slot; linear probing clusters — long runs of occupied slots degrade everyone after the cluster grows; quadratic probes h + i² break primary clustering but not secondary; double hashing h + i·g(k) uses a second independent hash for step size — near-random spread, no clustering in practice. Every insertion may probe the whole table in the worst case — empty slots required or infinite loop; deleted slots must be tombstones (a marked occupied-but-dead sentinel) for correct probe termination. GATE: trace insert sequence for keys into a table of size m — simulate probe walks exactly as examined; cluster questions ask "which slots are now clustered" — write them.
+`,
       },
       {
-        title: "Hash-based algorithms and applications.",
-        body: `Hash tables underpin dictionaries, sets, memoization, caching, and many algorithms (e.g., Rabin-Karp string matching uses hashing; hashing for duplicate detection, frequency counting). The lesson: hashing is the foundation of many data structures and algorithms; understanding collision and load factor is essential.`,
+        title: "Deletion and tombstones.",
+        body: `Chaining: unlink node — done cleanly. Open addressing: you cannot simply mark EMPTY — searches rely on CONTIGUITY from h(k); every slot between h(k) and a found key is probed in order, and an EMPTY in between means "key not present" — a tombstone (DELETED sentinel) must instead mark the slot as occupied-for-probing but void-for-data; searches skip tombstones but continue; inserts may reuse tombstones. Tombstones accumulate — beyond a density threshold rehash removes them entirely. GATE asks precisely this: "why can't you just mark the slot empty after deletion?" — answer is the probe-chain argument above, in one or two sentences.
+`,
+      },
+      {
+        title: "Load factor, rehashing, and the resize contract.",
+        body: `α = n/m — the dial on everything: chained expected probes saturates at 1 + α/2; open addressing rises steeply as α → 1 (linear: ≈ ½(1+1/(1−α)²)). Rehash: allocate 2m table, recompute every key's index (hash functions don't rescale — they re-modulate), free old. Cost amortizes — like doubling arrays — O(1) amortized per insert; never shrinks (hysteresis). GATE: "when should you rehash" (α > 0.7 for open addressing; any α for chaining works up to large factors) and "how much does rehashing cost" (Θ(n) work each doubling; amortized O(1)). The exam loves the doubling argument for amortization.
+`,
       },
     ],
     worked: [
       {
+        title: "CHAINED: h(k) = k mod 7, insert 37, 21, 30, 14, 25, 32, 18.",
+        body: `37 mod 7 = 2; 21 mod 7 = 0; 30 mod 7 = 2 (bucket 2: 37→30 prepended as list 30→37); 14 mod 7 = 0 (0: 21→14... prepend 14: 14→21); 25 mod 7 = 4; 32 mod 7 = 4 (4: 25→32 → prepend 32: 32→25); 18 mod 7 = 4 (4: prepend 18 → 18→32→25). Table: 0:[14,21], 2:[30,37], 4:[18,32,25]; search 32: bucket 4, walk 18,32 — found in 2 probes; delete 32: bucket 4 becomes [18,25] (order changes). The exam wants the final table layout — straight simulation.
+`,
+      },
+      {
         title:
-          "Trace a hash table insert with chaining and a load factor calculation.",
-        body: `Bucket array of size 10; insert keys [10, 21, 32, 43]; hash function h(k) = k mod 10; keys map to buckets 0, 1, 2, 3; no collision; load factor = 4/10 = 0.4. The understanding: load factor and collision behavior. The worked example should show a collision and resolution.`,
+          "OPEN (linear probe): h(k) = k mod 7, insert 37, 21, 30, 14, 25, 32, 18.",
+        body: `37 → 2; 21 → 0; 30 → 2, occupied by 37 → probe 3 (empty) place at 3; 14 → 0 occupied → 1 (empty) place; 25 → 4 (empty) place; 32 → 4 occupied → 5 (empty) place; 18 → 4 occupied → 5 occupied → 6 (empty) place. Final: 0:21, 1:14, 2:37, 3:30, 4:25, 5:32, 6:18. Search 32: 4 occupied(≠32), 5 → found. Search 19: 4 occupied, 5 occupied, 6 occupied, 0 occupied, 1 occupied, 0... probes cycle mod 7 — all full, 0 slots free? Table full (7 keys, 7 slots) — search for absent key must probe forever without an empty? With all-full table, termination requires recognizing full-table condition — the exam includes this edge case exactly to test that point.
+`,
+      },
+      {
+        title: "Polynomial hash of 'cat', p = 31, mod 101.",
+        body: `c=99, a=97, t=116. h = 99·31² + 97·31 + 116 = 99·961 + 3007 + 116 = 95139 + 3123 = 98262; mod 101: 101*972 = 98172 → 98262 − 98172 = 90. GATE asks for the number given a formula once — the answer 90 comes from plugging in; every string question recycles this mechanic. Collisions at 101 buckets are expected — mention only if asked.
+`,
+      },
+      {
+        title: "Rehash math: m doubles at α > 0.7.",
+        body: `Table size 8, threshold 8 entries (0.75). Insert 9th → reallocate 16; reinsert all 9 with new hash k mod 16; amortized cost of the 9th insert = (9×work + 16×work(? insertion touch)) = amortized Θ(1) per insert overall. The exam asks for "why rehash is amortized O(1)" — the doubling argument: each key is moved O(log n) times total, and the geometric sum of moves stays linear.
+`,
       },
     ],
     exam: [
       {
-        question: `In a hash table using separate chaining, the average time complexity for insert and search is: (A) O(1) (B) O(log n) (C) O(n) (D) O(n²).`,
-        answer: `The correct choice is (A) O(1) average, provided the load factor is suitably low; worst case is O(n) due to collisions. The explanation: average O(1) for insert/search/delete in a hash table with chaining and reasonable load factor; worst case O(n) when all keys collide. The answer is (A). The depth includes the worst-case discussion.`,
+        question:
+          "What is the expected search time in a chained hash table with load factor α?",
+        answer:
+          "Θ(1 + α) — one hash computation plus walking a bucket of expected length α (average successful search ≈ 1 + α/2). With α kept around or below 1, every operation is constant time on average.",
       },
       {
-        question: `A hash table has n entries and a bucket array of size b; the load factor α is: (A) n/b (B) b/n (C) n×b (D) h(key).`,
-        answer: `The correct choice is (A) n/b; the load factor is the ratio of entries to bucket capacity. The explanation: α = n/b; a good hash table keeps α < 1; rehashing doubles the array when α exceeds a threshold. The answer is (A). The depth includes the rehashing discussion.`,
+        question: "Why does linear probing degrade as the table fills?",
+        answer:
+          "Primary clustering — consecutive occupied slots form runs, and each new key's probe sequence lands in or extends a cluster, making late keys probe through ever-longer clusters. Successful search ≈ ½(1 + 1/(1−α)); unsuccessful ≈ ½(1 + 1/(1−α)²). Quadratic probing and double hashing exist precisely to fight this.",
+      },
+      {
+        question:
+          "What must replace the empty sentinel after deletion in open addressing?",
+        answer:
+          "A tombstone (DELETED) marker — inserted slots remain 'occupied for probing' so probe sequences from other keys terminate correctly, but the tombstone's payload is void; inserts may reuse it. Marking EMPTY breaks the contiguity invariant and orphaned keys become unfindable.",
+      },
+      {
+        question:
+          "When should you rehash in a chained table vs an open-addressed one?",
+        answer:
+          "Open addressing: rehash as α approaches 0.7–0.8 (performance collapses at 1.0). Chaining: correct behavior never requires resize (lists grow), but expected O(1) ops demand α ≪ large — resize when buckets outgrow cache-friendly lengths (every few doublings); the exam asks the asymptotic, not the tuning.",
       },
     ],
     cheat: [
-      "Hash table: array of buckets; hash function maps key to index; modulo for bucket.",
-      "Chaining: linked list per bucket; open addressing: probing (linear, quadratic, double hash).",
-      "Load factor α = n/b; average O(1) operations when α < 1; rehash at threshold.",
-      "Hash function examples: integer identity/multiplicative; string polynomial hashing.",
-      "Worst case O(n) when collisions degrade; good hash spreads keys uniformly.",
-            "Deletion under open addressing needs tombstones; plain removal breaks probe chains for later inserts.",
-],
-    recap: `Hash tables map keys to values via a hash function and an array of buckets, resolving collisions through chaining or open addressing; expected O(1) operations with a load factor below 1, degrading to O(n) in the worst case.`,
+      "α = n/m; chained probes ≈ 1 + α/2 (success); open addressing ~ ½(1+1/(1−α)²) (linear unsuccessful).",
+      "Chaining: list per bucket, tolerates α ≥ 1; insertion O(1) at head.",
+      "Linear: h+i; quadratic: h+i²; double hash: h+i·g(k); clustering is the disease, quadratic is the vaccine.",
+      "Deletion: chaining unlink; open addressing needs tombstone, EMPTY breaks probe chains.",
+      "Rehash doubles m, rehashes keys, Θ(n) work, amortized O(1) — same argument as dynamic arrays.",
+      "Hash strings polynomially: Σ c_i·p^i mod m; rolling update in O(1) for sliding windows.",
+      "(k % m + m) % m for negative keys; m odd for division method; prime for open addressing.",
+    ],
+    recap: `Hashing is address arithmetic: spread the keys, contain the overflow with chains or probes, keep α low, and never delete without a tombstone — because the exam's hash questions are collision case studies, the candidate who simulates them on paper wins every one.`,
     code: {
-      title: "C: hash table insert with chaining",
+      title: "Chained index lookup",
       language: "c",
-      code: `typedef struct { int key; int val; struct Entry *next; } Entry;\ntypedef struct { Entry **buckets; int size; } HashTable;`,
+      code: `int i = (k % m + m) % m;\nfor (Node *p = table[i]; p; p = p->next) if (p->key == k) return p->val;`,
       explanation:
-        "The hash table uses an array of bucket pointers and chaining via linked lists; the hash function maps the key to a bucket index.",
+        "The signed-mod fix and the bucket walk — every C hashing question in miniature.",
     },
     diagram: {
-      title: "Hash table structure",
-      caption:
-        "Hash function → bucket array; chaining or open addressing for collisions.",
-      mermaid: `flowchart TD\n K[Key] --> H[Hash function]\n H --> B[Bucket array]\n B --> C[Chaining / Open addressing]`,
+      title: "Hash table lookup",
+      caption: "Hash once, walk one bucket — O(1) average when α is honest.",
+      mermaid: `flowchart LR\n  K[Key] --> H[h(k) mod m]\n  H --> B[Bucket i]\n  B --> C[Chain walk O(1+α)]`,
     },
   },
 };
