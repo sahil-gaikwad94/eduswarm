@@ -117,7 +117,7 @@ function TiltCard({ children, className = '' }: { children: React.ReactNode; cla
     <motion.div
       className={className}
       style={{ rotateX: srx, rotateY: sry, transformPerspective: 900 }}
-      onMouseMove={(e) => {
+      onMouseMove={(e: React.MouseEvent<HTMLDivElement>) => {
         const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
         ry.set(((e.clientX - r.left) / r.width - 0.5) * 9);
         rx.set(-((e.clientY - r.top) / r.height - 0.5) * 9);
@@ -153,7 +153,7 @@ function Magnetic({ children, strength = 12 }: { children: React.ReactNode; stre
     <motion.div
       ref={ref}
       style={{ x: sx, y: sy, display: 'inline-block' }}
-      onMouseMove={(e) => {
+      onMouseMove={(e: React.MouseEvent<HTMLDivElement>) => {
         const r = ref.current?.getBoundingClientRect();
         if (!r) return;
         x.set(((e.clientX - r.left) / r.width - 0.5) * strength);

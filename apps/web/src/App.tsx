@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { API, apiGet, apiPatch, apiPost, getToken, setToken, type Page, type Topic } from './lib/api';
 import { Avatar, AvatarMenu, Brand, LoadingScreen, Nav, Onboarding, SearchPalette, SignInSheet } from './components/ui';
+import { ThemeToggle } from './components/ThemeToggle';
 import { Landing } from './pages/landing';
 import { Home, Plan } from './pages/home';
 import { Flashcards, Lesson, Practice } from './pages/learn';
@@ -385,8 +386,9 @@ export function App() {
       <header className="topbar">
         <button className="brand-button" onClick={() => navigate('dashboard')}><Brand /></button>
         <div className="header-actions">
-          {!guest && <button className="search-trigger" onClick={() => setPalette(true)} title="Search (Ctrl+K)">⌕ Search</button>}
-          {!guest && <span className="streak-pill">✦ {streak ? `${streak} day streak` : 'Start your streak'}</span>}
+          <ThemeToggle />
+          {!guest && <button className="search-trigger" onClick={() => setPalette(true)} title="Search (Ctrl+K)">Search ⌘K</button>}
+          {!guest && <span className="streak-pill">Streak · {streak ? `${streak} days` : 'start today'}</span>}
           {guest
             ? <button className="signin-cta" onClick={signIn}>Sign in<span aria-hidden> →</span></button>
             : <AvatarMenu name={user.name} onNavigate={navigate} onSignOut={signOut} />}

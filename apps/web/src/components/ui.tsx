@@ -191,7 +191,7 @@ export function RichText({ text }: { text: string }) {
         const heading = trimmed.match(/^(#{1,6})\s+(.+)$/);
         if (heading) {
           const level = Math.min(3, heading[1].length);
-          const Tag = (`h${level}`) as keyof JSX.IntrinsicElements;
+          const Tag = (`h${level}`) as keyof React.JSX.IntrinsicElements;
           return <Tag key={i} className={`rich-heading rich-h${level}`}><Inline text={heading[2]} /></Tag>;
         }
         if (trimmed.split('\n').every((line) => /^\s*\|.*\|\s*$/.test(line))) {

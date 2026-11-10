@@ -122,6 +122,10 @@ export const generalAptitudeAndGateStrategy: Record<string, TopicLesson> = {
         title: "Logical language and tone.",
         body: `Questions about the author\'s attitude (neutral, critical, cautiously optimistic), assumptions (what must be true for the argument to hold), and strengthen/weaken depend on mapping claim → evidence → assumption. Assumptions are bridges never stated; strengthen supports them, weaken attacks them; the exam favorite is the answer that attacks the assumption, not the evidence. Keep a mental skeleton of argument structure visible when reading; every inference question maps onto it.`,
       },
+      {
+        title: "Time control and elimination discipline under time pressure.",
+        body: `Verbal sections in aptitude tests are usually solvable faster with elimination than with full derivation — train your eye to scan options before the stem is fully processed. The protocol: read the stem for roughly thirty seconds, eliminate two obviously wrong options, then read the two survivors against the constraint you noticed first (tense agreement, subject proximity, meaning echo). Because negative marking in GATE penalties you 1/3 of the question value on every wrong attempt, guessing without elimination is value-negative whenever you hold fewer than two real candidates. The elimination checklist: agreement traps ride on the nearest subject (neither...nor, either...or, along with); tense sequence obeys the main clause or reported speech; contrast links (however, nevertheless, although) must match the sentence polarity; and vocabulary-in-context asks for meaning of that usage, never its dictionary-first sense. Average working pace inside the exam is roughly 1.5-2 minutes per question with review pass reserved for marked items — practice 25-question timed sets weekly so the rhythm is automatic before exam day, not discovered inside it.`,
+      },
     ],
     worked: [
       {

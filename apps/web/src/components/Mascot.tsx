@@ -215,7 +215,9 @@ export function Mascot({ size = 200, mood = 'idle', className = '', eyesFollow =
 
   return (
     <motion.svg
-      ref={svgRef}
+      // framer-motion@13 × @types/react@19 resolves the SVG ref type param to
+      // never; cast locally rather than loosen the whole file
+      ref={svgRef as any}
       width={size}
       height={size}
       viewBox="0 0 220 232"

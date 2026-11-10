@@ -1070,3 +1070,171 @@ input,select,textarea{min-width:0;max-width:100%}
   .sk{animation:none}
   .social-settings-button,.social-edit-button,.source-link,.reader-save,.reader-original{transition:none}
 }
+
+/* =========================================================
+   STAGE 0 — design bridge (tokens-only, no legacy vars)
+   Every rule below derives from design/tokens.css exclusively.
+   ========================================================= */
+:root {
+  --ink: var(--color-text-primary);
+  --muted: var(--color-text-secondary);
+  --line: var(--color-border);
+  --violet: var(--color-accent);
+  --lavender: var(--color-accent-soft);
+  --lime: var(--color-pop);
+  --peach: var(--color-peach);
+  --yellow: var(--color-yellow);
+  --cream: var(--color-background-root);
+  --white: var(--color-background-surface);
+  --shadow: var(--shadow-medium);
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--color-background-root);
+  color: var(--color-text-primary);
+}
+
+.card {
+  background: var(--color-background-surface);
+  border-color: var(--color-border);
+  border-radius: var(--radius-container);
+  box-shadow: var(--shadow-low);
+}
+
+/* topbar — frosted token surface, hairline border */
+.topbar {
+  background: color-mix(in srgb, var(--color-background-root) 82%, transparent);
+  border-bottom-color: var(--color-border);
+  height: 72px;
+}
+.brand { color: var(--color-text-primary); font-family: var(--font-display); }
+.brand-mark { color: var(--color-accent); }
+.search-trigger {
+  border-color: var(--color-border);
+  background: var(--color-background-raised);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-small);
+  padding: 8px 16px;
+}
+.search-trigger:hover { color: var(--color-accent); border-color: var(--color-accent); }
+.streak-pill {
+  background: var(--color-pop-soft);
+  color: var(--color-pop-ink);
+  border-color: transparent;
+  border-radius: var(--radius-pill);
+  font-weight: 700;
+}
+.initial-avatar, .profile-avatar {
+  background: linear-gradient(135deg, var(--color-accent), #a78bfa);
+  font-family: var(--font-display);
+}
+.sign-out { color: var(--color-text-muted); }
+.sign-out:hover { color: var(--color-text-primary); }
+
+/* universe selector + progress */
+.goal-summary {
+  background: var(--color-background-raised);
+  border-color: var(--color-border);
+  border-radius: var(--radius-container);
+}
+.goal-summary strong, .goal-summary span { color: var(--color-text-primary); }
+.goal-summary span { color: var(--color-text-muted); }
+.goal-progress { background: var(--color-background-sunken); }
+.goal-progress i { background: var(--color-accent); }
+.track-select {
+  background: var(--color-background-surface);
+  border-color: var(--color-border);
+  border-radius: var(--radius-element);
+  padding: 10px 12px;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+.label, .eyebrow { color: var(--color-text-muted); }
+
+/* primary navigation (sidebar + mobile dock) */
+.side-nav .nav-item {
+  border-radius: var(--radius-element);
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  padding: 10px 12px;
+}
+.side-nav .nav-item:hover { background: var(--color-accent-soft); color: var(--color-text-primary); }
+.side-nav .nav-item.active { background: var(--color-accent-soft); color: var(--color-accent-strong); }
+.nav-item span { color: var(--color-text-muted); }
+.nav-item.active span { color: var(--color-accent); }
+.nav-group-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  color: var(--color-text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  margin: 0 0 var(--space-2);
+}
+.mobile-nav {
+  background: color-mix(in srgb, var(--color-background-root) 88%, transparent);
+  border-top: 1px solid var(--color-border);
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+}
+.mobile-nav .nav-item { color: var(--color-text-muted); }
+.mobile-nav .nav-item span { font-size: 1.15rem; }
+.mobile-nav .nav-item.active { color: var(--color-accent); }
+.mobile-nav .nav-item.active span { color: var(--color-accent); }
+
+/* buttons — accent family, not ink */
+button.btn-primary, .onboard button[type="submit"], .hero-banner button, .start-learning > button, .practice-actions button {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: var(--radius-element);
+  padding: 12px 18px;
+  font-weight: 700;
+  transition: transform var(--duration-fast) var(--ease-expressive), background var(--duration-fast) var(--ease-standard);
+}
+button.btn-primary:hover { background: var(--color-accent-strong); }
+button.btn-primary:active { transform: scale(0.98); }
+.ghost-button, .secondary-button {
+  border-color: var(--color-border);
+  background: var(--color-background-surface);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-element);
+}
+.ghost-button:hover, .secondary-button:hover { border-color: var(--color-accent); color: var(--color-accent-strong); }
+
+/* focus ring — accent, always visible */
+:focus-visible { outline: 2.5px solid var(--color-focus); outline-offset: 2px; border-radius: 4px; }
+
+/* theme toggle */
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  background: var(--color-background-raised);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  transition: color var(--duration-fast), border-color var(--duration-fast);
+}
+.theme-toggle:hover { color: var(--color-accent); border-color: var(--color-accent); }
+.theme-toggle svg { width: 18px; height: 18px; }
+
+/* guest chrome — token-native */
+.signin-cta {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: var(--radius-element);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  padding: 9px 16px;
+  transition: background var(--duration-fast);
+}
+.signin-cta:hover { background: var(--color-accent-strong); }
+.signin-cta span { color: var(--color-pop); }
+.guest-topbar-note {
+  background: var(--color-yellow-soft);
+  border-bottom-color: var(--color-border);
+  color: var(--color-text-secondary);
+}
+.guest-topbar-note button { color: var(--color-accent-strong); }
+.guest-note-close { color: var(--color-text-muted); }
