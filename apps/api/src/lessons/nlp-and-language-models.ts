@@ -24,6 +24,10 @@ export const nlpAndLanguageModels: Record<string, TopicLesson> = {
         title: "Practical data-centric NLP habits.",
         body: `Deduplicate (near-dedup with MinHash) — memorization and metric inflation otherwise; language ID filtering for multilingual corpora; remove boilerplate (nav/footers); PII scrubbing before any shared dump; class imbalance: oversample/class-weights/focal loss; train/val split by source document, never random lines (near-dupes straddle splits!); inspect 100 raw samples before writing a line of model code — the two hours every serious NLP project spends first; dataset cards for every release; document lineage: which snapshot, which filter, which hash.`,
       },
+      {
+        title: "Distributional geometry: how words became vectors.",
+        body: `Distributional semantics holds that a word's meaning is defined by the contexts it appears in. Traditional representations turn context counts into sparse matrices: TF-IDF penalizes ubiquitous words, PPMI zeroes negative correlations. Dense embeddings compress the geometry instead — word2vec predicts neighbors, producing vectors where similarity is cosine distance and analogies dissolve into arithmetic (king minus man plus woman points at queen). Subwords extend the idea across languages and out-of-vocabulary cases, since byte-pair splits let morphology survive. Every downstream stage of a modern NLP pipeline rests on this move: tokenization maps strings to ids, embeddings map ids to geometry, and the whole transformer is geometry management all the way up. Know this ladder cold and every paper between CBOW and GPT reads like the same trick, scaled.`,
+      },
     ],
     worked: [
       {
@@ -109,6 +113,10 @@ export const nlpAndLanguageModels: Record<string, TopicLesson> = {
         title: "The transformer in practice: performance engineering.",
         body: `FlashAttention fused kernels; KV-cache for inference (store K,V per step — decode O(1) per token memory); paged KV (vLLM PagedAttention) for serving density; quantization INT8/INT4; tensor parallelism inside node, pipeline across nodes; context 8k→1M via RoPE scaling/YaRN; speculative decoding (draft model proposes, target verifies — 2-3x); prompt caching (prefix reuse); these are what turn "a transformer" into "an API" — study them or your serving costs bankrupt you; architecture is solved; systems win.`,
       },
+      {
+        title: "Positional information: how order survives without recurrence.",
+        body: `Attention scores ignore position entirely, so the model carries order through an explicit positional channel. The sinusoidal scheme used in the original transformer interleaves sines and cosines at geometric frequencies, letting every length have a unique fingerprint without an extra parameter. Learned absolute embeddings (GPT-2) do the same job empirically and hit a wall at the maximum trained length. Relative encodings improve generalization: ALiBi adds a distance penalty directly to the attention logits, while RoPE rotates query and key vectors through position-dependent angles so the dot product naturally decays with distance. This is why long-context models prefer relative schemes — and why the exam question that asks where order enters (answer: positional vectors before attention, never the Q/K/V matrices alone) rewards one mechanism, not familiarity with every variant.`,
+      },
     ],
     worked: [
       {
@@ -193,6 +201,10 @@ export const nlpAndLanguageModels: Record<string, TopicLesson> = {
       {
         title: "Hub etiquette, model cards, and security.",
         body: `Before push: write the model card (data sources, eval results with variance, limitations, intended/out-of-scope use) — cards get models used responsibly; licenses: MIT/Apache/CC — check before commercial use; never push private data or training corpora with PII; hub tokens in .env only; trust_models=True loads arbitrary code — prefer verified/popular checkpoints, pin revisions by commit hash; supply chain: pip install the library from the official index, verify hashes for sensitive deployments; your org\'s hub org mirrors internal review — public hub is not a quality guarantee, it is a convenience.`,
+      },
+      {
+        title: "Model Hub craft: picking a base model like an engineer.",
+        body: `The Hub is a catalog of bona fide artifacts, not a leaderboard. Read licenses first: MIT and Apache-2.0 permit commercial work, most CC-BY-SA and Meta community licenses impose conditions, and gating status changes who can even fetch the weights. Check tokenizer health — a tokenizer that splits every word into three subwords triples your inference bill. Compare architecture documentation (attention pattern, context limit, training objective) over benchmark scores, since leaderboard numbers saturate. Note the quantization format shipped with the weights: AWQ for vLLM serving, GPTQ for ExLlama-style setups, GGUF for llama.cpp runtimes. Finally, audit the README itself — a well-written card lists training data lineage, evaluation protocol, and known failure modes, and that documentation quality is the cheapest proxy you have for how much care went into the weights.`,
       },
     ],
     worked: [
@@ -623,6 +635,10 @@ export const nlpAndLanguageModels: Record<string, TopicLesson> = {
       {
         title: "Deployment quirks: segment, script, and fallback.",
         body: `Multi-script inputs need normalization: NFC/NFKC — visually identical strings with different codepoints break matching; language-ID routing to locale-aware prompts; RTL handling in UI layers (CSS dir=rtl, mirroring icons); fallback strategy: answer in target language, apologize in target language; safety in low-resource: harmful content filters are English-overfit — audit with native speaker red-team; caching per-language; cost asymmetry: high-fertility languages cost 2-3x per prompt — price accordingly or optimize tokenizer for them; measure per-market token cost monthly.`,
+      },
+      {
+        title: "Tokenization tax: why some languages pay more per word.",
+        body: `BPE/WordPiece budgets a vocabulary across scripts and morphologies; high-resource languages get efficient tokens, low-resource ones get split into byte-level chunks. Hindi, Thai, Chinese and many agglutinative languages routinely consume two to four times more tokens for the same sentence, inflating context cost and silently degrading long-document handling. Mitigations: longer context APIs with multilingual tokenizers, script-aware normalization (NFKC), transliteration to increase overlap with English corpora, and continued pretraining on domain+language matched data. Code-mixing — Hindi-English Hinglish inside one sentence — defeats single-script tokenizers; production pipelines detect language span boundaries before tokenization. Evaluation must report per-language scores; aggregate leaderboard numbers quietly attribute quality to English while Hindi quietly fails.`,
       },
     ],
     worked: [

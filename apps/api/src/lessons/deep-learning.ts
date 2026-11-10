@@ -196,6 +196,10 @@ export const deepLearning: Record<string, TopicLesson> = {
         title: "Serving and mobile deployment.",
         body: `SavedModel export → TF Serving (Docker, REST/gRPC, batching, GPU); or convert to TFLite for mobile/edge (quantization float16/int8, pruning — mobile nets); TF.js for browser; Keras 3 to jax for TPU research; TF Serving adds: model versioning, A/B routing, request batching, Prometheus metrics — the production path Google actually runs; for lighter paths: Flask/FastAPI wrapping keras model call is fine until it isn\'t (batching lost); the point: Keras artifacts scale from laptop to TPU pod without rewrites — that is its whole reason to exist.`,
       },
+      {
+        title: "model.fit versus the custom training loop.",
+        body: `model.fit handles the standard supervised loop — datasets shuffling, validation, callbacks, metrics — and is the right default. When objectives stop being single-output, you drop to the tape: instantiate a tf.Variable pair or two models (generator and discriminator), record the forward pass in a GradientTape, compute the loss manually, and call optimizer.apply_gradients. GradientTape records operations until you exit the context; every variable touched inside is taped. Wrap the step in @tf.function and TensorFlow traces it to a graph, recovering most of the C++ speed while keeping Python semantics. Custom loops unlock curriculum learning, adversarial pairs, gradient surgery and per-layer learning rates — but pay it forward in explicit metrics reset, explicit checkpointing, and explicit NaN guards.`,
+      },
     ],
     worked: [
       {
