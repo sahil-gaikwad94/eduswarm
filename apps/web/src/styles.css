@@ -1237,7 +1237,8 @@ input, select, textarea {min-width:0;max-width:100%}
 
 .avatar-accessory-option.active small {color:var(--violet)}
 
-in-app reader, social profile, sheets
+/* ================================================================
+   Sprint 1.5 — lesson reading, in-app reader, social profile, sheets
    ================================================================ */
 
 /* ---------- rich text: the shared lesson/article typography ---------- */
@@ -1747,7 +1748,8 @@ body {
 
 .mobile-nav .nav-item.active span { color: var(--color-accent); }
 
-/* buttons — accent family, .onboard button[type="submit"], .hero-banner button, .practice-actions button {
+/* buttons — accent family, not ink */
+.onboard button[type="submit"], .hero-banner button, .start-learning > button, .practice-actions button, .lesson-footer-actions button, .empty-feature button, .card-controls button {
   background: var(--color-accent);
   color: var(--color-on-accent);
   border-radius: var(--radius-element);
@@ -2429,3 +2431,12 @@ body {
 }
 
 .skip-link:focus { left: 12px; top: 12px; }
+/* SVG nav icons — proper stroke-based set */
+.nav-item svg, .mobile-nav .nav-item svg {
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.nav-item span { display: inline-grid; place-items: center; width: 22px; height: 22px; }
+.nav-item span svg { width: 18px; height: 18px; }
+.mobile-nav .nav-item span svg { width: 20px; height: 20px; }

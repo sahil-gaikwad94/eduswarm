@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { API, apiGet, apiPatch, apiPost, getToken, setToken, type Page, type Topic } from './lib/api';
 import { Avatar, AvatarMenu, Brand, LoadingScreen, Nav, Onboarding, SearchPalette, SignInSheet } from './components/ui';
 import { ThemeToggle } from './components/ThemeToggle';
+import { Icon } from './components/Icon';
 import { Landing } from './pages/landing';
 import { Home, Plan } from './pages/home';
 import { Flashcards, Lesson, Practice } from './pages/learn';
@@ -419,18 +420,18 @@ export function App() {
           </div>
           <nav className="side-nav" aria-label="Primary">
             <p className="nav-group-label">ESSENTIALS</p>
-            <Nav active={dockActive('dashboard') && page !== 'lesson'} icon="⌂" label="Home" onClick={() => navigate('dashboard')} />
-            <Nav active={page === 'practice' || page === 'flashcards' || page === 'kit-practice'} icon="✓" label="Practice" onClick={() => navigate('practice')} />
-            <Nav active={page === 'library'} icon="❖" label="Reading" onClick={() => navigate('library')} />
-            <Nav active={page === 'discussions'} icon="◉" label="Discussions" onClick={() => navigate('discussions')} />
+            <Nav active={dockActive('dashboard') && page !== 'lesson'} icon={<Icon.Home />} label="Home" onClick={() => navigate('dashboard')} />
+            <Nav active={page === 'practice' || page === 'flashcards' || page === 'kit-practice'} icon={<Icon.Practise />} label="Practice" onClick={() => navigate('practice')} />
+            <Nav active={page === 'library'} icon={<Icon.Library />} label="Reading" onClick={() => navigate('library')} />
+            <Nav active={page === 'discussions'} icon={<Icon.Discussions />} label="Discussions" onClick={() => navigate('discussions')} />
             <p className="nav-group-label">ONGOING</p>
-            <Nav active={page === 'lesson'} icon="◎" label="Current lesson" onClick={() => navigate('lesson')} />
-            <Nav active={page === 'plan'} icon="◈" label="Today's mission" onClick={() => navigate('plan')} />
-            <Nav active={page === 'flashcards'} icon="▤" label="Flashcards" onClick={() => navigate('flashcards')} />
+            <Nav active={page === 'lesson'} icon={<Icon.CurrentLesson />} label="Current lesson" onClick={() => navigate('lesson')} />
+            <Nav active={page === 'plan'} icon={<Icon.Mission />} label="Today's mission" onClick={() => navigate('plan')} />
+            <Nav active={page === 'flashcards'} icon={<Icon.Flashcards />} label="Flashcards" onClick={() => navigate('flashcards')} />
             <p className="nav-group-label">YOU</p>
-            <Nav active={page === 'progress'} icon="↗" label="Progress" onClick={() => navigate('progress')} />
-            <Nav active={page === 'mistakes'} icon="!" label="Mistake notebook" onClick={() => navigate('mistakes')} />
-            <Nav active={page === 'profile'} icon="◉" label="Profile" onClick={() => navigate('profile')} />
+            <Nav active={page === 'progress'} icon={<Icon.Progress />} label="Progress" onClick={() => navigate('progress')} />
+            <Nav active={page === 'mistakes'} icon={<Icon.Mistakes />} label="Mistake notebook" onClick={() => navigate('mistakes')} />
+            <Nav active={page === 'profile'} icon={<Icon.Profile />} label="Profile" onClick={() => navigate('profile')} />
           </nav>
           {guest ? (
             <div className="team-mini guest-side-cta">
@@ -475,10 +476,10 @@ export function App() {
       {signInGate && <SignInSheet onClose={() => setSignInGate(false)} onSignIn={signIn} />}
       {palette && !guest && <SearchPalette goal={goal} onClose={() => setPalette(false)} onNavigate={navigate} />}
       <nav className="mobile-nav" aria-label="Primary navigation">
-        <Nav active={dockActive('dashboard')} icon="⌂" label="Home" onClick={() => navigate('dashboard')} />
-        <Nav active={dockActive('practice')} icon="✓" label="Practice" onClick={() => navigate('practice')} />
-        <Nav active={dockActive('library')} icon="❖" label="Reading" onClick={() => navigate('library')} />
-        <Nav active={dockActive('discussions')} icon="◉" label="Discussions" onClick={() => navigate('discussions')} />
+        <Nav active={dockActive('dashboard')} icon={<Icon.Home />} label="Home" onClick={() => navigate('dashboard')} />
+        <Nav active={dockActive('practice')} icon={<Icon.Practise />} label="Practice" onClick={() => navigate('practice')} />
+        <Nav active={dockActive('library')} icon={<Icon.Library />} label="Reading" onClick={() => navigate('library')} />
+        <Nav active={dockActive('discussions')} icon={<Icon.Discussions />} label="Discussions" onClick={() => navigate('discussions')} />
       </nav>
     </div>
   );

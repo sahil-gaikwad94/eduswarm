@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Icon, Diamond } from '../components/Icon';
 import confetti from 'canvas-confetti';
 import { API, apiGet, apiPost, apiPut, type Pack, type Page, type Topic } from '../lib/api';
 import { Avatar, Empty, JobCard, Mermaid, RichText } from '../components/ui';
@@ -100,7 +101,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
       {job && <JobCard job={job} />}
       {isLocalPack && !localDismissed && (
         <section className="local-banner card" role="status">
-          <span className="local-banner-icon" aria-hidden>◈</span>
+          <Icon.Sparkle size={16} />
           <div className="local-banner-copy">
             <b>{guest ? 'Free EduSwarm chapter — read instantly, no account needed.' : 'EduSwarm local chapter — ready instantly.'}</b>
             <small>
@@ -119,7 +120,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
 
       {!job && jobError && (
         <section className="job-error card" role="alert">
-          <span className="job-error-icon">⚠</span>
+          <Icon.AlertTriangle size={18} />
           <div><b>We couldn’t open this chapter.</b><small>{jobError}</small></div>
           <button onClick={() => onOpen(topic)}>↻ Reload chapter</button>
         </section>
@@ -140,7 +141,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
           <article className="lesson-article">
             <div className="verified-line">
               <span className={`verified-chip ${isLocalPack ? 'local-chip' : ''}`}>
-                {isLocalPack ? '✓ EDUSWARM LOCAL CHAPTER' : '✓ SAVED AI-ENHANCED CHAPTER'}
+                {isLocalPack ? 'EDUSWARM LOCAL CHAPTER' : 'SAVED AI-ENHANCED CHAPTER'}
               </span>
               <span>
                 {isLocalPack
@@ -205,7 +206,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                   <section className="sources">
                     <p className="label">RECOMMENDED VIDEOS · WATCH AFTER THE CHAPTER</p>
                     {videos.map((v) => (
-                      <a href={v.url} target="_blank" rel="noreferrer" key={v.title}>▶ {v.title}{v.publisher ? ` · ${v.publisher}` : ''}</a>
+                      <a href={v.url} target="_blank" rel="noreferrer" key={v.title}><Icon.ArrowRight size={14} /> {v.title}{v.publisher ? ` · ${v.publisher}` : ''}</a>
                     ))}
                   </section>
                 )}
@@ -215,7 +216,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                     <div className="source-list">
                       {sourceRefs.slice(0, 8).map((ref: any) => (
                         <button className="source-link" key={ref.url} onClick={() => setSourceOpen(ref)}>
-                          <span className="source-icon" aria-hidden>❖</span>
+                          <Icon.BookOpen size={16} />
                           <span className="source-copy"><b>{ref.title}</b><small>{ref.publisher}{ref.kind ? ` · ${ref.kind}` : ''}</small></span>
                           <span className="source-open">Read →</span>
                         </button>
@@ -237,7 +238,7 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
                   <p className="label">YOUR NOTES · SAVED TO THIS TOPIC</p>
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} placeholder="Summarize the core idea in your own words — retrieval beats re-reading." />
                   <div className="notes-actions">
-                    <small>{notesSaved ? '✓ Saved' : 'Private to you'}</small>
+                    <small>{notesSaved ? <><Icon.Check size={12} /> Saved</> : 'Private to you'}</small>
                     <button className="secondary-button" onClick={() => void saveNotes()}>Save notes</button>
                   </div>
                 </section>
@@ -313,9 +314,9 @@ export function Lesson({ topic, pack, job, jobError, topics, isComplete, onStart
               <button className="pager-button" onClick={() => onOpen(prev)}><small>← PREVIOUS</small><b>{prev.title}</b></button>
             ) : <span />}
             {!isComplete ? (
-              <button className="complete-button" onClick={complete}>✓ Mark complete · +40 XP</button>
+              <button className="complete-button" onClick={complete}><Icon.Check size={16} /> Mark complete · +40 XP</button>
             ) : (
-              <span className="complete-done">✓ Completed</span>
+              <span className="complete-done"><Icon.Check size={14} /> Completed</span>
             )}
             {next ? (
               <button className="pager-button next" onClick={() => onOpen(next)}><small>NEXT →</small><b>{next.title}</b></button>
@@ -396,7 +397,7 @@ export function Flashcards({ onLesson, onProgress }: { onLesson: () => void; onP
   if (!card) {
     return (
       <section className="flashcard-done card">
-        <div className="empty-icon">✦</div>
+        <Diamond size={30} className="empty-icon-diamond" />
         <p className="eyebrow">SESSION COMPLETE</p>
         <h1>{done ? 'All caught up — superb recall.' : 'Your review queue is empty'}</h1>
         <p className="lead">{done

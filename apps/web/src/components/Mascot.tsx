@@ -275,7 +275,6 @@ export function MascotFace({ className = '' }: { className?: string }) {
 
 /** Orbiting sparkles that give hero/loader stages a little swarm magic. */
 export function Sparkles({ radius = 150, count = 5 }: { radius?: number; count?: number }) {
-  const glyphs = ['✦', '✧', '✦', '⭑', '✧'];
   return (
     <motion.div
       className="sparkle-ring"
@@ -295,7 +294,9 @@ export function Sparkles({ radius = 150, count = 5 }: { radius?: number; count?:
             animate={{ opacity: [0.25, 1, 0.25], scale: [0.8, 1.15, 0.8] }}
             transition={{ duration: 1.6 + i * 0.35, repeat: Infinity, ease: 'easeInOut' }}
           >
-            {glyphs[i % glyphs.length]}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <path d="M12 2l3.1 7.6L22.5 12l-7.4 1.6L12 21.2l-3.1-7.6L1.5 12l7.4-2.4L12 2z" />
+            </svg>
           </motion.span>
         );
       })}

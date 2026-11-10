@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Icon, Diamond } from '../components/Icon';
 import { API, apiDelete, apiGet, apiPatch, apiPost, setToken, type Topic } from '../lib/api';
 import { AvatarFace, AVATAR_COLORS } from '../components/Mascot';
 
@@ -57,7 +58,7 @@ export function Progress({ topics, progress }: { topics: Topic[]; progress: any[
       <div className="badge-grid">
         {achievements.map((a: any) => (
           <div key={a.id} className={`badge card ${a.unlocked ? 'unlocked' : ''}`}>
-            <span className="badge-icon">{a.unlocked ? '★' : '☆'}</span>
+            <span className="badge-icon">{a.unlocked ? <Icon.Star size={16} /> : <Icon.StarOutline size={16} />}</span>
             <b>{a.title}</b>
             <small>{a.desc}</small>
             <div className="xp-bar small"><i style={{ width: `${Math.round((a.current / a.target) * 100)}%` }} /></div>
@@ -74,7 +75,7 @@ export function Progress({ topics, progress }: { topics: Topic[]; progress: any[
             {items.map((a: any) => (
               <div className="review-item" key={a.id}>
                 <button onClick={() => setOpen(open === a.id ? null : a.id)}>
-                  <span className={a.correct ? 'result-dot correct-dot' : 'result-dot'}>{a.correct ? '✓' : '!'}</span>
+                  <span className={a.correct ? 'result-dot correct-dot' : 'result-dot'}>{a.correct ? <Icon.Check size={16} /> : <Icon.Mistakes size={16} />}</span>
                   <span><b>{a.question}</b><small>{a.correct ? 'Correct' : 'Needs review'} · {new Date(a.answeredAt).toLocaleDateString()}</small></span>
                   <span>{open === a.id ? '−' : '+'}</span>
                 </button>
@@ -156,7 +157,7 @@ export function Mistakes() {
         </section>
       ) : (
         <section className="empty-feature card">
-          <div className="empty-icon">✓</div>
+          <Icon.CheckCircle size={30} className="empty-icon-diamond" />
           <h2>Your notebook is clear.</h2>
           <p>When a practice answer is incorrect, EduSwarm will save the concept, your answer, and the likely misconception here.</p>
         </section>
@@ -341,9 +342,9 @@ export function Profile({ user, goal, onSave, onSignOut }: {
           <span className="social-cover-orb orb-b" aria-hidden />
           <span className="social-cover-orb orb-c" aria-hidden />
           <div className="social-cover-top">
-            <span className="social-cover-badge">◈ {universe}</span>
+            <span className="social-cover-badge"><Icon.CurrentLesson size={14} /> {universe}</span>
             <button className="social-settings-button" onClick={openSettings} aria-label="Open profile settings">
-              <span aria-hidden>⚙</span> Settings
+              <Icon.Profile size={16} /> Settings
             </button>
           </div>
           <div className="social-cover-caption">
@@ -361,7 +362,7 @@ export function Profile({ user, goal, onSave, onSignOut }: {
             <div className="social-name-row">
               <h1>{user.name}</h1>
               {privateNow && <span className="social-private-chip" title="Private account">🔒 Private</span>}
-              {savedFlash && <span className="social-saved-flash">✓ Saved</span>}
+              {savedFlash && <span className="social-saved-flash"><Icon.Check size={14} /> Saved</span>}
             </div>
             <p className="social-handle">@{publicHandle}</p>
             <p className="social-bio">{user.bio || 'Learning in public, one chapter at a time. Add a bio from Settings.'}</p>
@@ -416,7 +417,7 @@ export function Profile({ user, goal, onSave, onSignOut }: {
                   <div className="social-badge-row">
                     {unlocked.slice(0, 4).map((badge) => (
                       <div className="social-badge" key={badge.id}>
-                        <span>★</span><b>{badge.title}</b><small>{badge.desc}</small>
+                        <Icon.Star size={18} /><b>{badge.title}</b><small>{badge.desc}</small>
                       </div>
                     ))}
                   </div>
@@ -486,7 +487,7 @@ export function Profile({ user, goal, onSave, onSignOut }: {
               <div className="badge-grid">
                 {achievements.map((badge) => (
                   <div key={badge.id} className={`badge card ${badge.unlocked ? 'unlocked' : ''}`}>
-                    <span className="badge-icon">{badge.unlocked ? '★' : '☆'}</span>
+                    <span className="badge-icon">{badge.unlocked ? <Icon.Star size={20} /> : <Icon.StarOutline size={20} />}</span>
                     <b>{badge.title}</b>
                     <small>{badge.desc}</small>
                     <div className="xp-bar small"><i style={{ width: `${Math.min(100, Math.round((Number(badge.current || 0) / Math.max(1, Number(badge.target || 1))) * 100))}%` }} /></div>
@@ -517,7 +518,7 @@ export function Profile({ user, goal, onSave, onSignOut }: {
                 </div>
               ) : (
                 <div className="social-empty">
-                  <span aria-hidden>❖</span>
+                  <Diamond size={24} />
                   <b>Your reading list is empty.</b>
                   <p>Open the Reading Room and tap the star on any free article to keep it here.</p>
                 </div>

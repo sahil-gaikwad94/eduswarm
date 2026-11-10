@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Icon, Diamond } from '../components/Icon';
 import { apiGet, type Page } from '../lib/api';
 import { ArticleReader } from '../components/Reader';
 
@@ -107,7 +108,7 @@ export function Library({ goal, universeTitle, onNavigate }: {
 
       {loading && (
         <section className="empty-feature card">
-          <div className="empty-icon">❖</div>
+          <Diamond size={30} className="empty-icon-diamond" />
           <h2>Stocking the shelves…</h2>
           <p>Finding the best free reading for this universe.</p>
         </section>
@@ -134,7 +135,7 @@ export function Library({ goal, universeTitle, onNavigate }: {
                 tabIndex={0}
                 aria-label={saved.includes(r.id) ? 'Remove from reading list' : 'Save to reading list'}
                 title={saved.includes(r.id) ? 'Saved to your list' : 'Save to your list'}
-              >{saved.includes(r.id) ? '★' : '☆'}</span>
+              >{saved.includes(r.id) ? <Icon.Star size={16} /> : <Icon.StarOutline size={16} />}</span>
             </div>
             <h2>{r.title}</h2>
             <p className="library-publisher">{r.publisher}</p>
@@ -161,7 +162,7 @@ export function Library({ goal, universeTitle, onNavigate }: {
 
       <section className="library-note">
         <p>
-          ✦ Every link is free to read and hand-picked for this syllabus.
+          <Icon.Check size={14} /> Every link is free to read and hand-picked for this syllabus.
           Nothing here redirects you out of EduSwarm unless you choose to leave.
         </p>
         <button className="secondary-button" onClick={() => onNavigate('dashboard')}>← Back to the syllabus</button>

@@ -1,9 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { API, apiGet, apiPost, type Page, type Topic } from '../lib/api';
 import { Mascot, MascotFace, Sparkles, type MascotMood } from './Mascot';
+import { Diamond, Icon } from './Icon';
 
 export function Brand() {
-  return <span className="brand"><span className="brand-mark">✦</span> EduSwarm</span>;
+  return (
+    <span className="brand">
+      <svg className="brand-mark" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+        <path d="M12 2l3.1 7.6L22.5 12l-7.4 1.6L12 21.2l-3.1-7.6L1.5 12l7.4-2.4L12 2z" />
+      </svg>
+      EduSwarm
+    </span>
+  );
 }
 
 const LOADING_QUIPS = [
@@ -49,7 +57,7 @@ export function LoadingScreen({ label = 'Loading your learning universe…' }: {
   );
 }
 
-export function Nav({ active, label, icon, onClick }: { active: boolean; label: string; icon: string; onClick: () => void }) {
+export function Nav({ active, label, icon, onClick }: { active: boolean; label: string; icon: React.ReactNode; onClick: () => void }) {
   return (
     <button className={`nav-item ${active ? 'active' : ''}`} onClick={onClick}>
       <span>{icon}</span>{label}
@@ -68,7 +76,7 @@ export function Avatar({ size = 'small' }: { kind?: string; size?: string }) {
 export function Empty({ title, text, actionLabel, onClick }: { title: string; text: string; actionLabel?: string; onClick: () => void }) {
   return (
     <section className="empty-feature card">
-      <div className="empty-icon">✦</div>
+      <Diamond size={30} className="empty-icon-diamond" />
       <h2>{title}</h2>
       <p>{text}</p>
       <button onClick={onClick}>{actionLabel || 'Go to current lesson →'}</button>
@@ -266,7 +274,7 @@ export function AvatarMenu({ name, onNavigate, onSignOut }: { name: string; onNa
     return () => { document.removeEventListener('mousedown', onDoc); document.removeEventListener('keydown', onKey); };
   }, [open]);
   const initial = (name?.trim()?.[0] || 'S').toUpperCase();
-  const item = (page: Page, icon: string, label: string) => (
+  const item = (page: Page, icon: React.ReactNode, label: string) => (
     <button role="menuitem" onClick={() => { setOpen(false); onNavigate(page); }}><span aria-hidden>{icon}</span>{label}</button>
   );
   return (
@@ -274,15 +282,15 @@ export function AvatarMenu({ name, onNavigate, onSignOut }: { name: string; onNa
       <button className="profile-chip" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <span className="initial-avatar">{initial}</span>
         <span className="profile-chip-name">{name}</span>
-        <span className="profile-chip-caret" aria-hidden>{open ? '▴' : '▾'}</span>
+        <span className="profile-chip-caret" aria-hidden>{open ? <Icon.ChevronUp size={14} /> : <Icon.ChevronDown size={14} />}</span>
       </button>
       {open && (
         <div className="avatar-menu-panel" role="menu" aria-label="Account">
           <p className="avatar-menu-label">YOUR CORNER</p>
-          {item('profile', '◉', 'Profile & goals')}
-          {item('progress', '↗', 'Progress & achievements')}
-          {item('mistakes', '!', 'Mistake notebook')}
-          {item('plan', '◈', "Today's mission")}
+          {item('profile', <Icon.Profile size={16} />, 'Profile & goals')}
+          {item('progress', <Icon.Progress size={16} />, 'Progress & achievements')}
+          {item('mistakes', <Icon.Mistakes size={16} />, 'Mistake notebook')}
+          {item('plan', <Icon.Mission size={16} />, "Today's mission")}
           <div className="avatar-menu-divider" />
           <button role="menuitem" className="avatar-menu-danger" onClick={() => { setOpen(false); onSignOut(); }}><span aria-hidden>↪</span>Log out</button>
         </div>
@@ -418,7 +426,7 @@ export function Onboarding({ user, onDone }: { user: any; onDone: (user: any) =>
                 <option value="advanced">Advanced</option>
               </select>
             </label>
-            <label>&nbsp;<button type="button" className="secondary-button" disabled={busy} onClick={() => void startDiagnostic()}>✦ Calibrate with diagnostic</button></label>
+            <label>&nbsp;<button type="button" className="secondary-button" disabled={busy} onClick={() => void startDiagnostic()}>Calibrate with diagnostic</button></label>
           </div>
           {leveledBy !== 'self' && <p className="muted">Level set by {leveledBy} — you can still change it.</p>}
           {error && <p className="error-copy">{error}</p>}

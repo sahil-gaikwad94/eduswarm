@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Icon } from '../components/Icon';
 import { apiGet, apiPost, greeting, type Page, type Topic } from '../lib/api';
 import { Avatar } from '../components/ui';
 
@@ -74,7 +75,7 @@ export function Home({ user, goal, universe, universes, topics, mastery, progres
                 onClick={() => void onSwitch(u.id)}
                 aria-pressed={active}
               >
-                <span className="universe-flag">{active ? '● Active' : '○ Switch'}</span>
+                <span className="universe-flag">{active ? <><Icon.CircleDot size={12} /> Active</> : <><Icon.Circle size={12} /> Switch</>}</span>
                 <b>{u.title}</b>
                 <small>{u.blurb}</small>
                 <span className="universe-meta">{counts[u.id] ?? (active ? topics.length : '—')} tutorials</span>
@@ -99,7 +100,7 @@ export function Home({ user, goal, universe, universes, topics, mastery, progres
           />
           {(lastSaved || nextUp) && (
             <button className="continue-button" onClick={() => onOpen(lastSaved || nextUp)}>
-              {lastSaved ? '↺ Continue where you left off' : '▶ Start the first tutorial'}
+              {lastSaved ? 'Continue where you left off' : 'Start the first tutorial'}
             </button>
           )}
         </div>
@@ -139,7 +140,7 @@ export function Home({ user, goal, universe, universes, topics, mastery, progres
                     <button className="syllabus-row" key={t.id} onClick={() => onOpen(t)}>
                       <span className={`mastery-dot ${isDone ? 'done' : score >= 80 ? 'hot' : score >= 25 ? 'warm' : ''}`} title={isDone ? 'Completed' : `Mastery ${score}`}>•</span>
                       <span><b>{t.title}</b><small>{t.description}</small></span>
-                      <span className="syllabus-duration">{isDone ? '✓ done' : `${t.minutes} min →`}</span>
+                      <span className="syllabus-duration">{isDone ? <><Icon.Check size={14} /> done</> : `${t.minutes} min`}</span>
                     </button>
                   );
                 })}
@@ -315,7 +316,7 @@ export function Plan({ user, goal, topics, data, plan, onOpen, onNavigate }: {
                 <p className="label">NEXT BEST TUTORIAL · {next.module.toUpperCase()}</p>
                 <h2>{next.title}</h2>
                 <p>{next.description}</p>
-                <div className="hero-meta"><span>◷ {next.minutes} min</span><span>◈ Detailed notes</span><span>✓ Practice included</span></div>
+                <div className="hero-meta"><span><Icon.Clock size={14} /> {next.minutes} min</span><span><Icon.BookOpen size={14} /> Detailed notes</span><span><Icon.Check size={14} /> Practice included</span></div>
                 <button onClick={() => onOpen(next)}>Open tutorial →</button>
               </div>
             </section>
@@ -336,7 +337,7 @@ export function Plan({ user, goal, topics, data, plan, onOpen, onNavigate }: {
           </section>
           <section className="card dash-card">
             <p className="label">INSIGHTS</p>
-            {data.insights.map((line: string, i: number) => <p className="insight" key={i}>✦ {line}</p>)}
+            {data.insights.map((line: string, i: number) => <p className="insight" key={i}><Icon.Sparkle size={14} /> {line}</p>)}
           </section>
           <section className="card dash-card">
             <p className="label">YOUR UNIVERSE</p>

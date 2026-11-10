@@ -12,3 +12,6 @@ __pycache__/
 .data/
 
 .playwright-mcp/
+
+# QA screenshots (transient)
+eduswarm-home-full.png

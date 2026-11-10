@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Icon } from './Icon';
 import { apiGet } from '../lib/api';
 import { RichText } from './ui';
 
@@ -102,7 +103,7 @@ export function ArticleReader({ url, fallbackTitle, fallbackPublisher, saved, on
             <div className="reader-actions">
               {onToggleSave && (
                 <button className="reader-save" onClick={onToggleSave}>
-                  {saved ? '★ Saved to your reading list' : '☆ Save to my list'}
+                  {saved ? <><Icon.Star size={16} /> Saved to my list</> : <><Icon.StarOutline size={16} /> Save to my list</>}
                 </button>
               )}
               <a className="reader-original" href={article.finalUrl || url} target="_blank" rel="noreferrer noopener">
