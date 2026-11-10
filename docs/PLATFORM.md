@@ -107,30 +107,11 @@ treats them as discovered infrastructure:
 Regression coverage lives in `services/agent-runtime/test_llm_router.py` and
 `apps/api/src/llm.test.ts`, both driven by a fake OpenRouter on localhost.
 
-### Offline lesson path: licensed tutorial kits
+### Offline lesson path: authored curriculum chapters only
 
-When every model fails, `buildLocalPack` still has to hand back a real lesson.
-It has two tiers:
+When every model fails, `buildLocalPack` still has to hand back a real lesson — and the only local lesson that exists is the authored one. As of the Sprint 1.5 rework: every one of the 259 curriculum topics has an individually authored chapter (`apps/api/src/lessons/<module>.ts`, curated into `TOPIC_LESSONS` in `topicLessons.ts`). `buildLocalPack` renders exactly that chapter and **throws a clear error when no authored lesson is registered** for a topic id. There is no seeded-kit tier, no curated-profile fallback, no module-level essay, and no composed offline lesson anywhere in the product.
 
-1. **Seeded kit** (`apps/api/src/kitStore.ts`, `evidenceMode: local-kit`) — the
-   publisher's actual explanation for that exact topic, extracted into sections,
-   code samples, definitions and key points, each tagged with the source it came
-   from. Produced by `npm run seed:kits`, which:
-   - only fetches from an explicit allow-list (GeeksforGeeks, MDN, W3Schools —
-     the publishers we hold rights for). Any other host is skipped and reported.
-   - obeys `robots.txt` per origin and paces requests.
-   - writes to `EDUSWARM_KITS_DIR` (gitignored `.data/kits` locally, a Render
-     disk in production). **No third-party article text is ever committed.**
-   - records the URL and a licence note on every extract, which the lesson
-     renders as a `*Source: …*` line under each section and surfaces in
-     `verification.licenseNotes`.
-   A kit needs ≥3 substantial sections to be used; thinner ones are rejected.
-2. **Curated tutorial** (`evidenceMode: local-fallback`) — the original
-   hand-written profiles. Always available, used for any topic without a kit.
-
-Both tiers emit the same lesson shape and the same 5-6 section window (more at
-deep), so the UI and the learner see one consistent artifact regardless of which
-path produced it. `npm run kits:report` prints coverage.
+The content contract is in `docs/sprints/SPRINT-1.5-INSTRUCTIONS.md` and `docs/sprints/sprint1.5-contents-standards.md`. `npm run check:lessons` (wired into CI) verifies every curriculum topic id resolves to an authored lesson with valid structure and exits non-zero on any miss.
 
 ### Doubt solver (ambient, stateless Q&A)
 

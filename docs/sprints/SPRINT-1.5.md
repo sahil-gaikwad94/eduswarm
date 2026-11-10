@@ -1,6 +1,7 @@
 # Sprint 1.5 — "Students Should Love Studying Here": Launch-Quality Overhaul
 
-**Status:** COMPLETE — shipped on branch `sprint-1/prune-4tab-guest` (follow-up commit)
+**Status: REWORKED (content leg).** The lesson-authoring contract in `docs/sprints/SPRINT-1.5-INSTRUCTIONS.md` supersedes the "Content engine overhaul" section below, which describes the earlier (rejected) approach. All 259 topics across 35 modules now have individually authored, registered lessons; the legacy composer/module-pack/seeded-kit path is deleted; `npm run check:lessons` enforces coverage in CI. The rest of this document is preserved as the historical log of the rejected pass. The mobile acceptance checklist at 390×844/360×800 has not been re-run against the new packs and must not be claimed complete.
+
 **Driver:** Principal audit of shipped Sprint 1 — see "Issues (verbatim)" below.
 **Skill bar:** every page must pass `/frontend-ui-eng` review at 390px and 1440px.
 
@@ -129,3 +130,22 @@ Sprint 2 (multi-provider router, canonical cache), Sprint 3 (TTS), Sprint 4
 (friends/pods/Razorpay/TL gates). No content copied from third-party articles —
 the reader serves **our** summaries/extractions with attribution and a link to
 the original, mirroring the seeded-kit licensing model already in the repo.
+
+---
+
+## Rework log — content leg (2026-11-10, local branch only; do not push unreviewed)
+
+**What changed, precisely:**
+
+- All 259 curriculum topics (35 modules, `apps/api/src/curriculum.ts`) have a distinct, individually authored lesson in `apps/api/src/lessons/<module>.ts`, registered into `TOPIC_LESSONS` in `apps/api/src/topicLessons.ts`. No module-level essay, no shared template, no runtime composition.
+- Deleted: `apps/api/src/lessonComposer.ts`, `apps/api/src/moduleKnowledge.ts`, `apps/api/src/kitStore.ts`, the snippet and diagram template libraries in `apps/api/src/localPack.ts`, the seeded-kit branch, and `scripts/seed-kits.mjs`.
+- `buildLocalPack` now throws `No authored lesson registered for topic "<id>"` when a topic is missing a lesson. Tests updated: authored-pack assertions replace kit/composer assertions; a missing-lesson test asserts the throw.
+- New gate: `apps/api/scripts/check-lesson-coverage.ts` (`npm run check:lessons`, `npm --workspace apps/api run check:lessons`) validates every curriculum topic id → authored lesson + structural contract (≥3 concepts, ≥2 exam items, ≥3 cheat lines, worked examples present). Wired into CI (`.github/workflows/ci.yml`, between `npm test` and `npm run build`) and exits non-zero on any miss.
+- Earlier modules from the first pass (algorithms, PYQ marathons, DBMS, networks, OS, TOC, compiler design, general aptitude) were rewritten to the same depth standard as the reference modules (~1,400–1,900 words/topic); filler and meta phrasing removed.
+- All 35 lesson files pass per-file `tsc --noEmit --strict --skipLibCheck`; `npx tsx` smoke over the registry reports 259 authored / 0 missing / 0 structure issues; all files are valid UTF-8 with no control bytes. Full `tsc -p apps/api` on this ARM64 dev box has an environment-level `free(): invalid pointer` crash; CI x86_64 is authoritative.
+
+**Not done / not claimed:**
+
+- The mobile acceptance pass (390×844 / 360×800), the in-app reader checks, profile/XP/discussions/flashcard UX verification, and the final `/frontend-ui-eng` review across pages were not re-run against the new local packs in this pass.
+- The branch has not been pushed (`sprint-1/prune-4tab-guest`); per instructions, review precedes any push. CI will be the authoritative x86_64 verification.
+- Product-side Sprint 1.5 items from the original log (achievements, profile redesign, discussions, flashcards UX) were implemented in the earlier rejected pass and were NOT re-evaluated in this rework.

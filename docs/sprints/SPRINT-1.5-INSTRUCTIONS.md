@@ -33,17 +33,13 @@ working brief.
 
 ---
 
-## 2. Current state (end of this session)
+## 2. Current state (rework, 2026-11-10)
 
 ### Content authored
 
-| Module | Topics | Status |
-|---|---:|---|
-| Engineering Mathematics | 13 | Authored, integrated, reference quality |
-| Digital Logic | 7 | Authored, integrated |
-| All remaining modules | 239 | Not authored yet |
+**All 259 topics across 35 modules are authored and registered.** Engineering Mathematics and Digital Logic set the quality bar; every other module was written or rewritten to the same depth standard (~1,400–1,900 words/topic, distinct prose, no module-level essay).
 
-Total curriculum: **259 topics across 35 modules**.
+Total curriculum: **259 topics across 35 modules — coverage gate green**: `npm run check:lessons` reports `curriculum topics: 259`, `authored lessons: 259`, `missing lessons: 0`, `structure issues: 0` and exits 0.
 
 The two completed modules are the quality bar. Engineering Mathematics is the
 long-form reference (roughly 1,350–2,100 words per topic). Digital Logic is the
@@ -66,21 +62,19 @@ topic). Do not shorten later modules to "catch up".
   the authored pack. The legacy composer/kit path still exists below that check
   only so unauthored topics do not crash during the transition.
 
-### Legacy path that must be deleted later
+### Legacy path — DELETED (2026-11-10)
 
-The following are temporary scaffolding and are **not** the content strategy:
+The legacy composer/kit path has been removed entirely:
 
-- `apps/api/src/lessonComposer.ts`
-- `apps/api/src/moduleKnowledge.ts`
-- the seeded-kit branch in `apps/api/src/localPack.ts`
-- `buildKitPack`, the snippet library, and the diagram template library in
-  `localPack.ts`
-- any module-level "knowledge pack" used to fill a topic
-
-Do not delete them until all 259 authored lessons exist. On the day the last
-topic is authored, delete them in one pass and make `buildLocalPack` throw a
-clear error when `lessonFor(topicId)` is missing. At that point there is no
-fallback: a missing lesson is a build/test failure, not a learner-facing essay.
+- `apps/api/src/lessonComposer.ts` — deleted
+- `apps/api/src/moduleKnowledge.ts` — deleted
+- `apps/api/src/kitStore.ts` — deleted (and `scripts/seed-kits.mjs` with it)
+- the seeded-kit branch, `buildKitPack`, the snippet library, and the diagram
+  template library in `localPack.ts` — deleted
+- `buildLocalPack` now **throws a clear error** when `lessonFor(topicId)` is
+  missing. There is no fallback: a missing lesson is a build/test failure, not
+  a learner-facing essay. CI runs `npm run check:lessons` (which also validates
+  structural contract per lesson) and fails on any miss.
 
 ---
 
@@ -484,9 +478,10 @@ Known environment notes:
 6. Only after those three modules: fix any rendering/formatting issue found in
    the spot-checks.
 7. Continue down the queue. Do not skip a module to "finish" the count.
-8. When all 259 are authored: remove the legacy composer/module packs/kit
-   fallback, add the CI coverage check, and run the full mobile acceptance
-   pass.
+8. ~~When all 259 are authored: remove the legacy composer/module packs/kit
+   fallback, add the CI coverage check~~ **DONE 2026-11-10** — composer/packs/kits
+   deleted; CI coverage check added (`npm run check:lessons`). The full mobile
+   acceptance pass has NOT been re-run; do it before calling the product done.
 9. Then and only then: push the branch and update the sprint document.
 
 ---
@@ -501,9 +496,7 @@ Known environment notes:
 | `apps/api/src/lessons/digital-logic.ts` | 7 authored lessons |
 | `apps/api/src/authoredPack.ts` | Authored lesson → study-kit renderer |
 | `apps/api/src/localPack.ts` | Local content entry point; authored first, legacy fallback below |
-| `apps/api/src/lessonComposer.ts` | Legacy composer; delete after 259 |
-| `apps/api/src/moduleKnowledge.ts` | Legacy module packs; delete after 259 |
-| `apps/api/src/kitStore.ts` | Seeded third-party kits; remove from local path after 259 |
+| `apps/api/scripts/check-lesson-coverage.ts` | CI coverage gate: 259 topic ids → authored lesson, structural contract |
 | `apps/api/src/reader.ts` | In-app article extraction, cache, redirects, SSRF guard |
 | `apps/api/src/server.ts` | Learning-content route, reader route, profile PATCH |
 | `apps/web/src/pages/learn.tsx` | Local-first lesson UI |

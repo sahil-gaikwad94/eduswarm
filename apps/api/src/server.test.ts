@@ -31,8 +31,8 @@ test('topic job publishes only a verified package', async () => {
   }
   assert.equal(result.body.status, 'completed');
   const content = await request(`/api/content/${created.body.id}`);
-  assert.equal(['approved', 'fallback'].includes(content.body.verification.status), true); if (content.body.verification.status === 'fallback') assert.equal(content.body.verification.evidenceMode, 'local-fallback');
-  assert.equal(content.body.verification.sources.length >= 2, true);
+  assert.equal(['approved', 'local'].includes(content.body.verification.status), true); if (content.body.verification.status === 'local') assert.equal(content.body.verification.evidenceMode, 'authored-curriculum');
+  assert.equal(content.body.verification.sources.length >= 1, true);
 });
 test('runtime outage completes through the local recovery path', async () => {
   const previous = process.env.AGENT_RUNTIME_URL;
@@ -42,7 +42,7 @@ test('runtime outage completes through the local recovery path', async () => {
   let result: any;
   for (let attempt = 0; attempt < 30; attempt += 1) { await new Promise((resolve) => setTimeout(resolve, 100)); result = await request(`/api/jobs/${created.body.id}`); if (result.body.status === 'completed') break; }
   assert.equal(result.body.status, 'completed');
-  assert.equal(result.body.package.verification.status, 'fallback'); assert.equal(result.body.package.verification.evidenceMode, 'local-fallback');
+  assert.equal(result.body.package.verification.status, 'local'); assert.equal(result.body.package.verification.evidenceMode, 'authored-curriculum');
   if (previous === undefined) delete process.env.AGENT_RUNTIME_URL; else process.env.AGENT_RUNTIME_URL = previous;
 });
 
@@ -273,35 +273,43 @@ test('notes round-trip per learner and topic', async () => {
   assert.equal(missing.status, 200);
   assert.equal(missing.body.text, '');
 });
-test('local study kits are compact, topic-aware, and source-linked', async () => {
+test('authored local chapters are topic-specific, instant, and honestly labeled', async () => {
   const { buildLocalPack } = await import('./localPack.js');
   const { getTopic, catalogs } = await import('./curriculum.js');
   const topic = getTopic('algo-complexity')!;
   const pack = buildLocalPack('algo-complexity', topic, 'standard');
-  assert.equal(pack.notes.sections.length, 6, 'the standard local lesson is one focused sitting, not a generic three-page essay');
+  assert.equal(pack.local, true);
+  assert.equal(pack.authored, true);
+  assert.equal(pack.verification.evidenceMode, 'authored-curriculum');
+  assert.equal(pack.verification.status, 'local');
+  assert.equal(pack.verification.fallbackReason, '');
   assert.equal(pack.quiz.length >= 4, true);
   assert.equal(pack.codeExamples.length >= 1, true);
   assert.equal(pack.diagrams.length >= 1, true);
-  assert.equal(pack.verification.evidenceMode, 'local-fallback');
-  assert.equal(pack.verification.sources.length >= 2, true);
-  assert.equal(pack.verification.sourceRefs.length >= 2, true);
+  assert.equal(pack.notes.sections.length >= 9, true, 'definition + foundations + concepts + worked + exam + recap + revision');
   assert.equal(pack.readingMinutes > 0, true);
+  assert.match(pack.notes.sections[0].heading, /Definition and scope/);
+  assert.match(pack.notes.sections[0].body, /complexity/i);
+  assert.doesNotMatch(pack.notes.sections[0].body, /learning objectives|mental model/i);
+  assert.match(pack.notes.sections.at(-1).heading, /Revision schedule/);
+
   const deep = buildLocalPack('algo-complexity', topic, 'deep');
-  assert.equal(deep.notes.sections.length >= 10, true, 'deep is a long-form treatment, not standard plus a heading');
-  assert.equal(deep.notes.sections.length >= 2 * pack.notes.sections.length - 1, true, 'deep is substantially deeper than standard');
-  assert.equal(deep.notes.sections.length <= 14, true);
+  assert.equal(deep.quiz.length >= pack.quiz.length, true);
+  assert.equal(deep.pyqs.length >= pack.pyqs.length, true);
 
   const node = getTopic('web-dev-backend-with-node-js-node-js-runtime')!;
   const nodePack = buildLocalPack(node.id, node, 'standard');
-  assert.match(nodePack.notes.sections[1].body, /event.loop|event loop/i);
-  assert.equal(nodePack.verification.sourceRefs.every((source: any) => source.url.startsWith('/')), true, 'lesson references stay in-app');
-  assert.equal(nodePack.verification.sourceRefs.length >= 2, true);
+  assert.match(nodePack.notes.sections[0].body, /event.?loop/i);
+  assert.equal(nodePack.authored, true);
 
+  // Coverage: every curriculum topic resolves to an authored pack.
   for (const curriculum of Object.values(catalogs)) {
     for (const current of curriculum) {
       const local = buildLocalPack(current.id, current, 'eli5');
-      assert.equal(local.verification.sourceRefs.length >= 2, true, `${current.id} has reference routes`);
-      assert.equal(local.notes.sections.length >= 5 && local.notes.sections.length <= 6, true, `${current.id} has a 5-6 section standard local tutorial`);
+      assert.equal(local.authored, true, `${current.id} is authored`);
+      assert.equal(local.verification.status, 'local');
+      assert.equal(local.notes.sections.some((section: any) => /Revision schedule/.test(section.heading)), true, `${current.id} ends with the revision schedule`);
+      assert.ok(local.cheatSheet.length >= 6, `${current.id} has a real cheat sheet`);
     }
   }
 });
@@ -445,103 +453,13 @@ test('regeneration fails loudly and keeps the saved kit when the runtime is offl
   assert.deepEqual(after.body, saved.body, 'the saved kit is byte-identical after a failed regen');
 });
 
-test('a seeded licensed kit supplies real extracted tutorial content', async () => {
-  const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const dir = mkdtempSync(join(tmpdir(), 'eduswarm-kits-'));
-  mkdirSync(dir, { recursive: true });
-  const previous = process.env.EDUSWARM_KITS_DIR;
-  process.env.EDUSWARM_KITS_DIR = dir;
-
-  writeFileSync(join(dir, 'algo-complexity.json'), JSON.stringify({
-    topicId: 'algo-complexity', title: 'Time and Space Complexity', fetchedAt: new Date().toISOString(),
-    sources: [{ publisher: 'GeeksforGeeks', title: 'Binary Search', url: 'https://www.geeksforgeeks.org/binary-search/', licenseNote: 'Licensed for offline study.' }],
-    sections: [
-      { heading: 'What is Binary Search?', body: 'Binary Search is a searching algorithm used in a sorted array by repeatedly dividing the search interval in half, reducing the time complexity to O(log N) overall.', sourceIndex: 0 },
-      { heading: 'Algorithm Steps', body: 'Divide the search space in half by computing the middle index, then compare the middle element against the key you are searching for right now.', sourceIndex: 0 },
-      { heading: 'Time Complexity', body: 'Time complexity is O(log N) because the search space halves each iteration until it becomes empty, and auxiliary space is O(1) iteratively.', sourceIndex: 0 },
-    ],
-    codeExamples: [{ title: 'Binary search', language: 'python', code: 'def bs(a, x):\n    lo, hi = 0, len(a) - 1\n    return -1', explanation: 'Worked example from the tutorial.', sourceIndex: 0 }],
-    keyPoints: ['The array must always be sorted before applying binary search, or the result is undefined.'],
-    definitions: [{ term: 'Binary Search', meaning: 'a searching algorithm that halves a sorted interval until the key is found.', sourceIndex: 0 }],
-  }));
-
-  const { clearKitCache } = await import('./kitStore.js');
-  clearKitCache();
+test('a missing authored lesson fails loudly instead of fabricating one', async () => {
   const { buildLocalPack } = await import('./localPack.js');
   const { getTopic } = await import('./curriculum.js');
-  const pack = buildLocalPack('algo-complexity', getTopic('algo-complexity')!, 'standard');
-
-  assert.equal(pack.verification.evidenceMode, 'local-kit');
-  assert.equal(pack.verification.provider, 'licensed-tutorial-kits');
-  assert.equal(pack.verification.licenseNotes.includes('Licensed for offline study.'), true, 'the licence note reaches the UI');
-
-  // The publisher's real explanation, not our generic prose.
-  const bodies = pack.notes.sections.map((section: any) => section.body).join('\n');
-  assert.equal(bodies.includes('repeatedly dividing the search interval in half'), true, 'extracted prose is used verbatim');
-  assert.equal(bodies.includes('*Source: [GeeksforGeeks'), true, 'every extract stays attributed');
-  assert.equal(pack.notes.sections.length >= 5 && pack.notes.sections.length <= 6, true);
-  const headings = pack.notes.sections.map((section: any) => section.heading);
-  assert.equal(headings[0].startsWith('Introduction to'), true, 'kits keep the same teaching flow as curated packs');
-  assert.equal(headings.includes('What is Binary Search?'), true);
-  assert.equal(pack.codeExamples[0].language, 'python');
-  assert.equal(pack.flashcards.length > 0 && pack.quiz.length > 0, true);
-  assert.equal(pack.cheatSheet.some((line: string) => line.includes('Binary Search')), true);
-
-  // A deep kit lesson uses more of the extracted material.
-  const deep = buildLocalPack('algo-complexity', getTopic('algo-complexity')!, 'deep');
-  assert.equal(deep.flashcards.length >= pack.flashcards.length, true);
-
-  process.env.EDUSWARM_KITS_DIR = previous;
-  clearKitCache();
-});
-
-test('an unseeded or unusable kit falls back to the curated tutorial', async () => {
-  const { mkdtempSync, writeFileSync } = await import('node:fs');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const dir = mkdtempSync(join(tmpdir(), 'eduswarm-kits-'));
-  const previous = process.env.EDUSWARM_KITS_DIR;
-  process.env.EDUSWARM_KITS_DIR = dir;
-
-  // Too thin to teach from: must be ignored rather than published.
-  writeFileSync(join(dir, 'algo-sorting.json'), JSON.stringify({
-    topicId: 'algo-sorting', title: 'Searching and Sorting', fetchedAt: new Date().toISOString(),
-    sources: [{ publisher: 'GeeksforGeeks', title: 'Sorting', url: 'https://www.geeksforgeeks.org/sorting-algorithms/' }],
-    sections: [{ heading: 'Intro', body: 'Too short.', sourceIndex: 0 }], codeExamples: [], keyPoints: [], definitions: [],
-  }));
-
-  const { clearKitCache, hasKit } = await import('./kitStore.js');
-  clearKitCache();
-  assert.equal(hasKit('algo-sorting'), false, 'a thin kit is rejected');
-  assert.equal(hasKit('algo-graphs'), false, 'a missing kit is simply absent');
-
-  const { buildLocalPack } = await import('./localPack.js');
-  const { getTopic } = await import('./curriculum.js');
-  for (const id of ['algo-sorting', 'algo-graphs']) {
-    const pack = buildLocalPack(id, getTopic(id)!, 'standard');
-    assert.equal(pack.verification.evidenceMode, 'local-fallback', `${id} uses the curated tutorial`);
-    assert.equal(pack.notes.sections.length >= 5, true);
-  }
-
-  process.env.EDUSWARM_KITS_DIR = previous;
-  clearKitCache();
-});
-
-test('the kit seeder only accepts publishers we hold rights for', async () => {
-  // The seeder is plain JS tooling outside the API's type graph.
-  const seeder: any = await import(/* @vite-ignore */ '../../../scripts/seed-kits.mjs' as any);
-  const { publisherFor, parseRobots } = seeder;
-  assert.equal(publisherFor('https://www.geeksforgeeks.org/binary-search/')?.publisher, 'GeeksforGeeks');
-  assert.equal(publisherFor('https://developer.mozilla.org/en-US/docs/Web/CSS')?.publisher, 'MDN Web Docs');
-  assert.equal(publisherFor('https://www.w3schools.com/css/default.asp')?.publisher, 'W3Schools');
-  assert.equal(publisherFor('https://example.com/tutorial'), null, 'unlicensed publishers are refused');
-  assert.equal(publisherFor('https://stackoverflow.com/questions/1'), null);
-  assert.equal(publisherFor('https://www.geeksforgeeks.org/x/')?.licenseNote?.length > 10, true, 'a licence note is recorded');
-
-  const rules = parseRobots('User-agent: *\nDisallow: /private\nAllow: /private/ok\n');
-  assert.equal(rules.length, 2);
+  assert.throws(
+    () => buildLocalPack('gate-cs-algorithms-this-topic-does-not-exist', getTopic('algo-complexity')!, 'standard'),
+    /No authored lesson registered/,
+  );
 });
 
 // ------------------------------------------------------- discussions (Sprint 1)
@@ -607,12 +525,14 @@ test('guest reads are public, curated and never persisted', async () => {
   }
 });
 
-test('authenticated learners without a saved kit get the curated baseline, never persisted', async () => {
+test('authenticated learners without a saved kit get the authored chapter, never persisted', async () => {
   const headers = { 'x-demo-user': 'baseline-reader' };
   const pack = await request('/api/learning/content/algo-sorting', { headers });
   assert.equal(pack.status, 200);
-  assert.equal(pack.body.baseline, true);
-  assert.equal(pack.body.verification.status, 'fallback');
+  assert.equal(pack.body.local, true);
+  assert.equal(pack.body.authored, true);
+  assert.equal(pack.body.verification.evidenceMode, 'authored-curriculum');
+  assert.equal(pack.body.verification.status, 'local');
   const list = await request('/api/learning/content', { headers });
   assert.equal(list.body.content.some((item: any) => item.topicId === 'algo-sorting'), false, 'baseline reads are never persisted');
 });
