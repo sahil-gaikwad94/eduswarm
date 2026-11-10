@@ -1560,3 +1560,114 @@ button.btn-primary:active { transform: scale(0.98); }
 /* settings sheet polish */
 .settings-field label { font-size: 0.8rem; color: var(--color-text-secondary); font-weight: 600; }
 .settings-note { color: var(--color-text-muted); font-size: 0.75rem; }
+
+/* ===================================================
+   STAGE 4 — Discussions (token-native rebuild)
+   =================================================== */
+
+.disc-post header { display: flex; gap: 12px; align-items: center; }
+.disc-meta small { color: var(--color-text-muted); font-size: 0.75rem; }
+.disc-topic-link {
+  background: transparent;
+  color: var(--color-accent-strong);
+  font-weight: 600;
+  font-size: 0.78rem;
+  border: 0;
+  padding: 0;
+}
+.disc-topic-link:hover { color: var(--color-accent); }
+
+.disc-streak {
+  color: var(--color-pop-ink);
+  background: var(--color-pop-soft);
+  border-radius: var(--radius-pill);
+  padding: 1px 8px;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+.disc-kind-badge {
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+.disc-kind-badge.resolved { background: var(--color-success-soft); color: var(--color-success); }
+
+/* composer */
+.disc-composer {
+  background: var(--color-background-surface);
+  border-color: var(--color-border);
+  border-radius: var(--radius-container);
+  padding: 20px;
+}
+.disc-kind-picker button {
+  border: 1px solid var(--color-border);
+  background: var(--color-background-raised);
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  border-radius: var(--radius-element);
+  padding: 10px 12px;
+}
+.disc-kind-picker button.active { border-color: var(--color-accent); color: var(--color-accent-strong); background: var(--color-accent-soft); }
+.disc-composer input, .disc-composer textarea {
+  border: 1px solid var(--color-border);
+  background: var(--color-background-raised);
+  border-radius: var(--radius-element);
+  color: var(--color-text-primary);
+}
+.disc-composer input:focus, .disc-composer textarea:focus { outline: 2.5px solid var(--color-focus); outline-offset: 1px; border-color: var(--color-accent); }
+.disc-composer-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; gap: 12px; }
+.disc-notice { color: var(--color-error); font-weight: 600; font-size: 0.78rem; }
+.disc-composer button[type="submit"] { background: var(--color-accent); color: var(--color-on-accent); border-radius: var(--radius-element); font-weight: 700; padding: 12px 20px; }
+
+/* filters + layout */
+.disc-filters { background: var(--color-background-surface); border-color: var(--color-border); border-radius: var(--radius-container); }
+.disc-kind-tabs button { border-radius: var(--radius-element); }
+.disc-kind-tabs button.active { background: var(--color-accent); color: var(--color-on-accent); }
+.disc-search { border: 1px solid var(--color-border); background: var(--color-background-raised); border-radius: var(--radius-element); color: var(--color-text-primary); }
+.disc-search:focus { outline: 2.5px solid var(--color-focus); outline-offset: 1px; }
+.disc-topic-chip {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  font-weight: 600;
+}
+.discussions-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; }
+.disc-feed { display: grid; gap: 12px; }
+.disc-post {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  padding: 18px;
+}
+.disc-post h2 { font-family: var(--font-display); font-size: 1.15rem; letter-spacing: -0.02em; margin: 12px 0 6px; }
+.disc-body { color: var(--color-text-secondary); font-size: 0.92rem; line-height: 1.6; }
+.disc-post footer { display: flex; gap: 10px; align-items: center; margin-top: 14px; }
+.disc-upvote {
+  border: 1px solid var(--color-border);
+  background: var(--color-background-raised);
+  border-radius: var(--radius-element);
+  padding: 6px 12px;
+  color: var(--color-text-primary);
+  font-weight: 600;
+}
+.disc-upvote.active { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
+.disc-resolve { border-color: var(--color-success); color: var(--color-success); background: var(--color-success-soft); border-radius: var(--radius-element); padding: 6px 12px; }
+.disc-comment-toggle { border-color: var(--color-border); color: var(--color-text-secondary); background: transparent; border-radius: var(--radius-element); padding: 6px 12px; }
+.disc-comment-box input { border: 1px solid var(--color-border); background: var(--color-background-raised); border-radius: var(--radius-element); color: var(--color-text-primary); padding: 10px 12px; }
+.disc-comment-box button { background: var(--color-accent); color: var(--color-on-accent); border-radius: var(--radius-element); padding: 10px 14px; font-weight: 600; }
+
+/* right rail */
+.disc-rail-card {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  padding: 18px;
+}
+.disc-rail-topics button { border-color: var(--color-border); background: var(--color-background-raised); border-radius: var(--radius-element); }
+.disc-xp-card { background: var(--color-pop-soft); border-color: transparent; }
