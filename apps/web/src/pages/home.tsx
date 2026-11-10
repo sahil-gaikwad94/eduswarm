@@ -138,7 +138,7 @@ export function Home({ user, goal, universe, universes, topics, mastery, progres
                   const isDone = completedIds.has(t.id);
                   return (
                     <button className="syllabus-row" key={t.id} onClick={() => onOpen(t)}>
-                      <span className={`mastery-dot ${isDone ? 'done' : score >= 80 ? 'hot' : score >= 25 ? 'warm' : ''}`} title={isDone ? 'Completed' : `Mastery ${score}`}>•</span>
+                      <span className={`mastery-dot ${isDone ? 'done' : score >= 80 ? 'hot' : score >= 25 ? 'warm' : ''}`} title={isDone ? 'Completed' : `Mastery ${score}`} aria-hidden="true" />
                       <span><b>{t.title}</b><small>{t.description}</small></span>
                       <span className="syllabus-duration">{isDone ? <><Icon.Check size={14} /> done</> : `${t.minutes} min`}</span>
                     </button>

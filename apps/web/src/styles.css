@@ -1655,9 +1655,11 @@ body {
   height: 72px;
 }
 
-.brand { color: var(--color-text-primary); font-family: var(--font-display); }
+.brand { color: var(--color-text-primary); font-family: var(--font-display); display: inline-flex; align-items: center; gap: 9px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; }
 
-.brand-mark { color: var(--color-accent); }
+.brand-button { display: inline-flex; align-items: center; }
+
+.brand-mark { color: var(--color-accent); width: 24px; height: 24px; flex: none; display: block; }
 
 .search-trigger {
   border-color: var(--color-border);
@@ -1735,6 +1737,7 @@ body {
 }
 
 .mobile-nav {
+  display: none;
   background: color-mix(in srgb, var(--color-background-root) 88%, transparent);
   border-top: 1px solid var(--color-border);
   padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
@@ -1948,17 +1951,17 @@ body {
 
 .syllabus-row:hover b { color: var(--color-accent-strong); }
 
-.syllabus-row b { color: var(--color-text-primary); }
+.syllabus-row b { color: var(--color-text-primary); display: block; font-size: 14.5px; line-height: 1.35; }
 
-.syllabus-row small { color: var(--color-text-muted); }
+.syllabus-row small { color: var(--color-text-muted); display: block; font-size: 12px; line-height: 1.5; margin-top: 3px; }
 
-.mastery-dot { font-size: 1.4rem; line-height: 1; color: var(--color-border-emphasized); }
+.mastery-dot { display: block; width: 12px; height: 12px; border-radius: 50%; background: var(--color-border-emphasized); }
 
-.mastery-dot.warm { color: #d1af21; }
+.mastery-dot.warm { background: #d1af21; }
 
-.mastery-dot.hot { color: var(--color-success); }
+.mastery-dot.hot { background: var(--color-success); }
 
-.mastery-dot.done { color: var(--color-success); }
+.mastery-dot.done { background: var(--color-success); }
 
 /* xp strip — stat cards with lime pop for streak/xp */
 .xp-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 26px 0; }
@@ -2440,3 +2443,8 @@ body {
 .nav-item span { display: inline-grid; place-items: center; width: 22px; height: 22px; }
 .nav-item span svg { width: 18px; height: 18px; }
 .mobile-nav .nav-item span svg { width: 20px; height: 20px; }
+
+/* mobile bottom dock — only under the phone breakpoint, and with source order after the base rule */
+@media (max-width: 680px) {
+  .mobile-nav { display: grid; grid-template-columns: repeat(4, 1fr); }
+}

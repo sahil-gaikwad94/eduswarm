@@ -390,7 +390,7 @@ export function App() {
         <div className="header-actions">
           <ThemeToggle />
           {!guest && <button className="search-trigger" onClick={() => setPalette(true)} title="Search (Ctrl+K)">Search ⌘K</button>}
-          {!guest && <span className="streak-pill">Streak · {streak ? `${streak} days` : 'start today'}</span>}
+          {!guest && <span className="streak-pill"><Icon.Flame size={14} /> {streak ? (streak === 1 ? '1-day streak' : `${streak}-day streak`) : 'start today'}</span>}
           {guest
             ? <button className="signin-cta" onClick={signIn}>Sign in<span aria-hidden> →</span></button>
             : <AvatarMenu name={user.name} onNavigate={navigate} onSignOut={signOut} />}
