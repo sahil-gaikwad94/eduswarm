@@ -1504,3 +1504,59 @@ button.btn-primary:active { transform: scale(0.98); }
 /* sources */
 .sources { border-color: var(--color-border); }
 .sources span { color: var(--color-accent-strong); }
+
+/* ===================================================
+   STAGE 3 — Profile (token-native rebuild)
+   =================================================== */
+
+.social-cover { position: relative; overflow: hidden; background: var(--color-text-primary); border-radius: var(--radius-container); color: #fff; }
+.social-cover-orb { position: absolute; border-radius: 50%; filter: blur(2px); opacity: 0.6; animation: none; }
+.social-cover { background: linear-gradient(120deg, #1e1b2e 0%, #2a2445 55%, #3a2a63 100%); }
+.social-card {
+  background: var(--color-background-surface);
+  border-color: var(--color-border);
+  border-radius: var(--radius-container);
+  box-shadow: var(--shadow-low);
+}
+.social-card-head h1, .social-card-head h2 { color: var(--color-text-primary); font-family: var(--font-display); }
+.social-card-note { color: var(--color-text-muted); }
+.social-panel { background: var(--color-background-raised); border-radius: var(--radius-container); border: 1px solid var(--color-border); }
+
+/* social stats — three loud cards, all token-colored */
+.social-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 22px 0; }
+.social-stat {
+  background: var(--color-background-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  padding: 18px;
+  text-align: left;
+}
+.social-stat b { font: 600 1.5rem/1 var(--font-display); color: var(--color-text-primary); }
+.social-stat span { display: block; font-size: 0.7rem; color: var(--color-text-muted); margin-top: 6px; letter-spacing: 0.1em; font-weight: 700; }
+.social-stat small { color: var(--color-text-secondary); font-size: 0.75rem; display: block; margin-top: 4px; }
+.social-stat.violet { background: var(--color-accent-soft); border-color: transparent; }
+.social-stat.violet span { color: var(--color-accent-strong); }
+.social-stat.yellow { background: var(--color-yellow-soft); border-color: transparent; }
+.social-stat.yellow span { color: var(--color-warning); }
+
+/* profile hero identity */
+.profile-tab-count {
+  font: 700 0.75rem var(--font-mono);
+  border-radius: var(--radius-pill);
+  padding: 2px 8px;
+  background: var(--color-background-raised);
+  border: 1px solid var(--color-border);
+}
+.badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.badge {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  padding: 16px;
+  text-align: center;
+}
+.badges .badge-icon { font-size: 1.6rem; color: var(--color-text-muted); }
+
+/* settings sheet polish */
+.settings-field label { font-size: 0.8rem; color: var(--color-text-secondary); font-weight: 600; }
+.settings-note { color: var(--color-text-muted); font-size: 0.75rem; }
