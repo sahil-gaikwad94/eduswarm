@@ -1387,3 +1387,120 @@ button.btn-primary:active { transform: scale(0.98); }
 
 /* mobile dock stays above content and respects safe area */
 .mobile-nav { border-top-color: var(--color-border); }
+
+/* ===================================================
+   STAGE 2 — Lesson (magazine read, token-native)
+   =================================================== */
+
+.back-link { color: var(--color-text-muted); }
+.back-link:hover { color: var(--color-accent-strong); }
+
+.lesson-header h1 {
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+  line-height: 1.04;
+}
+.lesson-tags span {
+  background: var(--color-background-raised);
+  color: var(--color-text-secondary);
+  border-color: var(--color-border);
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+/* verified line + page rail */
+.verified-line { color: var(--color-text-muted); }
+.verified-chip {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  border-color: transparent;
+}
+.rail-card {
+  background: var(--color-background-surface);
+  border-color: var(--color-border);
+  border-radius: var(--radius-container);
+  box-shadow: var(--shadow-low);
+}
+.rail-card.accent { background: var(--color-accent-soft); border-color: transparent; }
+.rail-card.accent h3 { color: var(--color-accent-strong); font-family: var(--font-display); }
+.rail-card.accent p:not(.label) { color: var(--color-text-secondary); }
+.rail-card.accent button {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: var(--radius-element);
+}
+
+/* sections — typography hierarchy */
+.lesson-section { border-top: 1px solid var(--color-border); padding-top: 22px; }
+.section-number { color: var(--color-accent); font-family: var(--font-mono); font-weight: 700; }
+.lesson-section h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 1.9rem);
+  letter-spacing: -0.025em;
+  color: var(--color-text-primary);
+}
+.lesson-section p { color: var(--color-text-secondary); font-size: 1rem; line-height: 1.78; }
+
+/* code — intentional dark surface regardless of page theme */
+.code-section {
+  background: #171420;
+  border-radius: var(--radius-container);
+  color: #efeaf9;
+}
+.code-heading {
+  background: #211d2d;
+  color: #b0a8cf;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.code-section pre {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.75;
+}
+
+/* callouts */
+.formula-card {
+  background: var(--color-accent-soft);
+  border-color: transparent;
+  border-radius: var(--radius-container);
+}
+.formula-card > span { color: var(--color-accent-strong); }
+.formula-card div b { color: var(--color-text-primary); font-family: var(--font-display); }
+.formula-card small { color: var(--color-text-muted); }
+
+.takeaways {
+  background: var(--color-success-soft);
+  border-color: transparent;
+  border-radius: var(--radius-container);
+}
+.takeaways > div { color: #1f5c36; }
+
+.diagram-card {
+  background: var(--color-background-surface);
+  border-color: var(--color-border);
+  border-radius: var(--radius-container);
+}
+.diagram-card h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
+
+/* start-learning banner */
+.start-learning {
+  background: var(--color-background-raised);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+}
+.start-learning h2 { font-family: var(--font-display); letter-spacing: -0.02em; }
+
+/* lesson footer actions */
+.lesson-footer-actions { border-top-color: var(--color-border); }
+.lesson-footer-actions button:first-child {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: var(--radius-element);
+}
+.lesson-footer-actions button:first-child:hover { background: var(--color-accent-strong); }
+.lesson-footer-actions .secondary-button { background: var(--color-background-raised); color: var(--color-text-primary); }
+
+/* sources */
+.sources { border-color: var(--color-border); }
+.sources span { color: var(--color-accent-strong); }
