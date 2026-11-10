@@ -201,10 +201,10 @@ export function Home({ user, goal, universe, universes, topics, mastery, progres
       </section>
 
       <section className="home-shortcuts">
-        <button onClick={() => onNavigate('practice')}><b>✓ Practice lab</b><small>Sprints & mocks, one graph</small></button>
-        <button onClick={() => onNavigate('discussions')}><b>◉ Discussions</b><small>Doubts answered by peers & the Dean</small></button>
-        <button onClick={() => onNavigate('library')}><b>❖ Reading Room</b><small>Free, curated depth</small></button>
-        <button onClick={() => onNavigate('plan')}><b>◈ Today's mission</b><small>Your ranked next actions</small></button>
+        <button onClick={() => onNavigate('practice')}><b>Practice lab</b><small>Sprints & mocks, one graph</small></button>
+        <button onClick={() => onNavigate('discussions')}><b>Discussions</b><small>Doubts answered by peers & the Dean</small></button>
+        <button onClick={() => onNavigate('library')}><b>Reading Room</b><small>Free, curated depth</small></button>
+        <button onClick={() => onNavigate('plan')}><b>Today's mission</b><small>Your ranked next actions</small></button>
       </section>
     </>
   );
@@ -233,7 +233,7 @@ export function DailyChallenge({ goal }: { goal: string }) {
 
   return (
     <section className="card dash-card daily-card">
-      <p className="label">⚡ DAILY CHALLENGE · {daily.date}</p>
+      <p className="label">Daily challenge · {daily.date}</p>
       <b className="daily-question">{q.question}</b>
       <small className="muted">{q.subject} · {q.topic} · {q.difficulty}</small>
       <div className="daily-options">

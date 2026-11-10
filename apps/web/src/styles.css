@@ -1238,3 +1238,152 @@ button.btn-primary:active { transform: scale(0.98); }
 }
 .guest-topbar-note button { color: var(--color-accent-strong); }
 .guest-note-close { color: var(--color-text-muted); }
+
+/* ===================================================
+   STAGE 1 — Home (token-native rebuild, visual only)
+   =================================================== */
+
+.page-heading h1, .compact-heading h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 5.4vw, 3.4rem);
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin-bottom: 8px;
+}
+.lead { color: var(--color-text-secondary); font-size: 1rem; max-width: 620px; }
+
+/* universe switch — three tight select cards */
+.universe-switch { margin-bottom: 28px; }
+.universe-switch-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+.universe-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.universe-card {
+  text-align: left;
+  padding: 18px;
+  border-radius: var(--radius-container);
+  border: 1px solid var(--color-border);
+  background: var(--color-background-surface);
+  display: grid;
+  gap: 8px;
+  transition: border-color var(--duration-fast) var(--ease-standard), transform var(--duration-fast) var(--ease-expressive);
+}
+.universe-card b { font-family: var(--font-display); font-size: 1.05rem; letter-spacing: -0.01em; color: var(--color-text-primary); }
+.universe-card small { color: var(--color-text-muted); font-size: 0.75rem; line-height: 1.45; }
+.universe-card:hover { border-color: var(--color-accent); transform: translateY(-2px); }
+.universe-card.active { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.universe-card.active b { color: var(--color-accent-strong); }
+.universe-flag { font-size: 0.62rem; letter-spacing: 0.14em; font-weight: 700; color: var(--color-text-muted); }
+.universe-card.active .universe-flag { color: var(--color-accent); }
+.universe-meta { font-size: 0.72rem; font-weight: 600; color: var(--color-text-muted); }
+.universe-card.active .universe-meta { color: var(--color-accent-strong); }
+
+/* syllabus head — white card, primary action */
+.syllabus-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 26px;
+  border-radius: var(--radius-container);
+  margin-bottom: 28px;
+}
+.syllabus-head-text h2 { font-family: var(--font-display); font-size: 1.6rem; letter-spacing: -0.02em; margin: 6px 0; }
+.syllabus-filter {
+  border: 1px solid var(--color-border);
+  background: var(--color-background-raised);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-element);
+  padding: 12px 14px;
+  font-size: 0.9rem;
+  min-width: 260px;
+}
+.syllabus-filter:focus { border-color: var(--color-accent); outline: 2.5px solid var(--color-focus); outline-offset: 1px; }
+.continue-button {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: var(--radius-element);
+  padding: 12px 20px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: var(--shadow-low);
+}
+.continue-button:hover { background: var(--color-accent-strong); }
+
+/* syllabus list — hairline rows, no big card frames */
+.syllabus-list { display: grid; gap: 18px; }
+.syllabus-module {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 16px;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  padding: 18px 18px 12px;
+}
+.module-marker span {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-element);
+  background: var(--color-text-primary);
+  color: var(--color-pop);
+  font: 700 0.72rem var(--font-display);
+  letter-spacing: 0.08em;
+}
+.module-marker i { display: block; width: 2px; height: calc(100% - 44px); background: var(--color-border); margin: 10px auto 0; }
+.syllabus-module-head { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin-bottom: 12px; }
+.syllabus-module-head h2 { font-family: var(--font-display); font-size: 1.35rem; letter-spacing: -0.02em; margin: 4px 0 0; }
+.syllabus-module-meta { display: flex; align-items: baseline; gap: 14px; }
+.syllabus-module-meta span { font-family: var(--font-mono); font-size: 0.72rem; color: var(--color-text-muted); }
+.syllabus-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 16px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  text-align: left;
+  border-top: 1px solid var(--color-border);
+  background: transparent;
+  padding: 13px 4px;
+}
+.syllabus-row:hover b { color: var(--color-accent-strong); }
+.syllabus-row b { color: var(--color-text-primary); }
+.syllabus-row small { color: var(--color-text-muted); }
+.mastery-dot { font-size: 1.4rem; line-height: 1; color: var(--color-border-emphasized); }
+.mastery-dot.warm { color: #d1af21; }
+.mastery-dot.hot { color: var(--color-success); }
+.mastery-dot.done { color: var(--color-success); }
+
+/* xp strip — stat cards with lime pop for streak/xp */
+.xp-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 26px 0; }
+.xp-strip-card {
+  border: 1px solid var(--color-border);
+  background: var(--color-background-surface);
+  border-radius: var(--radius-container);
+  padding: 18px;
+  display: grid;
+  gap: 6px;
+}
+.xp-strip-card span { font-size: 0.62rem; letter-spacing: 0.14em; font-weight: 700; color: var(--color-text-muted); }
+.xp-strip-card b { font: 600 1.45rem/1 var(--font-display); color: var(--color-text-primary); }
+.xp-strip-card small { color: var(--color-text-secondary); font-size: 0.72rem; }
+.xp-strip-card.week-grid { grid-column: span 2; }
+.xp-bar { height: 6px; background: var(--color-background-sunken); border-radius: var(--radius-pill); overflow: hidden; }
+.xp-bar i { display: block; height: 100%; background: var(--color-pop); }
+
+/* shortcuts — quiet pill buttons */
+.home-shortcuts { display: flex; gap: 10px; flex-wrap: wrap; }
+.home-shortcuts button {
+  border: 1px solid var(--color-border);
+  background: var(--color-background-raised);
+  border-radius: var(--radius-pill);
+  padding: 9px 16px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  transition: border-color var(--duration-fast), transform var(--duration-fast) var(--ease-expressive);
+}
+.home-shortcuts button:hover { border-color: var(--color-accent); color: var(--color-accent-strong); transform: translateY(-1px); }
+.home-shortcuts small { color: var(--color-text-muted); margin-left: 6px; font-weight: 500; }
+
+/* mobile dock stays above content and respects safe area */
+.mobile-nav { border-top-color: var(--color-border); }
