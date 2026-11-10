@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { API, apiGet, apiPost, type Page, type Topic } from '../lib/api';
+import { apiGet, apiPost, type Page, type Topic } from '../lib/api';
 import { Mascot, MascotFace, Sparkles, type MascotMood } from './Mascot';
 import { Diamond, Icon } from './Icon';
 
@@ -432,7 +432,6 @@ export function Onboarding({ user, onDone }: { user: any; onDone: (user: any) =>
           {error && <p className="error-copy">{error}</p>}
           <button disabled={busy}>{busy ? 'Setting up…' : 'Start learning →'}</button>
         </form>
-        <p className="muted" style={{ marginTop: 14 }}>API: {API}</p>
       </section>
     </main>
   );
