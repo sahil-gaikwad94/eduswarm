@@ -383,6 +383,7 @@ export function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <header className="topbar">
         <button className="brand-button" onClick={() => navigate('dashboard')}><Brand /></button>
         <div className="header-actions">
@@ -445,7 +446,7 @@ export function App() {
             </div>
           )}
         </aside>
-        <main className="main-content">
+        <main className="main-content" id="main-content">
           {page === 'dashboard' && (
             <Home
               user={user} goal={goal} universe={activeUniverse} universes={UNIVERSES} topics={topics}
