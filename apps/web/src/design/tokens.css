@@ -26,6 +26,7 @@
   /* accent — violet, the app's primary signal */
   --color-accent: #6d3df0;
   --color-accent-strong: #5328dd;
+  --color-accent-2: #a78dff;
   --color-accent-soft: #ede7fe;
   --color-accent-soft-strong: #ddd3fd;
   --color-on-accent: #ffffff;
@@ -117,6 +118,7 @@
 
   --color-accent: #a78bfa;
   --color-accent-strong: #bfa8fd;
+  --color-accent-2: #8b5cf6;
   --color-accent-soft: #2c2447;
   --color-accent-soft-strong: #3d325f;
   --color-on-accent: #16121e;
