@@ -1671,3 +1671,69 @@ button.btn-primary:active { transform: scale(0.98); }
 }
 .disc-rail-topics button { border-color: var(--color-border); background: var(--color-background-raised); border-radius: var(--radius-element); }
 .disc-xp-card { background: var(--color-pop-soft); border-color: transparent; }
+
+/* ===================================================
+   STAGE 5 — Practice drills, Flashcards, Library
+   =================================================== */
+
+/* practice card — question surface + accent CTA */
+.practice-card {
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  box-shadow: var(--shadow-low);
+}
+.practice-card h2 { font-family: var(--font-display); letter-spacing: -0.03em; }
+.options { display: grid; gap: 10px; }
+.option { border-radius: var(--radius-element); border: 1px solid var(--color-border); background: var(--color-background-raised); color: var(--color-text-primary); }
+.option:hover { border-color: var(--color-accent); }
+.option.correct { background: var(--color-success-soft); border-color: var(--color-success); color: #1f5c36; }
+.option.incorrect { background: var(--color-error-soft); border-color: var(--color-error); color: #6e1a14; }
+.option span { background: var(--color-background-surface); border-color: var(--color-border); color: var(--color-text-muted); border-radius: var(--radius-element); }
+.option.correct span { background: var(--color-success); color: var(--color-on-accent); border-color: var(--color-success); }
+.option.incorrect span { background: var(--color-error); color: #fff; border-color: var(--color-error); }
+.feedback.good { background: var(--color-success-soft); color: #1f5c36; border-radius: var(--radius-element); }
+.feedback.needs-work { background: var(--color-warning-soft); color: #6e4a0b; border-radius: var(--radius-element); }
+.notes-actions button.continue { background: var(--color-accent); color: var(--color-on-accent); border-radius: var(--radius-element); }
+.notes-box { border-color: var(--color-border); background: var(--color-background-raised); border-radius: var(--radius-container); }
+
+/* flashcards */
+.flashcard-workspace { max-width: 720px; margin: 0 auto; }
+.flashcard { border-radius: var(--radius-container); }
+.card-face { background: var(--color-text-primary); }
+.card-face.answer { background: var(--color-accent); }
+.card-face small { color: var(--color-pop); letter-spacing: 0.14em; }
+.card-face em { color: rgba(255,255,255,.65); }
+.flashcard-progress > div { background: var(--color-background-sunken); }
+.flashcard-progress i { background: var(--color-accent); }
+.card-controls button { border-radius: var(--radius-element); }
+
+/* library */
+.reader-skeleton { border-radius: var(--radius-container); }
+.source-list { display: grid; gap: 14px; }
+.source-item {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  gap: 14px;
+  align-items: center;
+  background: var(--color-background-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-container);
+  padding: 14px;
+}
+.source-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-element);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+.source-link { color: var(--color-accent-strong); font-weight: 600; text-decoration: none; }
+.source-link:hover { color: var(--color-accent); text-decoration: underline; }
+.source-open { border-color: var(--color-border); color: var(--color-text-secondary); border-radius: var(--radius-element); padding: 8px 12px; background: transparent; }
+.source-copy { display: flex; gap: 10px; }
+.rail-help { border-color: var(--color-border); color: var(--color-text-muted); border-radius: var(--radius-element); padding: 10px 14px; }
