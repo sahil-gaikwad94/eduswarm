@@ -1737,3 +1737,34 @@ button.btn-primary:active { transform: scale(0.98); }
 .source-open { border-color: var(--color-border); color: var(--color-text-secondary); border-radius: var(--radius-element); padding: 8px 12px; background: transparent; }
 .source-copy { display: flex; gap: 10px; }
 .rail-help { border-color: var(--color-border); color: var(--color-text-muted); border-radius: var(--radius-element); padding: 10px 14px; }
+
+/* ===================================================
+   STAGE 6 — Landing & Onboarding (token pass)
+   =================================================== */
+
+/* l2 design language — keep its character, route controls through tokens */
+.l2-cta {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  border-radius: var(--radius-element);
+}
+.l2-cta:hover { background: var(--color-accent-strong); }
+.l2-cta.secondary { background: transparent; color: var(--color-text-primary); border: 1px solid var(--color-border); }
+.l2-cta.secondary:hover { border-color: var(--color-accent); color: var(--color-accent-strong); }
+
+.l2-chip { background: var(--color-background-raised); border: 1px solid var(--color-border); color: var(--color-text-secondary); border-radius: var(--radius-pill); }
+.l2-nav { background: color-mix(in srgb, var(--color-background-root) 82%, transparent); backdrop-filter: blur(12px); }
+
+.l2-hero-bg { background: var(--color-background-root); }
+.l2-glow { opacity: 0.2; }
+
+/* onboarding */
+.onboard-hover { border-color: var(--color-border); }
+.hub-note .hint { color: var(--color-text-muted); }
+
+/* Guest topbar note keeps pop color tied to tokens */
+.guest-topbar-note { background: var(--color-pop-soft); color: var(--color-pop-ink); }
+.guest-topbar-note button, .guest-topbar-note button:hover { color: var(--color-accent-strong); text-decoration: none; font-weight: 700; border-color: var(--color-pop-ink); }
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+}
