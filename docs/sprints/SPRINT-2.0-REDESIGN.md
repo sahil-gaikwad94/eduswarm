@@ -144,3 +144,32 @@ For every screen: (a) rebuild with Astryx components; (b) state coverage (loadin
 - **Phase 7 — Dark mode QA + a11y audit + performance budget + motion polish** (a dedicated “polish pass” after all screens exist).
 
 Each phase ends with: `npm run build` green, screenshots at 390/768/1440 attached to evidence, tests green, and review sign-off before the next phase starts.
+
+## 12. Status update — 2026-11-11 (verification + full polish pass)
+
+The redesign is implemented token-native (Astryx removed per directive) and **visually verified on a reachable host** via MCP Playwright (`localhost:5199`, dev API on :4000). Evidence lives in `docs/sprints/evidence/s2-*.png`.
+
+**Verified this pass:**
+
+| Check | Result |
+|---|---|
+| Build (`npm run build`, React 19) | green; entry 524 KB; mermaid/elk/cytoscape lazy-async (fetched only when a lesson renders a diagram) |
+| `check:lessons` | 259/259 pass, 0 missing, 0 structure issues |
+| Home, 390 px & ~780 px | renders correctly, dock shows ≤680 px only, sidebar pinned under topbar |
+| Home, dark theme | authored dark theme holds (grounds/violet glow/lime pop all legible) |
+| Discussions | composer + feed render full-width after grid fix; mobile + desktop correct |
+| Onboarding | completes end-to-end (QA user); stray debug "API:" line removed |
+| Lesson | authored lessons render; content untouched |
+| Dark mode everywhere | ~90 legacy hex declarations migrated to semantic tokens (`background-*`, borders; conservative text colours); `--color-accent-2` added |
+| Icons | ALL unicode glyphs (✦, ★, ⌂, ✓, ◈, ◉, ▤, ◷, etc.) replaced by inline SVG stroke icons (`components/Icon.tsx`, 40 icons); brand mark is a violet diamond SVG |
+| favicon | brand sparkle SVG (`public/favicon.svg`); index.html pre-render fallback rewritten on tokens (light/dark `theme-color`, DM Sans) |
+| a11y | skip-to-content landmark, focus-visible rings, reduced-motion guard, `label`/`title` on icon controls |
+
+**Bugs fixed in the verification pass (all committed):**
+fde0b3a (brand SVG sized 85→24 px, syllabus row title/description ran together, `•` mastery dot → CSS dot, mobile dock visible on desktop, favicon/index.html), f444486 (topbar layout rule had been lost in Stage-0 — restored frosted sticky flex bar; sidebar pinned; topbar opacity 90%/blur 16; streak pill dark-on-dark contrast; module marker lime-on-white; `.discussions-layout` 1fr+280px track overriding the ≤1080px media query; stage grids 3/4-col not collapsing on mobile; `.streak-pill` shown on phones), eee6538 (debug API endpoint), 96395af (390 px topbar: icon-only search, streak pill and avatar name hidden ≤680 px).
+
+**Known limits (honest):**
+- 1440 px captures not possible in this environment (browser viewport ≈780 px); needs a one-time pass on a 1440 px host.
+- Colour migration is context-safe (backgrounds/borders/body text) but not exhaustive — one-off decorative literals inside the dark hero/code surfaces remain by design (theme-invariant).
+- Vite dev server SIGABRTs on this ARM64 host (environment artifact); builds and API are unaffected.
+- Entry chunk 524 KB (React 19 + framer-motion); acceptable; mermaid stays lazy.
