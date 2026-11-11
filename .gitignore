@@ -15,3 +15,6 @@ __pycache__/
 
 # QA screenshots (transient)
 eduswarm-home-full.png
+
+# QA screenshots (transient)
+qa-*.png

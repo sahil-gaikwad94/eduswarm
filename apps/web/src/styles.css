@@ -1676,6 +1676,9 @@ body {
 .brand-mark { color: var(--color-accent); width: 24px; height: 24px; flex: none; display: block; }
 
 .search-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   border-color: var(--color-border);
   background: var(--color-background-raised);
   color: var(--color-text-secondary);
@@ -1683,6 +1686,8 @@ body {
   font-size: var(--text-small);
   padding: 8px 16px;
 }
+
+.search-trigger-label { font-weight: 600; }
 
 .search-trigger:hover { color: var(--color-accent); border-color: var(--color-accent); }
 
@@ -2482,4 +2487,11 @@ body {
 @media (max-width: 680px) {
   .universe-cards, .xp-strip { grid-template-columns: 1fr; }
   .xp-strip-card.week { grid-column: span 1; }
+}
+
+/* topbar on phones — icon-only affordances; must win source order */
+@media (max-width: 680px) {
+  .streak-pill, .profile-chip-name { display: none; }
+  .search-trigger { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; }
+  .search-trigger-label { display: none; }
 }
