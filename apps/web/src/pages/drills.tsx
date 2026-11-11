@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Icon, Diamond } from '../components/Icon';
 import { API, apiGet, apiPost } from '../lib/api';
 import { Empty } from '../components/ui';
 import { Mistakes } from './insight';
@@ -76,7 +77,7 @@ export function Quiz({ course, topicId, readOnly }: { course: string; topicId?: 
           <h1>{course === 'gate-cs' ? 'GATE CSE PYQ lab' : 'Practice lab'}</h1>
           <p className="lead">Filter by subject, topic, year, and difficulty. Every answer includes a worked explanation and is saved for revision.</p>
           <div className="practice-actions">
-            <button onClick={() => void loadAdaptive()}>✦ Give me my next best question</button>
+            <button onClick={() => void loadAdaptive()}>Give me my next best question</button>
             {adaptive && <span className="muted">{strategy === 'repair-repeated-mistake' ? 'Repairing a repeated weak area' : 'Building recall in this filter'}</span>}
           </div>
         </div>
@@ -234,7 +235,7 @@ export function Mocks({ course }: { course: string }) {
             <div className="practice-actions">
               <button className="secondary-button" onClick={() => setAnswers({ ...answers, [current.id]: null })}>Clear response</button>
               <button className="secondary-button" onClick={() => setFlagged(flagged.includes(current.id) ? flagged.filter((f) => f !== current.id) : [...flagged, current.id])}>
-                {flagged.includes(current.id) ? '★ Flagged' : '☆ Flag for review'}
+                {flagged.includes(current.id) ? <><Icon.Star size={16} /> Flagged</> : <><Icon.StarOutline size={16} /> Flag for review</>}
               </button>
             </div>
             <div className="practice-actions">
@@ -275,7 +276,7 @@ export function Mocks({ course }: { course: string }) {
           {review.map((q: any, qi: number) => (
             <article className="review-group card" key={q.id}>
               <button className="review-toggle" onClick={() => setOpen(open === q.id ? null : q.id)}>
-                <span className={q.isCorrect ? 'result-dot correct-dot' : 'result-dot'}>{q.isCorrect ? '✓' : '!'}</span>
+                <span className={q.isCorrect ? 'result-dot correct-dot' : 'result-dot'}>{q.isCorrect ? <Icon.Check size={16} /> : <Icon.Mistakes size={16} />}</span>
                 <span><b>Q{qi + 1}. {q.question}</b><small>{q.isCorrect ? `+${q.marks || 1}` : q.selected === null || q.selected === undefined ? 'Skipped · 0' : `${q.delta} (negative marking)`} · {q.subject} · {q.topic}</small></span>
                 <span>{open === q.id ? '−' : '+'}</span>
               </button>
@@ -355,7 +356,7 @@ export function PracticeHub({ course, topicId, isGuest, onRequestSignIn }: {
     <>
       {locked && (
         <section className="guest-banner card" role="status">
-          <span aria-hidden>✦</span>
+          <Diamond size={20} className="banner-diamond" />
           <div><b>Guest preview of the Practice lab.</b><small>Questions are open to all. Sign in to save attempts, run full mocks, and repair mistakes.</small></div>
           <button onClick={onRequestSignIn}>Sign in free →</button>
         </section>

@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Icon, Diamond } from '../components/Icon';
 import { apiGet, type Page } from '../lib/api';
+import { ArticleReader } from '../components/Reader';
 
 /**
  * The Reading Room — popular, genuinely insightful *free* blogs and reading
@@ -22,10 +24,6 @@ const KIND_LABEL: Record<string, string> = {
 };
 const READLIST_KEY = 'eduswarm.readingList';
 const readList = (): string[] => { try { return JSON.parse(localStorage.getItem(READLIST_KEY) || '[]'); } catch { return []; } };
-
-function hostOf(url: string): string {
-  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
-}
 
 export function Library({ goal, universeTitle, onNavigate }: {
   goal: string; universeTitle: string; onNavigate: (page: Page, topicId?: string) => void;
@@ -110,7 +108,7 @@ export function Library({ goal, universeTitle, onNavigate }: {
 
       {loading && (
         <section className="empty-feature card">
-          <div className="empty-icon">❖</div>
+          <Diamond size={30} className="empty-icon-diamond" />
           <h2>Stocking the shelves…</h2>
           <p>Finding the best free reading for this universe.</p>
         </section>
@@ -137,7 +135,7 @@ export function Library({ goal, universeTitle, onNavigate }: {
                 tabIndex={0}
                 aria-label={saved.includes(r.id) ? 'Remove from reading list' : 'Save to reading list'}
                 title={saved.includes(r.id) ? 'Saved to your list' : 'Save to your list'}
-              >{saved.includes(r.id) ? '★' : '☆'}</span>
+              >{saved.includes(r.id) ? <Icon.Star size={16} /> : <Icon.StarOutline size={16} />}</span>
             </div>
             <h2>{r.title}</h2>
             <p className="library-publisher">{r.publisher}</p>
@@ -152,41 +150,19 @@ export function Library({ goal, universeTitle, onNavigate }: {
       </div>
 
       {open && (
-        <div className="reader-backdrop" role="dialog" aria-modal="true" aria-label={open.title} onClick={() => setOpen(null)}>
-          <article className="reader-sheet" onClick={(e) => e.stopPropagation()}>
-            <header className="reader-top">
-              <span className={`library-kind kind-${open.kind}`}>{KIND_LABEL[open.kind] || open.kind}</span>
-              <span className="reader-source">Originally published by <b>{open.publisher}</b> · {hostOf(open.url)}</span>
-              <button className="reader-close" onClick={() => setOpen(null)} aria-label="Close reader">×</button>
-            </header>
-            <div className="reader-body">
-              <h1>{open.title}</h1>
-              <p className="reader-publisher">{open.publisher}</p>
-              <div className="reader-chips">
-                {open.modules.map((m) => <span key={m}>{m}</span>)}
-              </div>
-              <div className="reader-why">
-                <p className="label">WHY IT'S ON YOUR SHELF</p>
-                <p>{open.blurb}</p>
-              </div>
-              <div className="reader-note">
-                <p className="label">HOW TO READ IT</p>
-                <p>Skim it once for the shape, then read it properly with a pencil: reproduce one diagram, one derivation, or one example by hand. That is where the knowledge sticks — and why this resource made the cut ahead of everything else free.</p>
-              </div>
-              <div className="reader-actions">
-                <button className="reader-save" onClick={() => toggleSave(open.id)}>
-                  {saved.includes(open.id) ? '★ Saved to your reading list' : '☆ Save to my list'}
-                </button>
-                <a className="reader-original" href={open.url} target="_blank" rel="noreferrer noopener">Read original at {open.publisher} ↗</a>
-              </div>
-            </div>
-          </article>
-        </div>
+        <ArticleReader
+          url={open.url}
+          fallbackTitle={open.title}
+          fallbackPublisher={open.publisher}
+          saved={saved.includes(open.id)}
+          onToggleSave={() => toggleSave(open.id)}
+          onClose={() => setOpen(null)}
+        />
       )}
 
       <section className="library-note">
         <p>
-          ✦ Every link is free to read and hand-picked for this syllabus.
+          <Icon.Check size={14} /> Every link is free to read and hand-picked for this syllabus.
           Nothing here redirects you out of EduSwarm unless you choose to leave.
         </p>
         <button className="secondary-button" onClick={() => onNavigate('dashboard')}>← Back to the syllabus</button>

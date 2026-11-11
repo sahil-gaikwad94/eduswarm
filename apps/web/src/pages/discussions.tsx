@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, type Topic } from '../lib/api';
 import { Empty } from '../components/ui';
+import { Diamond } from '../components/Icon';
+import { Icon } from '../components/Icon';
 
 type Comment = { id: string; authorId: string; authorName: string; body: string; createdAt: string };
 type Post = {
@@ -153,8 +155,8 @@ export function Discussions({ topics, isGuest, onRequestSignIn, userId }: {
 
       {isGuest ? (
         <section className="guest-banner card" role="status">
-          <span aria-hidden>✦</span>
-          <div><b>You’re browsing as a guest.</b><small>Reading is free forever — sign in to ask, answer, upvote, and build your streak.</small></div>
+          <Diamond size={20} className="banner-diamond" />
+          <div><b>You are browsing as a guest.</b><small>Reading is free forever — sign in to ask, answer, upvote, and build your streak.</small></div>
           <button onClick={onRequestSignIn}>Sign in →</button>
         </section>
       ) : (
@@ -201,7 +203,7 @@ export function Discussions({ topics, isGuest, onRequestSignIn, userId }: {
         <Empty title="Opening the discussion hall…" text="Gathering the latest doubts and breakdowns." onClick={() => void load()} />
       ) : posts.length === 0 ? (
         <section className="empty-feature card">
-          <div className="empty-icon">✦</div>
+          <Diamond size={30} className="empty-icon-diamond" />
           <h2>{search ? 'Nothing matches — yet.' : 'The floor is yours.'}</h2>
           <p>{search ? 'Try a broader phrase, or clear the topic filter.' : 'Be the first to post a doubt — the Dean answers within minutes when the community is awake.'}</p>
         </section>
@@ -215,7 +217,7 @@ export function Discussions({ topics, isGuest, onRequestSignIn, userId }: {
                 <div className="disc-meta">
                   <b>{post.authorName}{post.seeded && <span className="disc-seeded">Curated</span>}</b>
                   <small>
-                    {post.authorStreak ? <span className="disc-streak">✦ {post.authorStreak} day streak</span> : null}
+                    {post.authorStreak ? <span className="disc-streak"><Icon.Flame size={14} /> {post.authorStreak} day streak</span> : null}
                     {post.authorStreak ? ' · ' : ''}{timeAgo(post.createdAt)}
                     {post.topicId && (
                       <> · <button className="disc-topic-link" onClick={() => setTopicFilter(post.topicId || '')}>#{post.topicTitle || post.topicId}</button></>
@@ -223,20 +225,20 @@ export function Discussions({ topics, isGuest, onRequestSignIn, userId }: {
                   </small>
                 </div>
                 {post.kind === 'doubt' && (
-                  <span className={`disc-kind-badge ${post.isResolved ? 'resolved' : ''}`}>{post.isResolved ? '✓ Resolved' : 'Open'}</span>
+                  <span className={`disc-kind-badge ${post.isResolved ? 'resolved' : ''}`}>{post.isResolved ? <><Icon.Check size={12} /> Resolved</> : 'Open'}</span>
                 )}
               </header>
               <h2>{post.title}</h2>
               <p className="disc-body">{post.body}</p>
               <footer>
                 <button className={`disc-upvote ${post.upvotedByMe ? 'active' : ''}`} onClick={() => void upvote(post)} aria-pressed={Boolean(post.upvotedByMe)} aria-label="Upvote">
-                  ▲ <b>{post.upvotes}</b>
+                  <Icon.ChevronUp size={16} /> <b>{post.upvotes}</b>
                 </button>
                 <button className="disc-comment-toggle" onClick={() => setExpanded(expanded === post.id ? null : post.id)} aria-expanded={expanded === post.id}>
-                  ◌ {post.commentCount || post.comments.length} {post.commentCount === 1 ? 'reply' : 'replies'}
+                  <Icon.Discussions size={14} /> {post.commentCount || post.comments.length} {post.commentCount === 1 ? 'reply' : 'replies'}
                 </button>
                 {post.kind === 'doubt' && userId && post.authorId === userId && (
-                  <button className="disc-resolve" onClick={() => void toggleResolve(post)}>{post.isResolved ? '↺ Reopen' : '✓ Mark resolved'}</button>
+                  <button className="disc-resolve" onClick={() => void toggleResolve(post)}>{post.isResolved ? 'Reopen' : 'Mark resolved'}</button>
                 )}
               </footer>
               {expanded === post.id && (

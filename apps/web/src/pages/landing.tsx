@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Icon, Diamond } from '../components/Icon';
 import {
   AnimatePresence, animate, motion, useInView, useMotionValue, useReducedMotion,
   useScroll, useSpring, useTransform,
@@ -117,7 +118,7 @@ function TiltCard({ children, className = '' }: { children: React.ReactNode; cla
     <motion.div
       className={className}
       style={{ rotateX: srx, rotateY: sry, transformPerspective: 900 }}
-      onMouseMove={(e) => {
+      onMouseMove={(e: React.MouseEvent<HTMLDivElement>) => {
         const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
         ry.set(((e.clientX - r.left) / r.width - 0.5) * 9);
         rx.set(-((e.clientY - r.top) / r.height - 0.5) * 9);
@@ -134,7 +135,7 @@ function scrollToId(id: string) {
 }
 
 const DODDLY_CHEERS = [
-  'Let’s learn! ✦',
+  'Let us learn!',
   'You + me = momentum.',
   'Catch the spark — let’s go!',
   'One topic at a time!',
@@ -153,7 +154,7 @@ function Magnetic({ children, strength = 12 }: { children: React.ReactNode; stre
     <motion.div
       ref={ref}
       style={{ x: sx, y: sy, display: 'inline-block' }}
-      onMouseMove={(e) => {
+      onMouseMove={(e: React.MouseEvent<HTMLDivElement>) => {
         const r = ref.current?.getBoundingClientRect();
         if (!r) return;
         x.set(((e.clientX - r.left) / r.width - 0.5) * strength);
@@ -177,32 +178,32 @@ const MARQUEE = [
 
 const FEATURES: Array<{ icon: string; span: string; tint: string; title: string; copy: string; chips: string[] }> = [
   {
-    icon: '✦', span: 'wide', tint: 'violet', title: 'Meet your learning swarm',
+    icon: 'spark', span: 'wide', tint: 'violet', title: 'Meet your learning swarm',
     copy: 'A Dean-led team of AI agents — Researcher, Notes Author, Practice Team, Fact-Checker and Publisher — builds every study kit before you see it.',
     chips: ['Dean', 'Researcher', 'Notes', 'Practice', 'Fact-check', 'Publisher'],
   },
   {
-    icon: '✓', span: '', tint: 'lime', title: 'Evidence-gated lessons',
+    icon: 'check', span: '', tint: 'lime', title: 'Evidence-gated lessons',
     copy: 'Nothing ships without cited claims. Every kit carries its sources and a verification stamp you can actually check.',
     chips: [],
   },
   {
-    icon: '▤', span: '', tint: 'gold', title: 'Spaced repetition',
+    icon: 'deck', span: '', tint: 'gold', title: 'Spaced repetition',
     copy: 'Flashcards scheduled by SM-2 — grade Again, Hard, Good or Easy and the scheduler remembers so you don’t have to.',
     chips: [],
   },
   {
-    icon: '◷', span: '', tint: 'peach', title: 'Mocks with real marking',
+    icon: 'clock', span: '', tint: 'peach', title: 'Mocks with real marking',
     copy: 'Timed papers with GATE negative marking, a question palette, flags, and a mistake notebook that files every error for you.',
     chips: [],
   },
   {
-    icon: '◉', span: '', tint: 'sky', title: 'Discussions with the Dean',
+    icon: 'chat', span: '', tint: 'sky', title: 'Discussions with the Dean',
     copy: 'Doubts tagged to the exact tutorial or question — answered by peers who just mastered it and by the Dean. No 5,000-member scroll, no noise.',
     chips: ['Doubt threads', 'Topic tags', '+20 XP peer challenges'],
   },
   {
-    icon: '❖', span: 'wide', tint: 'violet', title: 'The Reading Room',
+    icon: 'libra', span: 'wide', tint: 'violet', title: 'The Reading Room',
     copy: 'The internet’s most insightful free blogs — Lil’ Log, Josh Comeau, OSTEP and friends — curated per universe and matched to your syllabus.',
     chips: ['Lil’ Log', 'Josh Comeau', 'OSTEP', 'GATE Overflow'],
   },
@@ -349,9 +350,9 @@ export function Landing({ onSignIn, error, onTryGuest }: { onSignIn: () => void;
           <Sparkles radius={190} count={6} />
           <motion.div className="l2-chips" style={{ y: chipsY }} aria-hidden>
             <motion.span className="l2-chip chip-a" animate={{ y: [0, -10, 0] }} transition={{ duration: 3.4, repeat: Infinity, ease: 'easeInOut' }}>🔥 7-day streak</motion.span>
-            <motion.span className="l2-chip chip-b" animate={{ y: [0, -12, 0] }} transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}>✓ Mock +12 marks</motion.span>
+            <motion.span className="l2-chip chip-b" animate={{ y: [0, -12, 0] }} transition={{ duration: 4.2, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}><Icon.Check size={14} /> Mock +12 marks</motion.span>
             <motion.span className="l2-chip chip-c" animate={{ y: [0, -9, 0] }} transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut', delay: 1 }}>DP mastered</motion.span>
-            <motion.span className="l2-chip chip-d" animate={{ y: [0, -11, 0] }} transition={{ duration: 4.6, repeat: Infinity, ease: 'easeInOut', delay: 1.4 }}>Transformers ✦</motion.span>
+            <motion.span className="l2-chip chip-d" animate={{ y: [0, -11, 0] }} transition={{ duration: 4.6, repeat: Infinity, ease: 'easeInOut', delay: 1.4 }}>Transformers</motion.span>
           </motion.div>
           <motion.div
             className="l2-miniflame"
@@ -411,7 +412,7 @@ export function Landing({ onSignIn, error, onTryGuest }: { onSignIn: () => void;
       <div className="l2-marquee" id="l2-marquee" aria-hidden>
         <div className="l2-marquee-track">
           {[...MARQUEE, ...MARQUEE].map((item, i) => (
-            <span key={i}><i>✦</i>{item}</span>
+            <span key={i}><i><Diamond size={12} /></i>{item}</span>
           ))}
         </div>
       </div>
@@ -554,7 +555,7 @@ export function Landing({ onSignIn, error, onTryGuest }: { onSignIn: () => void;
 
       <footer className="l2-footer">
         <Brand />
-        <p>Made with <span aria-hidden>✦</span> by EduSwarm — learn in layers, practice that remembers, momentum you can see.</p>
+        <p>Made with <Diamond size={14} /> by EduSwarm — learn in layers, practice that remembers, momentum you can see.</p>
       </footer>
     </main>
   );

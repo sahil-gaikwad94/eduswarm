@@ -39,6 +39,7 @@ import {
 } from './intelligence.js';
 import { buildLocalPack, type PackDepth } from './localPack.js';
 import { resourcesFor } from './resources.js';
+import { readArticle } from './reader.js';
 import { issueToken, verifyToken, issueLoginCode, redeemLoginCode, bearerFromHeader } from './auth.js';
 import { buildDoubtSystemPrompt, localDoubtReply, type DoubtContext } from './doubtBrain.js';
 import { completeChat, modelChain } from './llm.js';
@@ -155,9 +156,16 @@ function publicWebUrl() {
   return process.env.WEB_URL || [...allowedOrigins][0] || 'http://localhost:5173';
 }
 function now() { return new Date().toISOString(); }
+function profileHandle(name: string, id: string): string {
+  const slug = String(name || '').toLowerCase().normalize('NFKD')
+    .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 18);
+  return `${slug || 'learner'}_${String(id).replace(/[^a-z0-9]/gi, '').slice(-4).toLowerCase() || 'edu'}`;
+}
+
 function defaultUser(id: string, overrides: Partial<StoredUser> = {}): StoredUser {
   return {
     id, name: 'Demo Learner', skillLevel: 'beginner', dailyMinutes: 60,
+    handle: profileHandle('Demo Learner', id), bio: '',
     avatar: { base: 'owl', color: 'yellow', accessory: 'glasses' },
     goals: [], createdAt: now(), updatedAt: now(), ...overrides,
   };
@@ -343,6 +351,15 @@ app.patch('/api/me', async (req: Request, res: Response) => {
   const body = req.body || {};
   const patch: Partial<StoredUser> = { updatedAt: now() };
   if (typeof body.name === 'string' && body.name.trim()) patch.name = body.name.trim().slice(0, 80);
+  if (typeof body.handle === 'string') {
+    const handle = body.handle.trim().toLowerCase().replace(/^@/, '');
+    if (!/^[a-z0-9_]{3,24}$/.test(handle)) {
+      return res.status(400).json({ error: 'Handle must be 3-24 letters, numbers, or underscores.' });
+    }
+    patch.handle = handle;
+  }
+  if (typeof body.bio === 'string') patch.bio = body.bio.trim().slice(0, 160);
+  if (typeof body.private === 'boolean') patch.private = body.private;
   if (['beginner', 'intermediate', 'advanced'].includes(body.skillLevel)) patch.skillLevel = body.skillLevel;
   if (Number.isFinite(Number(body.dailyMinutes))) patch.dailyMinutes = Math.max(15, Math.min(240, Number(body.dailyMinutes)));
   if (body.targetDate === null || /^\d{4}-\d{2}-\d{2}$/.test(String(body.targetDate || ''))) patch.targetDate = body.targetDate || null;
@@ -371,6 +388,8 @@ app.post('/api/onboarding', async (req: Request, res: Response) => {
   const updated = await store.upsertUser({
     ...user,
     name: body.name || user.name,
+    handle: user.handle || profileHandle(body.name || user.name, user.id),
+    bio: user.bio || '',
     skillLevel: body.skillLevel || user.skillLevel,
     dailyMinutes: Number(body.dailyMinutes || user.dailyMinutes),
     targetDate: body.targetDate || null,
@@ -492,6 +511,22 @@ app.get('/api/recommendations/videos', (req: Request, res: Response) => {
   res.json({ topicId, topic: title, recommendations: recs });
 });
 
+// ------------------------------------------------------------ in-app reader
+// The Reading Room opens publisher articles inside the app. Extraction is
+// read-only and public, but the URL is still untrusted input and is guarded
+// against SSRF inside readArticle().
+app.get('/api/reader', async (req: Request, res: Response) => {
+  const url = String(req.query.url || '').trim();
+  if (!url) return res.status(400).json({ error: 'A reading URL is required.' });
+  try {
+    const article = await readArticle(url);
+    res.set('Cache-Control', 'private, max-age=1800');
+    res.json(article);
+  } catch (error: any) {
+    res.status(422).json({ error: error?.message || 'The in-app reader could not open that page.' });
+  }
+});
+
 // ------------------------------------------------- topic jobs + SSE stream
 
 app.get('/api/jobs/:id', async (req: Request, res: Response) => {
@@ -580,7 +615,10 @@ app.get('/api/learning/content/:topicId', async (req: Request, res: Response) =>
   }
   const content = await store.getContent(user.id, param(req.params.topicId));
   if (content) return res.json(content.package);
-  if (topic) return res.json({ ...buildLocalPack(topic.id, topic, 'standard'), guest: true, baseline: true });
+  // Local-first for signed-in learners too: the authored chapter is the
+  // primary reading experience, not a failure state. AI generation is an
+  // optional upgrade that replaces this pack once it is saved.
+  if (topic) return res.json({ ...buildLocalPack(topic.id, topic, 'standard'), local: true });
   return res.status(404).json({ error: 'No saved learning package' });
 });
 

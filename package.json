@@ -15,7 +15,6 @@
     "build": "npm run build --workspace apps/api && npm run build --workspace apps/web",
     "test": "npm run test --workspace apps/api",
     "lint": "npm run lint --workspace apps/api && npm run lint --workspace apps/web",
-    "seed:kits": "npm run build --workspace apps/api && node scripts/seed-kits.mjs",
-    "kits:report": "node scripts/seed-kits.mjs --report"
+    "check:lessons": "npm --workspace apps/api run check:lessons"
   }
 }

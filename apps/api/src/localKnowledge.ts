@@ -27,6 +27,8 @@ export type LocalKnowledge = {
   cheatSheet?: string[];
   code?: { title: string; language: string; code: string; explanation: string };
   diagram?: { title: string; caption: string; mermaid: string };
+  /** Where this knowledge came from: hand-authored, profile match, or generic fallback. */
+  tier?: 'flagship' | 'profile' | 'fallback';
 };
 
 type TopicLike = { title: string; description: string; module?: string; id?: string };
@@ -254,6 +256,7 @@ function fallbackKnowledge(topic: TopicLike): LocalKnowledge {
   const module = topic.module || 'this module';
   const desc = String(topic.description || '').replace(/\.$/, '');
   return {
+    tier: 'fallback',
     focus: `understanding ${title} from its definition outward — what it is, how to trace it on a minimal example, and where the standard approach breaks`,
     mentalModel: `${title} in ${module}: ${desc}.
 
@@ -290,13 +293,13 @@ Three moves master every topic here — (1) define the object precisely (a gramm
 export function localKnowledgeFor(topic: TopicLike): LocalKnowledge {
   const text = normalized(topic);
   // Flagship (hand-authored) lessons win over any template match.
-  if (topic.id && flagshipKnowledge[topic.id]) return flagshipKnowledge[topic.id];
+  if (topic.id && flagshipKnowledge[topic.id]) return { ...flagshipKnowledge[topic.id], tier: 'flagship' };
   let best: { profile: Profile; score: number } | undefined;
   for (const profile of profiles) {
     const score = profile.matches.reduce((total, phrase) => total + (text.includes(phrase) ? phrase.split(' ').length + 1 : 0), 0);
     if (score && (!best || score > best.score)) best = { profile, score };
   }
-  return best?.profile.knowledge || fallbackKnowledge(topic);
+  return best ? { ...best.profile.knowledge, tier: 'profile' } : fallbackKnowledge(topic);
 }
 
 /**

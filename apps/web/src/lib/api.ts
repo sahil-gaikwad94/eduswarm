@@ -20,7 +20,7 @@ export type Topic = {
 export type Pack = {
   topicId: string; title: string; verification: any; depth?: string;
   /** Guest/baseline markers returned by the public read-only kit endpoint. */
-  guest?: boolean; baseline?: boolean;
+  guest?: boolean; baseline?: boolean; local?: boolean;
   readingMinutes?: number; generatedAt?: string;
   notes: { sections: any[] }; videos: any[]; flashcards: any[]; quiz: any[]; pyqs: any[];
   codeExamples?: any[]; diagrams?: any[]; cheatSheet?: string[];
